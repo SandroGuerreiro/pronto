@@ -28,7 +28,18 @@ pub fn run() {
 
             let mut open_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
             for pr in &result.open {
-                let label = format!("{} {} — {}", pr.status_icon(), pr.title, pr.repository.name);
+                let review = pr.review_label();
+                let label = if review.is_empty() {
+                    format!("{} {} — {}", pr.status_icon(), pr.title, pr.repository.name)
+                } else {
+                    format!(
+                        "{} {} — {} ({})",
+                        pr.status_icon(),
+                        pr.title,
+                        pr.repository.name,
+                        review
+                    )
+                };
                 let item = MenuItem::with_id(app, &pr.url, &label, true, None::<&str>)?;
                 open_items.push(item);
             }
@@ -42,8 +53,18 @@ pub fn run() {
                 refs.push(&sep);
 
                 for pr in &result.recently_merged {
-                    let label =
-                        format!("{} {} — {}", pr.status_icon(), pr.title, pr.repository.name);
+                    let review = pr.review_label();
+                    let label = if review.is_empty() {
+                        format!("{} {} — {}", pr.status_icon(), pr.title, pr.repository.name)
+                    } else {
+                        format!(
+                            "{} {} — {} ({})",
+                            pr.status_icon(),
+                            pr.title,
+                            pr.repository.name,
+                            review
+                        )
+                    };
                     let item = MenuItem::with_id(app, &pr.url, &label, true, None::<&str>)?;
                     merged_items.push(item);
                 }

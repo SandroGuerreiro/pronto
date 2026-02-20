@@ -32,6 +32,9 @@ pub struct PullRequest {
     pub repository: Repository,
     #[serde(rename = "mergeQueueEntry")]
     pub merge_queue_entry: Option<MergeQueueEntry>,
+    #[serde(rename = "reviewDecision")]
+    pub review_decision: Option<String>,
+    pub reviews: Reviews,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -42,6 +45,11 @@ pub struct Repository {
 #[derive(Debug, Deserialize, Clone)]
 pub struct MergeQueueEntry {
     pub position: i32,
+}
+#[derive(Debug, Deserialize, Clone)]
+pub struct Reviews {
+    #[serde(rename = "totalCount")]
+    pub total_count: i32,
 }
 pub enum PrStatus {
     Open,
@@ -71,6 +79,15 @@ impl PullRequest {
             PrStatus::InQueue => "◎",
         }
     }
+    pub fn review_label(&self) -> String {
+        let approvals = self.reviews.total_count;
+        match self.review_decision.as_deref() {
+            Some("APPROVED") => format!("{} ✓", approvals),
+            Some("CHANGES_REQUESTED") => "✗ changes requested".to_string(),
+            Some("REVIEW_REQUIRED") => format!("{} ✓ (needs review)", approvals),
+            _ => String::new(),
+        }
+    }
 }
 pub struct FetchResult {
     pub open: Vec<PullRequest>,
@@ -86,16 +103,36 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
 
     let query = GraphQLQuery {
         query: format!(
-            r#"
-      {{
-        open: search(query: "author:@me type:pr state:open", type: ISSUE, first: 20) {{
-          nodes {{ ... on PullRequest {{ title url state merged repository {{ name }} mergeQueueEntry {{ position }} }} }}
-        }}
-        recentlyMerged: search(query: "author:@me type:pr is:merged merged:>{cutoff}", type: ISSUE, first: 10) {{
-          nodes {{ ... on PullRequest {{ title url state merged repository {{ name }} mergeQueueEntry {{ position }} }} }}
-        }}
+            r#"{{
+  open: search(query: "author:@me type:pr state:open", type: ISSUE, first: 20) {{
+    nodes {{
+      ... on PullRequest {{
+        title
+        url
+        state
+        merged
+        repository {{ name }}
+        mergeQueueEntry {{ position }}
+        reviewDecision
+        reviews(states: APPROVED) {{ totalCount }}
       }}
-      "#
+    }}
+  }}
+  recentlyMerged: search(query: "author:@me type:pr is:merged merged:>{cutoff}", type: ISSUE, first: 10) {{
+    nodes {{
+      ... on PullRequest {{
+        title
+        url
+        state
+        merged
+        repository {{ name }}
+        mergeQueueEntry {{ position }}
+        reviewDecision
+        reviews(states: APPROVED) {{ totalCount }}
+      }}
+    }}
+  }}
+}}"#
         ),
     };
 
