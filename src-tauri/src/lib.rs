@@ -16,25 +16,41 @@ pub fn run() {
             let token = std::env::var("TOKEN").expect("TOKEN must be set in .env");
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let prs = rt
-                .block_on(github::fetch_open_prs(&token))
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to fetch PRs: {}", e);
-                    vec![]
-                });
+            let result = rt.block_on(github::fetch_prs(&token)).unwrap_or_else(|e| {
+                eprintln!("Failed to fetch PRs: {}", e);
+                github::FetchResult {
+                    open: vec![],
+                    recently_merged: vec![],
+                }
+            });
 
-            let mut menu_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
-            for pr in &prs {
-                let repo_name = pr.repository_url.split('/').last().unwrap_or("unknown");
-                let label = format!("{} — {}", pr.title, repo_name);
-                let item = MenuItem::with_id(app, &pr.html_url, &label, true, None::<&str>)?;
-                menu_items.push(item);
+            let mut refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = Vec::new();
+
+            let mut open_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
+            for pr in &result.open {
+                let label = format!("{} {} — {}", pr.status_icon(), pr.title, pr.repository.name);
+                let item = MenuItem::with_id(app, &pr.url, &label, true, None::<&str>)?;
+                open_items.push(item);
+            }
+            for item in &open_items {
+                refs.push(item as &dyn tauri::menu::IsMenuItem<tauri::Wry>);
             }
 
-            let mut refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = menu_items
-                .iter()
-                .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
-                .collect();
+            let mut merged_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
+            let sep = PredefinedMenuItem::separator(app)?;
+            if !result.recently_merged.is_empty() {
+                refs.push(&sep);
+
+                for pr in &result.recently_merged {
+                    let label =
+                        format!("{} {} — {}", pr.status_icon(), pr.title, pr.repository.name);
+                    let item = MenuItem::with_id(app, &pr.url, &label, true, None::<&str>)?;
+                    merged_items.push(item);
+                }
+                for item in &merged_items {
+                    refs.push(item as &dyn tauri::menu::IsMenuItem<tauri::Wry>);
+                }
+            }
 
             let separator = PredefinedMenuItem::separator(app)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
