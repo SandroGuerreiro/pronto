@@ -1,40 +1,98 @@
 pub mod github;
+pub mod tray;
 
-use tauri::{tray::TrayIconBuilder, Manager};
-use tauri_plugin_positioner::{Position, WindowExt};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Duration;
 
-#[tauri::command]
-async fn fetch_prs() -> Result<github::FetchResult, String> {
-    let token = std::env::var("TOKEN").map_err(|e| e.to_string())?;
-    github::fetch_prs(&token).await.map_err(|e| e.to_string())
+use tauri::{Emitter, Manager};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+
+pub struct AppState {
+    pub cached_prs: Mutex<Option<github::FetchResult>>,
+    pub seen_prs: Mutex<HashMap<String, String>>,
 }
 
-fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
-        .on_tray_icon_event(|tray_handle, event| {
-            tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            cached_prs: Mutex::new(None),
+            seen_prs: Mutex::new(HashMap::new()),
+        }
+    }
+}
 
-            if let tauri::tray::TrayIconEvent::Click {
-                button_state: tauri::tray::MouseButtonState::Up,
-                ..
-            } = event
-            {
-                let app = tray_handle.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.move_window(Position::TrayCenter);
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+/// Populates `attention_urls` on the result, updates the tray icon, and caches.
+/// PRs that don't need attention are auto-recorded so future changes are detected.
+fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> github::FetchResult {
+    if let Some(state) = app.try_state::<AppState>() {
+        {
+            let mut seen = state.seen_prs.lock().unwrap();
+            result.attention_urls = tray::attention_urls(&result, &seen);
+
+            for pr in &result.open {
+                if !result.attention_urls.contains(&pr.url) && !seen.contains_key(&pr.url) {
+                    seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
                 }
             }
-        })
-        .build(app)?;
+        }
 
-    Ok(())
+        tray::update_tray_icon(app, !result.attention_urls.is_empty());
+
+        let mut cache = state.cached_prs.lock().unwrap();
+        *cache = Some(result.clone());
+    }
+    result
+}
+
+#[tauri::command]
+async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
+    let token = std::env::var("TOKEN").map_err(|e| e.to_string())?;
+    let result = github::fetch_prs(&token).await.map_err(|e| e.to_string())?;
+    Ok(process_result(&app, result))
+}
+
+#[tauri::command]
+fn dismiss_pr(app: tauri::AppHandle, url: String) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+
+    let (fingerprint, result_clone) = {
+        let cache = state.cached_prs.lock().unwrap();
+        let Some(result) = cache.as_ref() else { return };
+        let Some(pr) = result.open.iter().find(|p| p.url == url) else { return };
+        (tray::attention_fingerprint(pr), result.clone())
+    };
+
+    let mut seen = state.seen_prs.lock().unwrap();
+    seen.insert(url, fingerprint);
+    let has_attention = !tray::attention_urls(&result_clone, &seen).is_empty();
+    drop(seen);
+
+    tray::update_tray_icon(&app, has_attention);
+}
+
+async fn poll_prs(app: tauri::AppHandle) {
+    let token = match std::env::var("TOKEN") {
+        Ok(t) => t,
+        Err(_) => {
+            eprintln!("[pronto] TOKEN not set, polling disabled");
+            return;
+        }
+    };
+
+    loop {
+        tokio::time::sleep(Duration::from_secs(300)).await;
+
+        match github::fetch_prs(&token).await {
+            Ok(result) => {
+                process_result(&app, result);
+                let _ = app.emit("prs-updated", ());
+            }
+            Err(e) => {
+                eprintln!("[pronto] Poll failed: {}", e);
+            }
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,12 +102,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
-        .invoke_handler(tauri::generate_handler![fetch_prs])
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(AppState::default())
+        .invoke_handler(tauri::generate_handler![fetch_prs, dismiss_pr])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            setup_tray(app)?;
+            tray::setup_tray(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
@@ -59,6 +119,28 @@ pub fn run() {
                     }
                 });
             }
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                poll_prs(handle).await;
+            });
+
+            let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyP);
+            let handle = app.handle().clone();
+            app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                let h = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    eprintln!("[pronto] Manual refresh triggered via Cmd+Shift+P");
+                    let token = match std::env::var("TOKEN") {
+                        Ok(t) => t,
+                        Err(_) => return,
+                    };
+                    if let Ok(result) = github::fetch_prs(&token).await {
+                        process_result(&h, result);
+                        let _ = h.emit("prs-updated", ());
+                    }
+                });
+            })?;
 
             Ok(())
         })

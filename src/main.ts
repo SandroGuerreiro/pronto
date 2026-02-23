@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface Reviews {
@@ -49,6 +50,7 @@ interface PullRequest {
 interface FetchResult {
   open: PullRequest[];
   recently_merged: PullRequest[];
+  attention_urls: string[];
 }
 
 function getStatus(pr: PullRequest): { label: string; class: string } {
@@ -103,6 +105,8 @@ function getReviewStatus(pr: PullRequest): {
   }
 }
 
+let currentAttentionUrls: string[] = [];
+
 function renderPrCard(pr: PullRequest): string {
   const status = getStatus(pr);
   const { reviewText, statusText, statusClass } = getReviewStatus(pr);
@@ -115,7 +119,7 @@ function renderPrCard(pr: PullRequest): string {
   statusParts.push(`<span class="${checks.class}">${checks.text}</span>`);
 
   return `
-    <div class="pr-card" data-url="${pr.url}">
+    <div class="pr-card${currentAttentionUrls.includes(pr.url) ? " attention" : ""}" data-url="${pr.url}">
       <div class="pr-status ${status.class}">${status.label}</div>
       <div class="pr-info">
         <div class="pr-title">${pr.title}</div>
@@ -160,12 +164,21 @@ async function loadPrs() {
 
   try {
     const result = await invoke<FetchResult>("fetch_prs");
+    currentAttentionUrls = result.attention_urls;
     content.innerHTML = renderContent(result);
 
     content.querySelectorAll(".pr-card").forEach((card) => {
       card.addEventListener("click", () => {
         const url = card.getAttribute("data-url");
         if (url) openUrl(url);
+      });
+
+      card.addEventListener("mouseenter", () => {
+        if (card.classList.contains("attention")) {
+          card.classList.remove("attention");
+          const url = card.getAttribute("data-url");
+          if (url) invoke("dismiss_pr", { url });
+        }
       });
     });
   } catch (e) {
@@ -176,6 +189,10 @@ async function loadPrs() {
 
 window.addEventListener("DOMContentLoaded", () => {
   loadPrs();
+
+  listen("prs-updated", () => {
+    loadPrs();
+  });
 
   document.getElementById("quit-btn")?.addEventListener("click", async () => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");

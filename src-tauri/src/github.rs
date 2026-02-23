@@ -128,10 +128,11 @@ impl PullRequest {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct FetchResult {
     pub open: Vec<PullRequest>,
     pub recently_merged: Vec<PullRequest>,
+    pub attention_urls: Vec<String>,
 }
 
 pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::Error>> {
@@ -193,5 +194,6 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
     Ok(FetchResult {
         open: response.data.open.nodes,
         recently_merged: response.data.recently_merged.nodes,
+        attention_urls: vec![],
     })
 }
