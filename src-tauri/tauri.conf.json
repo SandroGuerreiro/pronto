@@ -11,7 +11,23 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "windows": [],
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "pronto",
+        "width": 360,
+        "height": 480,
+        "visible": false,
+        "decorations": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "transparent": true,
+        "shadow": false,
+        "backgroundColor": "#00000000"
+      }
+    ],
     "security": {
       "csp": null
     }
