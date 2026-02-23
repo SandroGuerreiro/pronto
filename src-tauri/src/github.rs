@@ -35,20 +35,8 @@ pub struct PullRequest {
     #[serde(rename = "reviewDecision")]
     pub review_decision: Option<String>,
     pub reviews: Reviews,
-    #[serde(rename = "baseRef")]
-    pub base_ref: Option<BaseRef>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct BaseRef {
-    #[serde(rename = "branchProtectionRule")]
-    pub branch_protection_rule: Option<BranchProtectionRule>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct BranchProtectionRule {
-    #[serde(rename = "requiredApprovingReviewCount")]
-    pub required_approving_review_count: i32,
+    pub comments: Comments,
+    pub commits: CommitConnection,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -60,11 +48,40 @@ pub struct Repository {
 pub struct MergeQueueEntry {
     pub position: i32,
 }
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Reviews {
     #[serde(rename = "totalCount")]
     pub total_count: i32,
 }
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Comments {
+    #[serde(rename = "totalCount")]
+    pub total_count: i32,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommitConnection {
+    pub nodes: Vec<CommitNode>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommitNode {
+    pub commit: Commit,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Commit {
+    #[serde(rename = "statusCheckRollup")]
+    pub status_check_rollup: Option<StatusCheckRollup>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct StatusCheckRollup {
+    pub state: String,
+}
+
 pub enum PrStatus {
     Open,
     Merged,
@@ -93,30 +110,24 @@ impl PullRequest {
             PrStatus::InQueue => "◎",
         }
     }
-    pub fn required_approvals(&self) -> Option<i32> {
-        self.base_ref
-            .as_ref()
-            .and_then(|r| r.branch_protection_rule.as_ref())
-            .map(|rule| rule.required_approving_review_count)
-    }
 
     pub fn review_label(&self) -> String {
         let approvals = self.reviews.total_count;
-        let required = self.required_approvals();
         match self.review_decision.as_deref() {
-            Some("APPROVED") => match required {
-                Some(r) => format!("{}/{} ✓", approvals, r),
-                None => format!("{} ✓", approvals),
-            },
-            Some("CHANGES_REQUESTED") => "✗ changes requested".to_string(),
-            Some("REVIEW_REQUIRED") => match required {
-                Some(r) => format!("{}/{} approvals", approvals, r),
-                None => "needs review".to_string(),
-            },
+            Some("APPROVED") => format!("{} approved", approvals),
+            Some("CHANGES_REQUESTED") => "changes requested".to_string(),
+            Some("REVIEW_REQUIRED") => {
+                if approvals > 0 {
+                    format!("{} / needs reviews", approvals)
+                } else {
+                    "needs reviews".to_string()
+                }
+            }
             _ => String::new(),
         }
     }
 }
+
 #[derive(Serialize)]
 pub struct FetchResult {
     pub open: Vec<PullRequest>,
@@ -144,7 +155,8 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
-        baseRef {{ branchProtectionRule {{ requiredApprovingReviewCount }} }}
+        comments {{ totalCount }}
+        commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
       }}
     }}
   }}
@@ -159,7 +171,8 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
-        baseRef {{ branchProtectionRule {{ requiredApprovingReviewCount }} }}
+        comments {{ totalCount }}
+        commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
       }}
     }}
   }}
