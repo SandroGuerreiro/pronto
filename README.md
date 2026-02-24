@@ -28,9 +28,7 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 ### Homebrew (recommended)
 
 ```bash
-brew tap SandroGuerreiro/tap
-brew install --cask pronto
-xattr -cr /Applications/Pronto.app
+brew install --cask --no-quarantine SandroGuerreiro/tap/pronto
 ```
 
 ### DMG
