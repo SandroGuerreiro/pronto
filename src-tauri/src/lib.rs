@@ -98,8 +98,9 @@ fn process_result(
 }
 
 #[tauri::command]
-async fn check_auth() -> Result<bool, String> {
-    Ok(auth::load_token().is_some())
+async fn check_auth(app: tauri::AppHandle) -> Result<bool, String> {
+    let state = app.state::<AppState>();
+    Ok(get_token(&state).is_ok())
 }
 
 #[tauri::command]
