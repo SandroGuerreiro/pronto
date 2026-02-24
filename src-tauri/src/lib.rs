@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+use tauri_plugin_notification::NotificationExt;
 
 pub struct AppState {
     pub cached_prs: Mutex<Option<github::FetchResult>>,
@@ -20,6 +21,32 @@ impl Default for AppState {
             seen_prs: Mutex::new(HashMap::new()),
         }
     }
+}
+
+fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchResult) {
+    let titles: Vec<&str> = result
+        .open
+        .iter()
+        .filter(|pr| result.attention_urls.contains(&pr.url))
+        .map(|pr| pr.title.as_str())
+        .collect();
+
+    if titles.is_empty() {
+        return;
+    }
+
+    let body = if titles.len() == 1 {
+        titles[0].to_string()
+    } else {
+        format!("{} and {} other", titles[0], titles.len() - 1)
+    };
+
+    let _ = app
+        .notification()
+        .builder()
+        .title("PRs need attention")
+        .body(body)
+        .show();
 }
 
 /// Populates `attention_urls` on the result, updates the tray icon, and caches.
@@ -38,6 +65,7 @@ fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> gi
         }
 
         tray::update_tray_icon(app, !result.attention_urls.is_empty());
+        send_attention_notification(app, &result);
 
         let mut cache = state.cached_prs.lock().unwrap();
         *cache = Some(result.clone());
@@ -103,6 +131,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![fetch_prs, dismiss_pr])
         .setup(|app| {
