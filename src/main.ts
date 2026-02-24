@@ -218,9 +218,9 @@ function showPermissionsInfo() {
         <div class="perm-section-title">Fine-grained Token</div>
         <div class="perm-section-desc">Create at <a id="perm-fine-link" href="#" class="login-link">github.com/settings/tokens?type=beta</a></div>
         <div class="perm-list">
-          <div class="perm-item"><span class="perm-scope">Pull requests</span> Read-only</div>
-          <div class="perm-item"><span class="perm-scope">Checks</span> Read-only</div>
+          <div class="perm-item"><span class="perm-scope">Contents</span> Read-only</div>
           <div class="perm-item"><span class="perm-scope">Metadata</span> Read-only</div>
+          <div class="perm-item"><span class="perm-scope">Pull requests</span> Read-only</div>
         </div>
         <div class="perm-note">Select the repositories you want to monitor.</div>
       </div>

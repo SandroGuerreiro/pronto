@@ -66,7 +66,7 @@ This uses the OAuth Device Flow with the `repo` scope.
 | Token type | Scopes |
 | --- | --- |
 | Classic | `repo` (full control of private repositories) |
-| Fine-grained | **Repository access:** All repositories (or select specific ones). **Permissions:** Pull requests (read), Commit statuses (read), Checks (read) |
+| Fine-grained | **Repository access:** All repositories (or select specific ones). **Permissions:** Contents (read), Metadata (read), Pull requests (read) |
 
 ## Development
 
