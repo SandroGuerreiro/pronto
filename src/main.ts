@@ -502,6 +502,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
 
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.getElementById("settings-panel")!.style.display !== "none") {
+      hideSettings();
+    }
+  });
+
   document.getElementById("signout-btn")?.addEventListener("click", async () => {
     await invoke("logout");
     showLogin();
