@@ -99,10 +99,15 @@ pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
 }
 
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    TrayIconBuilder::with_id(TRAY_ID)
+    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(load_tray_icon())
-        .icon_as_template(true)
-        .on_tray_icon_event(|tray_handle, event| {
+        .icon_as_template(true);
+
+    if cfg!(debug_assertions) {
+        builder = builder.title("DEV");
+    }
+
+    builder.on_tray_icon_event(|tray_handle, event| {
             tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
 
             if let tauri::tray::TrayIconEvent::Click {
