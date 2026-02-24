@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod github;
 pub mod tray;
 
@@ -21,6 +22,10 @@ impl Default for AppState {
             seen_prs: Mutex::new(HashMap::new()),
         }
     }
+}
+
+fn get_token() -> Result<String, String> {
+    auth::load_token().ok_or_else(|| "not_authenticated".to_string())
 }
 
 fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchResult) {
@@ -49,8 +54,6 @@ fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchRes
         .show();
 }
 
-/// Populates `attention_urls` on the result, updates the tray icon, and caches.
-/// PRs that don't need attention are auto-recorded so future changes are detected.
 fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> github::FetchResult {
     if let Some(state) = app.try_state::<AppState>() {
         {
@@ -74,8 +77,34 @@ fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> gi
 }
 
 #[tauri::command]
+async fn check_auth() -> Result<bool, String> {
+    Ok(auth::load_token().is_some())
+}
+
+#[tauri::command]
+async fn start_login() -> Result<auth::DeviceCodeResponse, String> {
+    auth::start_device_flow().await
+}
+
+#[tauri::command]
+async fn poll_login(device_code: String) -> Result<bool, String> {
+    match auth::poll_for_token(&device_code).await? {
+        Some(token) => {
+            auth::save_token(&token)?;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
+#[tauri::command]
+async fn logout() -> Result<(), String> {
+    auth::delete_token()
+}
+
+#[tauri::command]
 async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
-    let token = std::env::var("TOKEN").map_err(|e| e.to_string())?;
+    let token = get_token()?;
     let result = github::fetch_prs(&token).await.map_err(|e| e.to_string())?;
     Ok(process_result(&app, result))
 }
@@ -100,16 +129,13 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
 }
 
 async fn poll_prs(app: tauri::AppHandle) {
-    let token = match std::env::var("TOKEN") {
-        Ok(t) => t,
-        Err(_) => {
-            eprintln!("[pronto] TOKEN not set, polling disabled");
-            return;
-        }
-    };
-
     loop {
         tokio::time::sleep(Duration::from_secs(300)).await;
+
+        let token = match get_token() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
 
         match github::fetch_prs(&token).await {
             Ok(result) => {
@@ -125,15 +151,20 @@ async fn poll_prs(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    dotenv::dotenv().ok();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![fetch_prs, dismiss_pr])
+        .invoke_handler(tauri::generate_handler![
+            fetch_prs,
+            dismiss_pr,
+            check_auth,
+            start_login,
+            poll_login,
+            logout,
+        ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -159,8 +190,7 @@ pub fn run() {
             app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
                 let h = handle.clone();
                 tauri::async_runtime::spawn(async move {
-                    eprintln!("[pronto] Manual refresh triggered via Cmd+Shift+P");
-                    let token = match std::env::var("TOKEN") {
+                    let token = match get_token() {
                         Ok(t) => t,
                         Err(_) => return,
                     };

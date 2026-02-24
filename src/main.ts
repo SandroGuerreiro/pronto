@@ -62,6 +62,14 @@ interface FetchResult {
   attention_urls: string[];
 }
 
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
 function getStatus(pr: PullRequest): { label: string; class: string } {
   if (pr.mergeQueueEntry) {
     return { label: "◎", class: "in-queue" };
@@ -169,11 +177,99 @@ function renderContent(result: FetchResult): string {
   return html;
 }
 
+function showLogin() {
+  const content = document.getElementById("content")!;
+  const signoutBtn = document.getElementById("signout-btn")!;
+  signoutBtn.style.display = "none";
+
+  content.innerHTML = `
+    <div class="login-view">
+      <div class="login-icon">🔑</div>
+      <div class="login-title">Sign in with GitHub</div>
+      <div class="login-desc">Connect your GitHub account to see your PRs.</div>
+      <button id="login-btn" class="login-btn">Sign in</button>
+    </div>
+  `;
+
+  document.getElementById("login-btn")!.addEventListener("click", startLogin);
+}
+
+async function startLogin() {
+  const content = document.getElementById("content")!;
+
+  content.innerHTML = `<div class="login-view"><div class="login-desc">Connecting to GitHub...</div></div>`;
+
+  try {
+    const resp = await invoke<DeviceCodeResponse>("start_login");
+
+    content.innerHTML = `
+      <div class="login-view">
+        <div class="login-title">Enter this code on GitHub</div>
+        <div class="login-code" id="device-code" title="Click to copy">${resp.user_code}</div>
+        <div id="copy-feedback" class="copy-feedback"></div>
+        <div class="login-desc">
+          Open <a id="verify-link" href="#" class="login-link">${resp.verification_uri}</a> and paste the code above.
+        </div>
+        <div class="login-status">Waiting for authorization...</div>
+      </div>
+    `;
+
+    document.getElementById("device-code")!.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(resp.user_code);
+      const feedback = document.getElementById("copy-feedback")!;
+      feedback.textContent = "Copied!";
+      setTimeout(() => { feedback.textContent = ""; }, 2000);
+    });
+
+    document.getElementById("verify-link")!.addEventListener("click", (e) => {
+      e.preventDefault();
+      openUrl(resp.verification_uri);
+    });
+
+    const interval = Math.max(resp.interval || 5, 8) * 1000;
+    let polling = false;
+    const poll = setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const done = await invoke<boolean>("poll_login", { deviceCode: resp.device_code });
+        if (done) {
+          clearInterval(poll);
+          await loadPrs();
+          return;
+        }
+      } catch (e) {
+        clearInterval(poll);
+        content.innerHTML = `
+          <div class="login-view">
+            <div class="login-desc">Authorization failed. Please try again.</div>
+            <button id="login-retry-btn" class="login-btn">Retry</button>
+          </div>
+        `;
+        document.getElementById("login-retry-btn")!.addEventListener("click", () => showLogin());
+      } finally {
+        polling = false;
+      }
+    }, interval);
+  } catch (e) {
+    content.innerHTML = `
+      <div class="login-view">
+        <div class="login-desc">Failed to start login. Please try again.</div>
+        <button id="login-retry-btn" class="login-btn">Retry</button>
+      </div>
+    `;
+    document.getElementById("login-retry-btn")!.addEventListener("click", () => showLogin());
+    console.error(e);
+  }
+}
+
 async function loadPrs() {
   const content = document.getElementById("content")!;
+  const signoutBtn = document.getElementById("signout-btn")!;
 
   try {
     const result = await invoke<FetchResult>("fetch_prs");
+    signoutBtn.style.display = "";
     currentAttentionUrls = result.attention_urls;
     content.innerHTML = renderContent(result);
 
@@ -191,17 +287,31 @@ async function loadPrs() {
         }
       });
     });
-  } catch (e) {
-    content.innerHTML = `<div class="empty">Failed to load PRs</div>`;
-    console.error(e);
+  } catch (e: any) {
+    if (typeof e === "string" && e.includes("not_authenticated")) {
+      showLogin();
+    } else {
+      content.innerHTML = `<div class="empty">Failed to load PRs</div>`;
+      console.error(e);
+    }
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  loadPrs();
+window.addEventListener("DOMContentLoaded", async () => {
+  const isAuthed = await invoke<boolean>("check_auth");
+  if (isAuthed) {
+    loadPrs();
+  } else {
+    showLogin();
+  }
 
   listen("prs-updated", () => {
     loadPrs();
+  });
+
+  document.getElementById("signout-btn")?.addEventListener("click", async () => {
+    await invoke("logout");
+    showLogin();
   });
 
   document.getElementById("quit-btn")?.addEventListener("click", async () => {

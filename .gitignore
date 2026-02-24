@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 
 .env
+
+# Rust build output
+target/
+src-tauri/target/
