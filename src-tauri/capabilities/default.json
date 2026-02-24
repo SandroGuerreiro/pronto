@@ -7,6 +7,7 @@
     "core:default",
     "opener:default",
     "positioner:default",
-    "notification:default"
+    "notification:default",
+    "process:default"
   ]
 }

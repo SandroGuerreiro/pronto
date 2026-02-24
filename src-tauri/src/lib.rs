@@ -54,7 +54,11 @@ fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchRes
         .show();
 }
 
-fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult, notify: bool) -> github::FetchResult {
+fn process_result(
+    app: &tauri::AppHandle,
+    mut result: github::FetchResult,
+    notify: bool,
+) -> github::FetchResult {
     if let Some(state) = app.try_state::<AppState>() {
         {
             let mut seen = state.seen_prs.lock().unwrap();
@@ -119,12 +123,16 @@ async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String>
 
 #[tauri::command]
 fn dismiss_pr(app: tauri::AppHandle, url: String) {
-    let Some(state) = app.try_state::<AppState>() else { return };
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
 
     let (fingerprint, result_clone) = {
         let cache = state.cached_prs.lock().unwrap();
         let Some(result) = cache.as_ref() else { return };
-        let Some(pr) = result.open.iter().find(|p| p.url == url) else { return };
+        let Some(pr) = result.open.iter().find(|p| p.url == url) else {
+            return;
+        };
         (tray::attention_fingerprint(pr), result.clone())
     };
 
@@ -138,7 +146,7 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
 
 async fn poll_prs(app: tauri::AppHandle) {
     loop {
-        tokio::time::sleep(Duration::from_secs(300)).await;
+        tokio::time::sleep(Duration::from_secs(60)).await;
 
         let token = match get_token() {
             Ok(t) => t,
@@ -162,6 +170,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(AppState::default())
@@ -196,19 +205,20 @@ pub fn run() {
 
             let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyP);
             let handle = app.handle().clone();
-            app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
-                let h = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let token = match get_token() {
-                        Ok(t) => t,
-                        Err(_) => return,
-                    };
-                    if let Ok(result) = github::fetch_prs(&token).await {
-                        process_result(&h, result, true);
-                        let _ = h.emit("prs-updated", ());
-                    }
-                });
-            })?;
+            app.global_shortcut()
+                .on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                    let h = handle.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let token = match get_token() {
+                            Ok(t) => t,
+                            Err(_) => return,
+                        };
+                        if let Ok(result) = github::fetch_prs(&token).await {
+                            process_result(&h, result, true);
+                            let _ = h.emit("prs-updated", ());
+                        }
+                    });
+                })?;
 
             Ok(())
         })

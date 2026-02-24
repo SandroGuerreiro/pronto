@@ -417,7 +417,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("quit-btn")?.addEventListener("click", async () => {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    getCurrentWindow().hide();
+    const { exit } = await import("@tauri-apps/plugin-process");
+    await exit(0);
   });
 });
