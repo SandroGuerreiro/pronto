@@ -112,7 +112,7 @@ function getReviewStatus(pr: PullRequest): {
 
   switch (pr.reviewDecision) {
     case "APPROVED":
-      return { reviewText, statusText: null, statusClass: "approved" };
+      return { reviewText, statusText: "approved", statusClass: "approved" };
     case "CHANGES_REQUESTED":
       return { reviewText, statusText: "changes requested", statusClass: "changes-requested" };
     case "REVIEW_REQUIRED":
@@ -142,10 +142,11 @@ function renderPrCard(pr: PullRequest): string {
         <div class="pr-title">${pr.title}</div>
         <div class="pr-meta">
           <span class="pr-repo">${pr.repository.name}</span>
-          <span>·</span>
+          <span class="meta-sep">·</span>
           <span class="pr-reviews">${reviewText}</span>
-          <span>·</span>
-          <span class="pr-comments">🗨 ${pr.comments.totalCount + pr.reviewThreads.nodes.filter(t => !t.isResolved).length}</span>
+          <span class="meta-sep">·</span>
+          <span class="pr-comments"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${pr.comments.totalCount + pr.reviewThreads.nodes.filter(t => !t.isResolved).length}</span>
+          <span class="meta-sep">·</span>
           <span class="pr-resolved">▣ ${pr.reviewThreads.nodes.filter(t => t.isResolved).length}</span>
         </div>
         <div class="pr-status-line">${statusParts.join('<span class="status-sep"> · </span>')}</div>

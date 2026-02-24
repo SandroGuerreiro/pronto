@@ -138,7 +138,7 @@ body {
   gap: 6px;
   margin-top: 2px;
   font-size: 11px;
-  color: #71717a;
+  color: #a1a1aa;
 }
 
 .pr-repo {
@@ -153,23 +153,37 @@ body {
 
 .pr-comments {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.comment-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .pr-resolved {
   flex-shrink: 0;
+  color: #a1a1aa;
+}
+
+.meta-sep {
   color: #71717a;
+  margin: 0 -2px;
 }
 
 .pr-status-line {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 6px;
   font-size: 11px;
   margin-top: 2px;
 }
 
 .status-sep {
   color: #71717a;
+  margin: 0 -2px;
 }
 
 .pr-status-line .approved {
