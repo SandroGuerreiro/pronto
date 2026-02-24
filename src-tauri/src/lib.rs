@@ -54,7 +54,7 @@ fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchRes
         .show();
 }
 
-fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> github::FetchResult {
+fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult, notify: bool) -> github::FetchResult {
     if let Some(state) = app.try_state::<AppState>() {
         {
             let mut seen = state.seen_prs.lock().unwrap();
@@ -68,7 +68,9 @@ fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> gi
         }
 
         tray::update_tray_icon(app, !result.attention_urls.is_empty());
-        send_attention_notification(app, &result);
+        if notify {
+            send_attention_notification(app, &result);
+        }
 
         let mut cache = state.cached_prs.lock().unwrap();
         *cache = Some(result.clone());
@@ -106,7 +108,7 @@ async fn logout() -> Result<(), String> {
 async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
     let token = get_token()?;
     let result = github::fetch_prs(&token).await.map_err(|e| e.to_string())?;
-    Ok(process_result(&app, result))
+    Ok(process_result(&app, result, false))
 }
 
 #[tauri::command]
@@ -139,7 +141,7 @@ async fn poll_prs(app: tauri::AppHandle) {
 
         match github::fetch_prs(&token).await {
             Ok(result) => {
-                process_result(&app, result);
+                process_result(&app, result, true);
                 let _ = app.emit("prs-updated", ());
             }
             Err(e) => {
@@ -195,7 +197,7 @@ pub fn run() {
                         Err(_) => return,
                     };
                     if let Ok(result) = github::fetch_prs(&token).await {
-                        process_result(&h, result);
+                        process_result(&h, result, true);
                         let _ = h.emit("prs-updated", ());
                     }
                 });

@@ -273,6 +273,7 @@ async function loadPrs() {
     currentAttentionUrls = result.attention_urls;
     content.innerHTML = renderContent(result);
 
+    const readyToHover = Date.now();
     content.querySelectorAll(".pr-card").forEach((card) => {
       card.addEventListener("click", () => {
         const url = card.getAttribute("data-url");
@@ -280,6 +281,7 @@ async function loadPrs() {
       });
 
       card.addEventListener("mouseenter", () => {
+        if (Date.now() - readyToHover < 500) return;
         if (card.classList.contains("attention")) {
           card.classList.remove("attention");
           const url = card.getAttribute("data-url");
