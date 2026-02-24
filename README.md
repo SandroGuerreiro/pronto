@@ -30,13 +30,18 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 ```bash
 brew tap SandroGuerreiro/tap
 brew install --cask pronto
+xattr -cr /Applications/Pronto.app
 ```
 
 ### DMG
 
-Download the latest `.dmg` from [GitHub Releases](https://github.com/SandroGuerreiro/pronto/releases), open it, and drag `pronto.app` to your Applications folder.
+Download the latest `.dmg` from [GitHub Releases](https://github.com/SandroGuerreiro/pronto/releases), open it, and drag `Pronto.app` to your Applications folder.
 
-> **Note:** The app is not code-signed. On first launch, macOS will block it. Right-click the app and select **Open**, then click **Open** in the dialog to allow it.
+> **Note:** The app is not code-signed. macOS may show "Pronto is damaged and can't be opened." To fix this, run:
+>
+> ```bash
+> xattr -cr /Applications/Pronto.app
+> ```
 
 ## Authentication
 

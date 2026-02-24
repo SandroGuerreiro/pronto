@@ -13,6 +13,7 @@ use tauri_plugin_notification::NotificationExt;
 pub struct AppState {
     pub cached_prs: Mutex<Option<github::FetchResult>>,
     pub seen_prs: Mutex<HashMap<String, String>>,
+    pub cached_token: Mutex<Option<String>>,
 }
 
 impl Default for AppState {
@@ -20,12 +21,26 @@ impl Default for AppState {
         Self {
             cached_prs: Mutex::new(None),
             seen_prs: Mutex::new(HashMap::new()),
+            cached_token: Mutex::new(None),
         }
     }
 }
 
-fn get_token() -> Result<String, String> {
-    auth::load_token().ok_or_else(|| "not_authenticated".to_string())
+fn get_token(state: &AppState) -> Result<String, String> {
+    let cache = state.cached_token.lock().unwrap();
+    if let Some(ref token) = *cache {
+        return Ok(token.clone());
+    }
+    drop(cache);
+
+    match auth::load_token() {
+        Some(token) => {
+            let mut cache = state.cached_token.lock().unwrap();
+            *cache = Some(token.clone());
+            Ok(token)
+        }
+        None => Err("not_authenticated".to_string()),
+    }
 }
 
 fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchResult) {
@@ -93,10 +108,13 @@ async fn start_login() -> Result<auth::DeviceCodeResponse, String> {
 }
 
 #[tauri::command]
-async fn poll_login(device_code: String) -> Result<bool, String> {
+async fn poll_login(app: tauri::AppHandle, device_code: String) -> Result<bool, String> {
     match auth::poll_for_token(&device_code).await? {
         Some(token) => {
             auth::save_token(&token)?;
+            let state = app.state::<AppState>();
+            let mut cache = state.cached_token.lock().unwrap();
+            *cache = Some(token);
             Ok(true)
         }
         None => Ok(false),
@@ -104,19 +122,28 @@ async fn poll_login(device_code: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-async fn login_with_pat(token: String) -> Result<(), String> {
+async fn login_with_pat(app: tauri::AppHandle, token: String) -> Result<(), String> {
     auth::validate_token(&token).await?;
-    auth::save_token(&token)
+    auth::save_token(&token)?;
+    let state = app.state::<AppState>();
+    let mut cache = state.cached_token.lock().unwrap();
+    *cache = Some(token);
+    Ok(())
 }
 
 #[tauri::command]
-async fn logout() -> Result<(), String> {
-    auth::delete_token()
+async fn logout(app: tauri::AppHandle) -> Result<(), String> {
+    auth::delete_token()?;
+    let state = app.state::<AppState>();
+    let mut cache = state.cached_token.lock().unwrap();
+    *cache = None;
+    Ok(())
 }
 
 #[tauri::command]
 async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
-    let token = get_token()?;
+    let state = app.state::<AppState>();
+    let token = get_token(&state)?;
     let result = github::fetch_prs(&token).await.map_err(|e| e.to_string())?;
     Ok(process_result(&app, result, false))
 }
@@ -148,7 +175,10 @@ async fn poll_prs(app: tauri::AppHandle) {
     loop {
         tokio::time::sleep(Duration::from_secs(60)).await;
 
-        let token = match get_token() {
+        let Some(state) = app.try_state::<AppState>() else {
+            continue;
+        };
+        let token = match get_token(&state) {
             Ok(t) => t,
             Err(_) => continue,
         };
@@ -209,7 +239,10 @@ pub fn run() {
                 .on_shortcut(shortcut, move |_app, _shortcut, _event| {
                     let h = handle.clone();
                     tauri::async_runtime::spawn(async move {
-                        let token = match get_token() {
+                        let Some(state) = h.try_state::<AppState>() else {
+                            return;
+                        };
+                        let token = match get_token(&state) {
                             Ok(t) => t,
                             Err(_) => return,
                         };
