@@ -28,3 +28,6 @@ dist-ssr
 # Rust build output
 target/
 src-tauri/target/
+
+# Build artifacts
+*.dmg
