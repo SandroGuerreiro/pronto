@@ -58,7 +58,7 @@ fn process_result(app: &tauri::AppHandle, mut result: github::FetchResult) -> gi
             result.attention_urls = tray::attention_urls(&result, &seen);
 
             for pr in &result.open {
-                if !result.attention_urls.contains(&pr.url) && !seen.contains_key(&pr.url) {
+                if !seen.contains_key(&pr.url) {
                     seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
                 }
             }

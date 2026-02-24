@@ -34,6 +34,14 @@ interface CommitConnection {
   nodes: CommitNode[];
 }
 
+interface ReviewThread {
+  isResolved: boolean;
+}
+
+interface ReviewThreads {
+  nodes: ReviewThread[];
+}
+
 interface PullRequest {
   title: string;
   url: string;
@@ -44,6 +52,7 @@ interface PullRequest {
   reviewDecision: string | null;
   reviews: Reviews;
   comments: Comments;
+  reviewThreads: ReviewThreads;
   commits: CommitConnection;
 }
 
@@ -128,7 +137,8 @@ function renderPrCard(pr: PullRequest): string {
           <span>·</span>
           <span class="pr-reviews">${reviewText}</span>
           <span>·</span>
-          <span class="pr-comments">🗨 ${pr.comments.totalCount}</span>
+          <span class="pr-comments">🗨 ${pr.comments.totalCount + pr.reviewThreads.nodes.filter(t => !t.isResolved).length}</span>
+          <span class="pr-resolved">▣ ${pr.reviewThreads.nodes.filter(t => t.isResolved).length}</span>
         </div>
         <div class="pr-status-line">${statusParts.join('<span class="status-sep"> · </span>')}</div>
       </div>

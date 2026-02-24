@@ -36,6 +36,8 @@ pub struct PullRequest {
     pub review_decision: Option<String>,
     pub reviews: Reviews,
     pub comments: Comments,
+    #[serde(rename = "reviewThreads")]
+    pub review_threads: ReviewThreads,
     pub commits: CommitConnection,
 }
 
@@ -59,6 +61,17 @@ pub struct Reviews {
 pub struct Comments {
     #[serde(rename = "totalCount")]
     pub total_count: i32,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReviewThreads {
+    pub nodes: Vec<ReviewThread>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReviewThread {
+    #[serde(rename = "isResolved")]
+    pub is_resolved: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -157,6 +170,7 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments {{ totalCount }}
+        reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
       }}
     }}
@@ -173,6 +187,7 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments {{ totalCount }}
+        reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
       }}
     }}

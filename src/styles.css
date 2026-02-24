@@ -153,6 +153,11 @@ body {
   flex-shrink: 0;
 }
 
+.pr-resolved {
+  flex-shrink: 0;
+  color: #71717a;
+}
+
 .pr-status-line {
   display: flex;
   align-items: center;

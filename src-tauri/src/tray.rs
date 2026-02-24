@@ -7,23 +7,7 @@ use crate::github::{FetchResult, PullRequest};
 
 const TRAY_ID: &str = "main-tray";
 
-fn pr_needs_attention(pr: &PullRequest) -> bool {
-    match pr.review_decision.as_deref() {
-        Some("REVIEW_REQUIRED") | Some("CHANGES_REQUESTED") | Some("APPROVED") => return true,
-        _ => {}
-    }
-
-    let checks_state = pr
-        .commits
-        .nodes
-        .first()
-        .and_then(|n| n.commit.status_check_rollup.as_ref())
-        .map(|r| r.state.as_str());
-
-    matches!(checks_state, Some("FAILURE") | Some("ERROR"))
-}
-
-/// Captures the PR state that causes attention so we can detect actual changes.
+/// Captures the full PR state so we can detect actual changes between polls.
 pub fn attention_fingerprint(pr: &PullRequest) -> String {
     let review = pr.review_decision.as_deref().unwrap_or("");
     let checks = pr
@@ -33,15 +17,21 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         .and_then(|n| n.commit.status_check_rollup.as_ref())
         .map(|r| r.state.as_str())
         .unwrap_or("");
+    let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+    let resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
     format!(
-        "{}|{}|{}|{}",
-        review, checks, pr.comments.total_count, pr.reviews.total_count
+        "{}|{}|{}|{}|{}|{}",
+        review,
+        checks,
+        pr.comments.total_count,
+        pr.reviews.total_count,
+        unresolved,
+        resolved
     )
 }
 
-/// Returns URLs of open PRs that need attention.
-/// - PR seen before: attention if fingerprint changed (any state change).
-/// - PR never seen: attention only if in a "bad" state (review needed, checks failed).
+/// Returns URLs of open PRs whose state changed since last seen.
+/// PRs not yet in `seen` are treated as new baselines -- no attention on first encounter.
 pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> Vec<String> {
     result
         .open
@@ -50,7 +40,7 @@ pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> V
             let fp = attention_fingerprint(pr);
             match seen.get(&pr.url) {
                 Some(last_fp) => last_fp != &fp,
-                None => pr_needs_attention(pr),
+                None => false,
             }
         })
         .map(|pr| pr.url.clone())
