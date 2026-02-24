@@ -100,6 +100,12 @@ async fn poll_login(device_code: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+async fn login_with_pat(token: String) -> Result<(), String> {
+    auth::validate_token(&token).await?;
+    auth::save_token(&token)
+}
+
+#[tauri::command]
 async fn logout() -> Result<(), String> {
     auth::delete_token()
 }
@@ -165,6 +171,7 @@ pub fn run() {
             check_auth,
             start_login,
             poll_login,
+            login_with_pat,
             logout,
         ])
         .setup(|app| {

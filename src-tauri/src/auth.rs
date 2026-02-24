@@ -82,6 +82,23 @@ pub async fn poll_for_token(device_code: &str) -> Result<Option<String>, String>
     }
 }
 
+pub async fn validate_token(token: &str) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://api.github.com/user")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", token))
+        .header(USER_AGENT, "pronto")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        Err("Invalid token".to_string())
+    }
+}
+
 pub fn save_token(token: &str) -> Result<(), String> {
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER)
         .map_err(|e| e.to_string())?;

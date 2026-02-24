@@ -185,13 +185,113 @@ function showLogin() {
   content.innerHTML = `
     <div class="login-view">
       <div class="login-icon">🔑</div>
-      <div class="login-title">Sign in with GitHub</div>
-      <div class="login-desc">Connect your GitHub account to see your PRs.</div>
-      <button id="login-btn" class="login-btn">Sign in</button>
+      <div class="login-title">Connect to GitHub</div>
+      <div class="login-desc">Sign in to see your PRs.</div>
+      <button id="login-btn" class="login-btn">Sign in with GitHub</button>
+      <button id="pat-btn" class="login-btn login-btn-secondary">Use Personal Access Token</button>
     </div>
   `;
 
   document.getElementById("login-btn")!.addEventListener("click", startLogin);
+  document.getElementById("pat-btn")!.addEventListener("click", showPatInput);
+}
+
+function showPermissionsInfo() {
+  const content = document.getElementById("content")!;
+
+  content.innerHTML = `
+    <div class="login-view permissions-view">
+      <div class="login-title">Required Permissions</div>
+
+      <div class="perm-section">
+        <div class="perm-section-title">Classic Token</div>
+        <div class="perm-section-desc">Create at <a id="perm-classic-link" href="#" class="login-link">github.com/settings/tokens</a></div>
+        <div class="perm-list">
+          <div class="perm-item"><span class="perm-scope">repo</span> Full control of private repositories</div>
+        </div>
+      </div>
+
+      <div class="perm-divider"></div>
+
+      <div class="perm-section">
+        <div class="perm-section-title">Fine-grained Token</div>
+        <div class="perm-section-desc">Create at <a id="perm-fine-link" href="#" class="login-link">github.com/settings/tokens?type=beta</a></div>
+        <div class="perm-list">
+          <div class="perm-item"><span class="perm-scope">Pull requests</span> Read-only</div>
+          <div class="perm-item"><span class="perm-scope">Checks</span> Read-only</div>
+          <div class="perm-item"><span class="perm-scope">Metadata</span> Read-only</div>
+        </div>
+        <div class="perm-note">Select the repositories you want to monitor.</div>
+      </div>
+
+      <button id="perm-back-btn" class="login-btn login-btn-secondary">Back</button>
+    </div>
+  `;
+
+  document.getElementById("perm-classic-link")!.addEventListener("click", (e) => {
+    e.preventDefault();
+    openUrl("https://github.com/settings/tokens");
+  });
+
+  document.getElementById("perm-fine-link")!.addEventListener("click", (e) => {
+    e.preventDefault();
+    openUrl("https://github.com/settings/tokens?type=beta");
+  });
+
+  document.getElementById("perm-back-btn")!.addEventListener("click", () => showPatInput());
+}
+
+function showPatInput() {
+  const content = document.getElementById("content")!;
+
+  content.innerHTML = `
+    <div class="login-view">
+      <div class="login-title">Personal Access Token</div>
+      <div class="login-desc">Paste a token with the right permissions. <a id="perm-info-link" href="#" class="login-link">What permissions do I need?</a></div>
+      <input id="pat-input" type="password" class="pat-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+      <div id="pat-error" class="pat-error"></div>
+      <button id="pat-connect-btn" class="login-btn">Connect</button>
+      <button id="pat-back-btn" class="login-btn login-btn-secondary">Back</button>
+    </div>
+  `;
+
+  document.getElementById("perm-info-link")!.addEventListener("click", (e) => {
+    e.preventDefault();
+    showPermissionsInfo();
+  });
+
+  document.getElementById("pat-back-btn")!.addEventListener("click", () => showLogin());
+
+  document.getElementById("pat-connect-btn")!.addEventListener("click", async () => {
+    const input = document.getElementById("pat-input") as HTMLInputElement;
+    const error = document.getElementById("pat-error")!;
+    const btn = document.getElementById("pat-connect-btn") as HTMLButtonElement;
+    const token = input.value.trim();
+
+    if (!token) {
+      error.textContent = "Please enter a token.";
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Validating...";
+    error.textContent = "";
+
+    try {
+      await invoke("login_with_pat", { token });
+      await loadPrs();
+    } catch (e) {
+      error.textContent = "Invalid token. Please check and try again.";
+      btn.disabled = false;
+      btn.textContent = "Connect";
+    }
+  });
+
+  document.getElementById("pat-input")!.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      document.getElementById("pat-connect-btn")!.click();
+    }
+  });
 }
 
 async function startLogin() {

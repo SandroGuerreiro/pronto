@@ -326,8 +326,107 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
+  width: 100%;
 }
 
 .login-btn:hover {
   opacity: 0.9;
+}
+
+.login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.login-btn-secondary {
+  background-color: transparent;
+  color: #71717a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.login-btn-secondary:hover {
+  color: #e4e4e7;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.pat-input {
+  width: 100%;
+  padding: 10px 14px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #e4e4e7;
+  font-size: 13px;
+  font-family: "SF Mono", "Menlo", monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.pat-input::placeholder {
+  color: #52525b;
+}
+
+.pat-input:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.pat-error {
+  font-size: 12px;
+  color: #ef4444;
+  min-height: 18px;
+}
+
+.permissions-view {
+  align-items: stretch;
+  text-align: left;
+  gap: 16px;
+}
+
+.perm-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.perm-section-desc {
+  font-size: 11px;
+  color: #71717a;
+  margin-bottom: 8px;
+}
+
+.perm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.perm-item {
+  font-size: 12px;
+  color: #a1a1aa;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.perm-scope {
+  font-size: 11px;
+  font-family: "SF Mono", "Menlo", monospace;
+  background-color: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #e4e4e7;
+  flex-shrink: 0;
+}
+
+.perm-divider {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.perm-note {
+  font-size: 11px;
+  color: #52525b;
+  margin-top: 6px;
+  font-style: italic;
 }
