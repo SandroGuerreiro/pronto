@@ -13,10 +13,15 @@
       <header class="panel-header">
         <img src="/logo.png" alt="pronto" class="panel-logo" />
         <span class="panel-subtitle">PR status</span>
+        <button id="settings-btn" class="header-settings-btn" style="display: none;" title="Settings">⚙</button>
       </header>
 
-      <div id="content">
-        <div class="loading">Loading...</div>
+      <div class="panel-body">
+        <div id="content">
+          <div class="loading">Loading...</div>
+        </div>
+
+        <div id="settings-panel" class="settings-overlay" style="display: none;"></div>
       </div>
 
       <footer class="panel-footer">

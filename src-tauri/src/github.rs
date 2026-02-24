@@ -148,10 +148,14 @@ pub struct FetchResult {
     pub attention_urls: Vec<String>,
 }
 
-pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::Error>> {
+pub async fn fetch_prs(
+    token: &str,
+    merged_window_hours: u64,
+    show_recently_merged: bool,
+) -> Result<FetchResult, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
-    let cutoff = (chrono::Utc::now() - chrono::Duration::hours(24))
+    let cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
         .format("%Y-%m-%d")
         .to_string();
 
@@ -208,7 +212,11 @@ pub async fn fetch_prs(token: &str) -> Result<FetchResult, Box<dyn std::error::E
 
     Ok(FetchResult {
         open: response.data.open.nodes,
-        recently_merged: response.data.recently_merged.nodes,
+        recently_merged: if show_recently_merged {
+            response.data.recently_merged.nodes
+        } else {
+            vec![]
+        },
         attention_urls: vec![],
     })
 }

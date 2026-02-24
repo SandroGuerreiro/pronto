@@ -70,6 +70,13 @@ interface DeviceCodeResponse {
   interval: number;
 }
 
+interface Settings {
+  poll_interval_secs: number;
+  notifications_enabled: boolean;
+  show_recently_merged: boolean;
+  merged_window_hours: number;
+}
+
 function getStatus(pr: PullRequest): { label: string; class: string } {
   if (pr.mergeQueueEntry) {
     return { label: "◎", class: "in-queue" };
@@ -181,7 +188,9 @@ function renderContent(result: FetchResult): string {
 function showLogin() {
   const content = document.getElementById("content")!;
   const signoutBtn = document.getElementById("signout-btn")!;
+  const settingsBtn = document.getElementById("settings-btn")!;
   signoutBtn.style.display = "none";
+  settingsBtn.style.display = "none";
 
   content.innerHTML = `
     <div class="login-view">
@@ -364,32 +373,113 @@ async function startLogin() {
   }
 }
 
-async function loadPrs() {
+function hideSettings() {
+  document.getElementById("settings-panel")!.style.display = "none";
+}
+
+async function showSettings() {
+  const panel = document.getElementById("settings-panel")!;
+  const settings = await invoke<Settings>("get_settings");
+
+  panel.innerHTML = `
+    <div class="settings-view">
+      <div class="settings-title">Settings</div>
+
+      <div class="settings-group">
+        <label class="settings-label">Polling interval</label>
+        <select id="setting-poll" class="settings-select">
+          <option value="60"${settings.poll_interval_secs === 60 ? " selected" : ""}>1 minute</option>
+          <option value="120"${settings.poll_interval_secs === 120 ? " selected" : ""}>2 minutes</option>
+          <option value="300"${settings.poll_interval_secs === 300 ? " selected" : ""}>5 minutes</option>
+          <option value="600"${settings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
+        </select>
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">
+          <span>Notifications</span>
+          <input type="checkbox" id="setting-notifications" class="settings-toggle"${settings.notifications_enabled ? " checked" : ""} />
+        </label>
+      </div>
+
+      <div class="settings-group">
+        <label class="settings-label">
+          <span>Show recently merged</span>
+          <input type="checkbox" id="setting-merged" class="settings-toggle"${settings.show_recently_merged ? " checked" : ""} />
+        </label>
+      </div>
+
+      <div class="settings-group" id="merged-window-group"${settings.show_recently_merged ? "" : ' style="display:none"'}>
+        <label class="settings-label">Merged time window</label>
+        <select id="setting-merged-hours" class="settings-select">
+          <option value="12"${settings.merged_window_hours === 12 ? " selected" : ""}>12 hours</option>
+          <option value="24"${settings.merged_window_hours === 24 ? " selected" : ""}>24 hours</option>
+          <option value="48"${settings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
+        </select>
+      </div>
+
+      <div class="settings-actions">
+        <button id="settings-save-btn" class="login-btn">Save</button>
+        <button id="settings-back-btn" class="login-btn login-btn-secondary">Back</button>
+      </div>
+    </div>
+  `;
+
+  panel.style.display = "";
+
+  document.getElementById("setting-merged")!.addEventListener("change", (e) => {
+    const checked = (e.target as HTMLInputElement).checked;
+    document.getElementById("merged-window-group")!.style.display = checked ? "" : "none";
+  });
+
+  document.getElementById("settings-save-btn")!.addEventListener("click", async () => {
+    const updated: Settings = {
+      poll_interval_secs: parseInt((document.getElementById("setting-poll") as HTMLSelectElement).value),
+      notifications_enabled: (document.getElementById("setting-notifications") as HTMLInputElement).checked,
+      show_recently_merged: (document.getElementById("setting-merged") as HTMLInputElement).checked,
+      merged_window_hours: parseInt((document.getElementById("setting-merged-hours") as HTMLSelectElement).value),
+    };
+    await invoke("update_settings", { settings: updated });
+    hideSettings();
+  });
+
+  document.getElementById("settings-back-btn")!.addEventListener("click", hideSettings);
+}
+
+function renderPrView(result: FetchResult) {
   const content = document.getElementById("content")!;
   const signoutBtn = document.getElementById("signout-btn")!;
+  const settingsBtn = document.getElementById("settings-btn")!;
+
+  signoutBtn.style.display = "";
+  settingsBtn.style.display = "";
+  currentAttentionUrls = result.attention_urls;
+  content.innerHTML = renderContent(result);
+
+  const readyToHover = Date.now();
+  content.querySelectorAll(".pr-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const url = card.getAttribute("data-url");
+      if (url) openUrl(url);
+    });
+
+    card.addEventListener("mouseenter", () => {
+      if (Date.now() - readyToHover < 500) return;
+      if (card.classList.contains("attention")) {
+        card.classList.remove("attention");
+        const url = card.getAttribute("data-url");
+        if (url) invoke("dismiss_pr", { url });
+      }
+    });
+  });
+}
+
+async function loadPrs() {
+  const content = document.getElementById("content")!;
 
   try {
     const result = await invoke<FetchResult>("fetch_prs");
-    signoutBtn.style.display = "";
-    currentAttentionUrls = result.attention_urls;
-    content.innerHTML = renderContent(result);
-
-    const readyToHover = Date.now();
-    content.querySelectorAll(".pr-card").forEach((card) => {
-      card.addEventListener("click", () => {
-        const url = card.getAttribute("data-url");
-        if (url) openUrl(url);
-      });
-
-      card.addEventListener("mouseenter", () => {
-        if (Date.now() - readyToHover < 500) return;
-        if (card.classList.contains("attention")) {
-          card.classList.remove("attention");
-          const url = card.getAttribute("data-url");
-          if (url) invoke("dismiss_pr", { url });
-        }
-      });
-    });
+    renderPrView(result);
   } catch (e: any) {
     if (typeof e === "string" && e.includes("not_authenticated")) {
       showLogin();
@@ -408,9 +498,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     showLogin();
   }
 
-  listen("prs-updated", () => {
-    loadPrs();
-  });
+  listen("prs-updated", () => loadPrs());
+
+  document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
 
   document.getElementById("signout-btn")?.addEventListener("click", async () => {
     await invoke("logout");

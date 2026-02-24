@@ -3,27 +3,58 @@ pub mod github;
 pub mod tray;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 use tauri_plugin_notification::NotificationExt;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
+    pub poll_interval_secs: u64,
+    pub notifications_enabled: bool,
+    pub show_recently_merged: bool,
+    pub merged_window_hours: u64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            poll_interval_secs: 60,
+            notifications_enabled: true,
+            show_recently_merged: true,
+            merged_window_hours: 24,
+        }
+    }
+}
+
+fn load_settings(path: &PathBuf) -> Settings {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_settings(path: &PathBuf, settings: &Settings) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
+}
+
+fn settings_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path().app_data_dir().expect("no app data dir").join("settings.json")
+}
 
 pub struct AppState {
     pub cached_prs: Mutex<Option<github::FetchResult>>,
     pub seen_prs: Mutex<HashMap<String, String>>,
     pub cached_token: Mutex<Option<String>>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            cached_prs: Mutex::new(None),
-            seen_prs: Mutex::new(HashMap::new()),
-            cached_token: Mutex::new(None),
-        }
-    }
+    pub settings: Mutex<Settings>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -142,10 +173,31 @@ async fn logout(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_settings(app: tauri::AppHandle) -> Settings {
+    let state = app.state::<AppState>();
+    let s = state.settings.lock().unwrap().clone();
+    s
+}
+
+#[tauri::command]
+fn update_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    save_settings(&settings_path(&app), &settings)?;
+    *state.settings.lock().unwrap() = settings;
+    Ok(())
+}
+
+#[tauri::command]
 async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
     let state = app.state::<AppState>();
     let token = get_token(&state)?;
-    let result = github::fetch_prs(&token).await.map_err(|e| e.to_string())?;
+    let (merged_hours, show_merged) = {
+        let s = state.settings.lock().unwrap();
+        (s.merged_window_hours, s.show_recently_merged)
+    };
+    let result = github::fetch_prs(&token, merged_hours, show_merged)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(process_result(&app, result, false))
 }
 
@@ -174,19 +226,27 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
 
 async fn poll_prs(app: tauri::AppHandle) {
     loop {
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        let interval = app
+            .try_state::<AppState>()
+            .map(|s| s.settings.lock().unwrap().poll_interval_secs)
+            .unwrap_or(60);
+        tokio::time::sleep(Duration::from_secs(interval)).await;
 
         let Some(state) = app.try_state::<AppState>() else {
             continue;
+        };
+        let (notify, merged_hours, show_merged) = {
+            let s = state.settings.lock().unwrap();
+            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged)
         };
         let token = match get_token(&state) {
             Ok(t) => t,
             Err(_) => continue,
         };
 
-        match github::fetch_prs(&token).await {
+        match github::fetch_prs(&token, merged_hours, show_merged).await {
             Ok(result) => {
-                process_result(&app, result, true);
+                process_result(&app, result, notify);
                 let _ = app.emit("prs-updated", ());
             }
             Err(e) => {
@@ -204,7 +264,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             fetch_prs,
             dismiss_pr,
@@ -213,8 +272,17 @@ pub fn run() {
             poll_login,
             login_with_pat,
             logout,
+            get_settings,
+            update_settings,
         ])
         .setup(|app| {
+            let settings = load_settings(&settings_path(app.handle()));
+            app.manage(AppState {
+                cached_prs: Mutex::new(None),
+                seen_prs: Mutex::new(HashMap::new()),
+                cached_token: Mutex::new(None),
+                settings: Mutex::new(settings),
+            });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -243,12 +311,16 @@ pub fn run() {
                         let Some(state) = h.try_state::<AppState>() else {
                             return;
                         };
+                        let (notify, merged_hours, show_merged) = {
+                            let s = state.settings.lock().unwrap();
+                            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged)
+                        };
                         let token = match get_token(&state) {
                             Ok(t) => t,
                             Err(_) => return,
                         };
-                        if let Ok(result) = github::fetch_prs(&token).await {
-                            process_result(&h, result, true);
+                        if let Ok(result) = github::fetch_prs(&token, merged_hours, show_merged).await {
+                            process_result(&h, result, notify);
                             let _ = h.emit("prs-updated", ());
                         }
                     });
