@@ -6,6 +6,29 @@ use tauri_plugin_positioner::{Position, WindowExt};
 use crate::github::{FetchResult, PullRequest};
 
 const TRAY_ID: &str = "main-tray";
+const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+
+fn load_tray_icon() -> Image<'static> {
+    let img = image::load_from_memory(TRAY_ICON).expect("failed to decode tray icon");
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    Image::new_owned(rgba.into_raw(), w, h)
+}
+
+/// Inverts black content to white for use as a non-template icon in dark mode.
+fn load_tray_icon_white() -> Image<'static> {
+    let img = image::load_from_memory(TRAY_ICON).expect("failed to decode tray icon");
+    let mut rgba = img.to_rgba8();
+    for pixel in rgba.pixels_mut() {
+        if pixel[3] > 0 {
+            pixel[0] = 255 - pixel[0];
+            pixel[1] = 255 - pixel[1];
+            pixel[2] = 255 - pixel[2];
+        }
+    }
+    let (w, h) = rgba.dimensions();
+    Image::new_owned(rgba.into_raw(), w, h)
+}
 
 /// Captures the full PR state so we can detect actual changes between polls.
 pub fn attention_fingerprint(pr: &PullRequest) -> String {
@@ -77,7 +100,8 @@ pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
 
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(load_tray_icon())
+        .icon_as_template(true)
         .on_tray_icon_event(|tray_handle, event| {
             tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
 
@@ -105,12 +129,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn update_tray_icon(app: &AppHandle, attention: bool) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let base = app.default_window_icon().unwrap().clone();
         if attention {
-            let badged = generate_badge_icon(&base);
+            let white = load_tray_icon_white();
+            let badged = generate_badge_icon(&white);
+            let _ = tray.set_icon_as_template(false);
             let _ = tray.set_icon(Some(badged));
         } else {
-            let _ = tray.set_icon(Some(base));
+            let _ = tray.set_icon(Some(load_tray_icon()));
+            let _ = tray.set_icon_as_template(true);
         }
     }
 }
