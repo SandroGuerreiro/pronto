@@ -200,14 +200,48 @@ details[open] > .accordion-header .accordion-chevron::before {
   margin-left: 8px;
 }
 
+.accordion-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .accordion-count {
-  margin-left: auto;
   font-size: 11px;
   font-weight: 400;
   color: #52525b;
   background-color: rgba(255, 255, 255, 0.06);
   padding: 1px 7px;
   border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.fav-btn {
+  background: none;
+  border: none;
+  color: #3f3f46;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+  opacity: 0;
+}
+
+.accordion-header:hover .fav-btn,
+.fav-btn.active {
+  opacity: 1;
+}
+
+.fav-btn:hover {
+  color: #eab308;
+}
+
+.fav-btn.active {
+  color: #eab308;
 }
 
 .pr-card {

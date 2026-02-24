@@ -81,6 +81,9 @@ interface Settings {
   notifications_enabled: boolean;
   show_recently_merged: boolean;
   merged_window_hours: number;
+  favorite_orgs: string[];
+  favorite_repos: string[];
+  collapsed_accordions: string[];
 }
 
 function getStatus(pr: PullRequest): { label: string; class: string } {
@@ -138,6 +141,30 @@ function getReviewStatus(pr: PullRequest): {
 let currentAttentionUrls: string[] = [];
 let currentResult: FetchResult | null = null;
 let activeTab: "open" | "merged" = "open";
+let favoriteOrgs = new Set<string>();
+let favoriteRepos = new Set<string>();
+let collapsedAccordions = new Set<string>();
+let savePending = false;
+
+async function loadUserPrefs() {
+  const s = await invoke<Settings>("get_settings");
+  favoriteOrgs = new Set(s.favorite_orgs);
+  favoriteRepos = new Set(s.favorite_repos);
+  collapsedAccordions = new Set(s.collapsed_accordions);
+}
+
+async function persistPrefs() {
+  if (savePending) return;
+  savePending = true;
+  queueMicrotask(async () => {
+    savePending = false;
+    const current = await invoke<Settings>("get_settings");
+    current.favorite_orgs = [...favoriteOrgs];
+    current.favorite_repos = [...favoriteRepos];
+    current.collapsed_accordions = [...collapsedAccordions];
+    await invoke("update_settings", { settings: current });
+  });
+}
 
 function renderPrCard(pr: PullRequest): string {
   const status = getStatus(pr);
@@ -168,8 +195,10 @@ function renderPrCard(pr: PullRequest): string {
   `;
 }
 
-function groupPrs(prs: PullRequest[]): Map<string, Map<string, PullRequest[]>> {
-  const orgs = new Map<string, Map<string, PullRequest[]>>();
+type GroupedPrs = [string, [string, PullRequest[]][]][];
+
+function groupPrs(prs: PullRequest[]): GroupedPrs {
+  const orgMap = new Map<string, Map<string, PullRequest[]>>();
 
   const sorted = [...prs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -179,26 +208,42 @@ function groupPrs(prs: PullRequest[]): Map<string, Map<string, PullRequest[]>> {
     const org = pr.repository.owner.login;
     const repo = pr.repository.name;
 
-    if (!orgs.has(org)) orgs.set(org, new Map());
-    const repos = orgs.get(org)!;
+    if (!orgMap.has(org)) orgMap.set(org, new Map());
+    const repos = orgMap.get(org)!;
     if (!repos.has(repo)) repos.set(repo, []);
     repos.get(repo)!.push(pr);
   }
 
-  return orgs;
-}
-
-function getAccordionStates(container: HTMLElement): Set<string> {
-  const closed = new Set<string>();
-  container.querySelectorAll("details[data-accordion-id]").forEach((el) => {
-    if (!(el as HTMLDetailsElement).open) {
-      closed.add(el.getAttribute("data-accordion-id")!);
-    }
+  const sortedOrgs = [...orgMap.entries()].sort((a, b) => {
+    const aFav = favoriteOrgs.has(a[0]) ? 0 : 1;
+    const bFav = favoriteOrgs.has(b[0]) ? 0 : 1;
+    if (aFav !== bFav) return aFav - bFav;
+    return a[0].localeCompare(b[0]);
   });
-  return closed;
+
+  return sortedOrgs.map(([org, repoMap]) => {
+    const sortedRepos = [...repoMap.entries()].sort((a, b) => {
+      const aFav = favoriteRepos.has(`${org}/${a[0]}`) ? 0 : 1;
+      const bFav = favoriteRepos.has(`${org}/${b[0]}`) ? 0 : 1;
+      if (aFav !== bFav) return aFav - bFav;
+      return a[0].localeCompare(b[0]);
+    });
+    return [org, sortedRepos];
+  });
 }
 
-function renderAccordionContent(prs: PullRequest[], closedIds: Set<string>): string {
+function toggleFavorite(type: "org" | "repo", key: string) {
+  const set = type === "org" ? favoriteOrgs : favoriteRepos;
+  if (set.has(key)) {
+    set.delete(key);
+  } else {
+    set.add(key);
+  }
+  persistPrefs();
+  renderActiveTab();
+}
+
+function renderAccordionContent(prs: PullRequest[]): string {
   if (prs.length === 0) {
     return '<div class="empty">No PRs</div>';
   }
@@ -208,15 +253,18 @@ function renderAccordionContent(prs: PullRequest[], closedIds: Set<string>): str
 
   for (const [org, repos] of grouped) {
     const orgId = `org:${org}`;
-    const orgOpen = closedIds.has(orgId) ? "" : " open";
+    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
+    const orgFav = favoriteOrgs.has(org);
     html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
-    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span>${org}</summary>`;
+    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span><button class="fav-btn${orgFav ? " active" : ""}" data-fav-type="org" data-fav-key="${org}">${orgFav ? "★" : "☆"}</button></summary>`;
 
     for (const [repo, repoPrs] of repos) {
-      const repoId = `repo:${org}/${repo}`;
-      const repoOpen = closedIds.has(repoId) ? "" : " open";
+      const repoKey = `${org}/${repo}`;
+      const repoId = `repo:${repoKey}`;
+      const repoOpen = collapsedAccordions.has(repoId) ? "" : " open";
+      const repoFav = favoriteRepos.has(repoKey);
       html += `<details class="accordion repo-accordion" data-accordion-id="${repoId}"${repoOpen}>`;
-      html += `<summary class="accordion-header repo-header"><span class="accordion-chevron"></span>${repo}<span class="accordion-count">${repoPrs.length}</span></summary>`;
+      html += `<summary class="accordion-header repo-header"><span class="accordion-chevron"></span><span class="accordion-label">${repo}</span><span class="accordion-count">${repoPrs.length}</span><button class="fav-btn${repoFav ? " active" : ""}" data-fav-type="repo" data-fav-key="${repoKey}">${repoFav ? "★" : "☆"}</button></summary>`;
       html += repoPrs.map(renderPrCard).join("");
       html += `</details>`;
     }
@@ -230,10 +278,9 @@ function renderAccordionContent(prs: PullRequest[], closedIds: Set<string>): str
 function renderActiveTab() {
   if (!currentResult) return;
   const content = document.getElementById("content")!;
-  const closedIds = getAccordionStates(content);
   const prs = activeTab === "open" ? currentResult.open : currentResult.recently_merged;
-  content.innerHTML = renderAccordionContent(prs, closedIds);
-  bindPrCardEvents(content);
+  content.innerHTML = renderAccordionContent(prs);
+  bindContentEvents(content);
 }
 
 function setActiveTab(tab: "open" | "merged") {
@@ -244,7 +291,7 @@ function setActiveTab(tab: "open" | "merged") {
   renderActiveTab();
 }
 
-function bindPrCardEvents(container: HTMLElement) {
+function bindContentEvents(container: HTMLElement) {
   const readyToHover = Date.now();
   container.querySelectorAll(".pr-card").forEach((card) => {
     card.addEventListener("click", () => {
@@ -259,6 +306,28 @@ function bindPrCardEvents(container: HTMLElement) {
         const url = card.getAttribute("data-url");
         if (url) invoke("dismiss_pr", { url });
       }
+    });
+  });
+
+  container.querySelectorAll("details[data-accordion-id]").forEach((el) => {
+    el.addEventListener("toggle", () => {
+      const id = el.getAttribute("data-accordion-id")!;
+      if ((el as HTMLDetailsElement).open) {
+        collapsedAccordions.delete(id);
+      } else {
+        collapsedAccordions.add(id);
+      }
+      persistPrefs();
+    });
+  });
+
+  container.querySelectorAll(".fav-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const type = btn.getAttribute("data-fav-type") as "org" | "repo";
+      const key = btn.getAttribute("data-fav-key")!;
+      toggleFavorite(type, key);
     });
   });
 }
@@ -518,6 +587,9 @@ async function showSettings() {
       notifications_enabled: (document.getElementById("setting-notifications") as HTMLInputElement).checked,
       show_recently_merged: (document.getElementById("setting-merged") as HTMLInputElement).checked,
       merged_window_hours: parseInt((document.getElementById("setting-merged-hours") as HTMLSelectElement).value),
+      favorite_orgs: [...favoriteOrgs],
+      favorite_repos: [...favoriteRepos],
+      collapsed_accordions: [...collapsedAccordions],
     };
     await invoke("update_settings", { settings: updated });
     hideSettings();
@@ -556,6 +628,8 @@ async function loadPrs() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  await loadUserPrefs();
+
   const isAuthed = await invoke<boolean>("check_auth");
   if (isAuthed) {
     loadPrs();

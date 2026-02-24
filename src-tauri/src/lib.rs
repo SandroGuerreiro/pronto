@@ -18,6 +18,12 @@ pub struct Settings {
     pub notifications_enabled: bool,
     pub show_recently_merged: bool,
     pub merged_window_hours: u64,
+    #[serde(default)]
+    pub favorite_orgs: Vec<String>,
+    #[serde(default)]
+    pub favorite_repos: Vec<String>,
+    #[serde(default)]
+    pub collapsed_accordions: Vec<String>,
 }
 
 impl Default for Settings {
@@ -27,6 +33,9 @@ impl Default for Settings {
             notifications_enabled: true,
             show_recently_merged: true,
             merged_window_hours: 24,
+            favorite_orgs: vec![],
+            favorite_repos: vec![],
+            collapsed_accordions: vec![],
         }
     }
 }
