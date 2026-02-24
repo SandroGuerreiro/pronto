@@ -91,13 +91,123 @@ body {
   z-index: 10;
 }
 
-.section-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+/* Tab bar */
+
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tab {
+  flex: 1;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
   color: #71717a;
-  padding: 8px 8px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #a1a1aa;
+}
+
+.tab.active {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #e4e4e7;
+  font-weight: 600;
+}
+
+/* Accordions */
+
+.accordion {
+  border: none;
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.15s;
+  border-radius: 6px;
+}
+
+.accordion-header::-webkit-details-marker {
+  display: none;
+}
+
+.accordion-header:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.accordion-chevron {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  background: none;
+  position: relative;
+}
+
+.accordion-chevron::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid #71717a;
+  border-bottom: 1.5px solid #71717a;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+details[open] > .accordion-header .accordion-chevron::before {
+  transform: rotate(45deg);
+  top: 1px;
+}
+
+.org-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.repo-header {
+  font-size: 12px;
+  font-weight: 500;
+  color: #e4e4e7;
+  padding-left: 16px;
+}
+
+.repo-accordion {
+  margin-left: 8px;
+}
+
+.repo-accordion .pr-card {
+  margin-left: 8px;
+}
+
+.accordion-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: #52525b;
+  background-color: rgba(255, 255, 255, 0.06);
+  padding: 1px 7px;
+  border-radius: 10px;
 }
 
 .pr-card {
@@ -174,12 +284,6 @@ body {
   color: #a1a1aa;
 }
 
-.pr-repo {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .pr-reviews {
   flex-shrink: 0;
 }
@@ -247,11 +351,6 @@ body {
   color: #71717a;
 }
 
-.divider {
-  height: 1px;
-  background-color: rgba(255, 255, 255, 0.06);
-  margin: 4px 8px;
-}
 
 .panel-footer {
   padding: 8px;

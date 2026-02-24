@@ -10,8 +10,13 @@ interface MergeQueueEntry {
   position: number;
 }
 
+interface Owner {
+  login: string;
+}
+
 interface Repository {
   name: string;
+  owner: Owner;
 }
 
 interface Comments {
@@ -47,6 +52,7 @@ interface PullRequest {
   url: string;
   state: string;
   merged: boolean;
+  createdAt: string;
   repository: Repository;
   mergeQueueEntry: MergeQueueEntry | null;
   reviewDecision: string | null;
@@ -130,6 +136,8 @@ function getReviewStatus(pr: PullRequest): {
 }
 
 let currentAttentionUrls: string[] = [];
+let currentResult: FetchResult | null = null;
+let activeTab: "open" | "merged" = "open";
 
 function renderPrCard(pr: PullRequest): string {
   const status = getStatus(pr);
@@ -148,8 +156,6 @@ function renderPrCard(pr: PullRequest): string {
       <div class="pr-info">
         <div class="pr-title">${pr.title}</div>
         <div class="pr-meta">
-          <span class="pr-repo">${pr.repository.name}</span>
-          <span class="meta-sep">·</span>
           <span class="pr-reviews">${reviewText}</span>
           <span class="meta-sep">·</span>
           <span class="pr-comments"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${pr.comments.totalCount + pr.reviewThreads.nodes.filter(t => !t.isResolved).length}</span>
@@ -162,35 +168,109 @@ function renderPrCard(pr: PullRequest): string {
   `;
 }
 
-function renderContent(result: FetchResult): string {
-  if (result.open.length === 0 && result.recently_merged.length === 0) {
-    return '<div class="empty">No open PRs</div>';
+function groupPrs(prs: PullRequest[]): Map<string, Map<string, PullRequest[]>> {
+  const orgs = new Map<string, Map<string, PullRequest[]>>();
+
+  const sorted = [...prs].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  for (const pr of sorted) {
+    const org = pr.repository.owner.login;
+    const repo = pr.repository.name;
+
+    if (!orgs.has(org)) orgs.set(org, new Map());
+    const repos = orgs.get(org)!;
+    if (!repos.has(repo)) repos.set(repo, []);
+    repos.get(repo)!.push(pr);
   }
 
+  return orgs;
+}
+
+function getAccordionStates(container: HTMLElement): Set<string> {
+  const closed = new Set<string>();
+  container.querySelectorAll("details[data-accordion-id]").forEach((el) => {
+    if (!(el as HTMLDetailsElement).open) {
+      closed.add(el.getAttribute("data-accordion-id")!);
+    }
+  });
+  return closed;
+}
+
+function renderAccordionContent(prs: PullRequest[], closedIds: Set<string>): string {
+  if (prs.length === 0) {
+    return '<div class="empty">No PRs</div>';
+  }
+
+  const grouped = groupPrs(prs);
   let html = "";
 
-  if (result.open.length > 0) {
-    html += '<div class="section-label">Open</div>';
-    html += result.open.map(renderPrCard).join("");
-  }
+  for (const [org, repos] of grouped) {
+    const orgId = `org:${org}`;
+    const orgOpen = closedIds.has(orgId) ? "" : " open";
+    html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
+    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span>${org}</summary>`;
 
-  if (result.recently_merged.length > 0) {
-    if (result.open.length > 0) {
-      html += '<div class="divider"></div>';
+    for (const [repo, repoPrs] of repos) {
+      const repoId = `repo:${org}/${repo}`;
+      const repoOpen = closedIds.has(repoId) ? "" : " open";
+      html += `<details class="accordion repo-accordion" data-accordion-id="${repoId}"${repoOpen}>`;
+      html += `<summary class="accordion-header repo-header"><span class="accordion-chevron"></span>${repo}<span class="accordion-count">${repoPrs.length}</span></summary>`;
+      html += repoPrs.map(renderPrCard).join("");
+      html += `</details>`;
     }
-    html += '<div class="section-label">Recently Merged</div>';
-    html += result.recently_merged.map(renderPrCard).join("");
+
+    html += `</details>`;
   }
 
   return html;
+}
+
+function renderActiveTab() {
+  if (!currentResult) return;
+  const content = document.getElementById("content")!;
+  const closedIds = getAccordionStates(content);
+  const prs = activeTab === "open" ? currentResult.open : currentResult.recently_merged;
+  content.innerHTML = renderAccordionContent(prs, closedIds);
+  bindPrCardEvents(content);
+}
+
+function setActiveTab(tab: "open" | "merged") {
+  activeTab = tab;
+  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
+  });
+  renderActiveTab();
+}
+
+function bindPrCardEvents(container: HTMLElement) {
+  const readyToHover = Date.now();
+  container.querySelectorAll(".pr-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const url = card.getAttribute("data-url");
+      if (url) openUrl(url);
+    });
+
+    card.addEventListener("mouseenter", () => {
+      if (Date.now() - readyToHover < 500) return;
+      if (card.classList.contains("attention")) {
+        card.classList.remove("attention");
+        const url = card.getAttribute("data-url");
+        if (url) invoke("dismiss_pr", { url });
+      }
+    });
+  });
 }
 
 function showLogin() {
   const content = document.getElementById("content")!;
   const signoutBtn = document.getElementById("signout-btn")!;
   const settingsBtn = document.getElementById("settings-btn")!;
+  const tabBar = document.getElementById("tab-bar")!;
   signoutBtn.style.display = "none";
   settingsBtn.style.display = "none";
+  tabBar.style.display = "none";
 
   content.innerHTML = `
     <div class="login-view">
@@ -447,31 +527,16 @@ async function showSettings() {
 }
 
 function renderPrView(result: FetchResult) {
-  const content = document.getElementById("content")!;
   const signoutBtn = document.getElementById("signout-btn")!;
   const settingsBtn = document.getElementById("settings-btn")!;
+  const tabBar = document.getElementById("tab-bar")!;
 
   signoutBtn.style.display = "";
   settingsBtn.style.display = "";
+  tabBar.style.display = "";
   currentAttentionUrls = result.attention_urls;
-  content.innerHTML = renderContent(result);
-
-  const readyToHover = Date.now();
-  content.querySelectorAll(".pr-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      const url = card.getAttribute("data-url");
-      if (url) openUrl(url);
-    });
-
-    card.addEventListener("mouseenter", () => {
-      if (Date.now() - readyToHover < 500) return;
-      if (card.classList.contains("attention")) {
-        card.classList.remove("attention");
-        const url = card.getAttribute("data-url");
-        if (url) invoke("dismiss_pr", { url });
-      }
-    });
-  });
+  currentResult = result;
+  renderActiveTab();
 }
 
 async function loadPrs() {
@@ -499,6 +564,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   listen("prs-updated", () => loadPrs());
+
+  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.getAttribute("data-tab") as "open" | "merged";
+      setActiveTab(tab);
+    });
+  });
 
   document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
 

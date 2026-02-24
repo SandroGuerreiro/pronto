@@ -34,6 +34,8 @@ pub struct PullRequest {
     pub merge_queue_entry: Option<MergeQueueEntry>,
     #[serde(rename = "reviewDecision")]
     pub review_decision: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
     pub reviews: Reviews,
     pub comments: Comments,
     #[serde(rename = "reviewThreads")]
@@ -42,8 +44,14 @@ pub struct PullRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Owner {
+    pub login: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Repository {
     pub name: String,
+    pub owner: Owner,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -169,7 +177,8 @@ pub async fn fetch_prs(
         url
         state
         merged
-        repository {{ name }}
+        createdAt
+        repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
@@ -186,7 +195,8 @@ pub async fn fetch_prs(
         url
         state
         merged
-        repository {{ name }}
+        createdAt
+        repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
