@@ -84,6 +84,8 @@ interface Settings {
   favorite_orgs: string[];
   favorite_repos: string[];
   collapsed_accordions: string[];
+  hidden_orgs: string[];
+  hidden_repos: string[];
 }
 
 function getStatus(pr: PullRequest): { label: string; class: string } {
@@ -144,6 +146,10 @@ let activeTab: "open" | "merged" = "open";
 let favoriteOrgs = new Set<string>();
 let favoriteRepos = new Set<string>();
 let collapsedAccordions = new Set<string>();
+let hiddenOrgs = new Set<string>();
+let hiddenRepos = new Set<string>();
+let pendingUnhideOrgs = new Set<string>();
+let pendingUnhideRepos = new Set<string>();
 let savePending = false;
 
 async function loadUserPrefs() {
@@ -151,6 +157,8 @@ async function loadUserPrefs() {
   favoriteOrgs = new Set(s.favorite_orgs);
   favoriteRepos = new Set(s.favorite_repos);
   collapsedAccordions = new Set(s.collapsed_accordions);
+  hiddenOrgs = new Set(s.hidden_orgs);
+  hiddenRepos = new Set(s.hidden_repos);
 }
 
 async function persistPrefs() {
@@ -162,6 +170,8 @@ async function persistPrefs() {
     current.favorite_orgs = [...favoriteOrgs];
     current.favorite_repos = [...favoriteRepos];
     current.collapsed_accordions = [...collapsedAccordions];
+    current.hidden_orgs = [...hiddenOrgs];
+    current.hidden_repos = [...hiddenRepos];
     await invoke("update_settings", { settings: current });
   });
 }
@@ -215,17 +225,19 @@ function groupPrs(prs: PullRequest[]): GroupedPrs {
   }
 
   const sortedOrgs = [...orgMap.entries()].sort((a, b) => {
-    const aFav = favoriteOrgs.has(a[0]) ? 0 : 1;
-    const bFav = favoriteOrgs.has(b[0]) ? 0 : 1;
-    if (aFav !== bFav) return aFav - bFav;
+    const aRank = hiddenOrgs.has(a[0]) ? 2 : favoriteOrgs.has(a[0]) ? 0 : 1;
+    const bRank = hiddenOrgs.has(b[0]) ? 2 : favoriteOrgs.has(b[0]) ? 0 : 1;
+    if (aRank !== bRank) return aRank - bRank;
     return a[0].localeCompare(b[0]);
   });
 
   return sortedOrgs.map(([org, repoMap]) => {
     const sortedRepos = [...repoMap.entries()].sort((a, b) => {
-      const aFav = favoriteRepos.has(`${org}/${a[0]}`) ? 0 : 1;
-      const bFav = favoriteRepos.has(`${org}/${b[0]}`) ? 0 : 1;
-      if (aFav !== bFav) return aFav - bFav;
+      const aKey = `${org}/${a[0]}`;
+      const bKey = `${org}/${b[0]}`;
+      const aRank = hiddenRepos.has(aKey) ? 2 : favoriteRepos.has(aKey) ? 0 : 1;
+      const bRank = hiddenRepos.has(bKey) ? 2 : favoriteRepos.has(bKey) ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
       return a[0].localeCompare(b[0]);
     });
     return [org, sortedRepos];
@@ -243,33 +255,139 @@ function toggleFavorite(type: "org" | "repo", key: string) {
   renderActiveTab();
 }
 
+async function toggleHidden(type: "org" | "repo", key: string) {
+  const set = type === "org" ? hiddenOrgs : hiddenRepos;
+  const pendingSet = type === "org" ? pendingUnhideOrgs : pendingUnhideRepos;
+  if (set.has(key)) {
+    set.delete(key);
+    pendingSet.add(key);
+  } else {
+    set.add(key);
+    pendingSet.delete(key);
+  }
+  renderActiveTab();
+  const current = await invoke<Settings>("get_settings");
+  current.favorite_orgs = [...favoriteOrgs];
+  current.favorite_repos = [...favoriteRepos];
+  current.collapsed_accordions = [...collapsedAccordions];
+  current.hidden_orgs = [...hiddenOrgs];
+  current.hidden_repos = [...hiddenRepos];
+  await invoke("update_settings", { settings: current });
+  loadPrs();
+}
+
+function renderActionButtons(type: "org" | "repo", key: string): string {
+  const favSet = type === "org" ? favoriteOrgs : favoriteRepos;
+  const hideSet = type === "org" ? hiddenOrgs : hiddenRepos;
+  const isFav = favSet.has(key);
+  const isHidden = hideSet.has(key);
+  return `<button class="hide-btn${isHidden ? " active" : ""}" data-hide-type="${type}" data-hide-key="${key}">${isHidden ? "◌" : "◉"}</button><button class="fav-btn${isFav ? " active" : ""}" data-fav-type="${type}" data-fav-key="${key}">${isFav ? "★" : "☆"}</button>`;
+}
+
+function renderRepoAccordion(org: string, repo: string, prs: PullRequest[], isHidden: boolean): string {
+  const repoKey = `${org}/${repo}`;
+  const repoId = `repo:${repoKey}`;
+  const repoOpen = collapsedAccordions.has(repoId) ? "" : " open";
+  const cls = isHidden ? " hidden-accordion" : "";
+  let html = `<details class="accordion repo-accordion${cls}" data-accordion-id="${repoId}"${repoOpen}>`;
+  html += `<summary class="accordion-header repo-header"><span class="accordion-chevron"></span><span class="accordion-label">${repo}</span><span class="accordion-count">${prs.length}</span>${renderActionButtons("repo", repoKey)}</summary>`;
+  if (!isHidden) {
+    html += prs.map(renderPrCard).join("");
+  }
+  html += `</details>`;
+  return html;
+}
+
 function renderAccordionContent(prs: PullRequest[]): string {
-  if (prs.length === 0) {
+  const grouped = groupPrs(prs);
+  const renderedOrgs = new Set<string>();
+  let html = "";
+
+  if (prs.length === 0 && hiddenOrgs.size === 0 && hiddenRepos.size === 0 && pendingUnhideOrgs.size === 0 && pendingUnhideRepos.size === 0) {
     return '<div class="empty">No PRs</div>';
   }
 
-  const grouped = groupPrs(prs);
-  let html = "";
-
   for (const [org, repos] of grouped) {
+    renderedOrgs.add(org);
     const orgId = `org:${org}`;
     const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
-    const orgFav = favoriteOrgs.has(org);
-    html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
-    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span><button class="fav-btn${orgFav ? " active" : ""}" data-fav-type="org" data-fav-key="${org}">${orgFav ? "★" : "☆"}</button></summary>`;
+    const orgIsHidden = hiddenOrgs.has(org);
+    const cls = orgIsHidden ? " hidden-accordion" : "";
+    html += `<details class="accordion org-accordion${cls}" data-accordion-id="${orgId}"${orgOpen}>`;
+    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
 
-    for (const [repo, repoPrs] of repos) {
-      const repoKey = `${org}/${repo}`;
-      const repoId = `repo:${repoKey}`;
-      const repoOpen = collapsedAccordions.has(repoId) ? "" : " open";
-      const repoFav = favoriteRepos.has(repoKey);
-      html += `<details class="accordion repo-accordion" data-accordion-id="${repoId}"${repoOpen}>`;
-      html += `<summary class="accordion-header repo-header"><span class="accordion-chevron"></span><span class="accordion-label">${repo}</span><span class="accordion-count">${repoPrs.length}</span><button class="fav-btn${repoFav ? " active" : ""}" data-fav-type="repo" data-fav-key="${repoKey}">${repoFav ? "★" : "☆"}</button></summary>`;
-      html += repoPrs.map(renderPrCard).join("");
-      html += `</details>`;
+    if (!orgIsHidden) {
+      const renderedRepos = new Set<string>();
+      for (const [repo, repoPrs] of repos) {
+        renderedRepos.add(`${org}/${repo}`);
+        html += renderRepoAccordion(org, repo, repoPrs, hiddenRepos.has(`${org}/${repo}`));
+      }
+
+      for (const repoKey of hiddenRepos) {
+        if (renderedRepos.has(repoKey)) continue;
+        const [rOrg, rRepo] = repoKey.split("/");
+        if (rOrg !== org) continue;
+        html += renderRepoAccordion(org, rRepo, [], true);
+      }
+
+      for (const repoKey of pendingUnhideRepos) {
+        if (renderedRepos.has(repoKey)) continue;
+        const [rOrg, rRepo] = repoKey.split("/");
+        if (rOrg !== org) continue;
+        html += renderRepoAccordion(org, rRepo, [], false);
+      }
     }
 
     html += `</details>`;
+  }
+
+  for (const org of hiddenOrgs) {
+    if (renderedOrgs.has(org)) continue;
+    renderedOrgs.add(org);
+    const orgId = `org:${org}`;
+    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
+    html += `<details class="accordion org-accordion hidden-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
+    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
+    html += `</details>`;
+  }
+
+  for (const org of pendingUnhideOrgs) {
+    if (renderedOrgs.has(org)) continue;
+    renderedOrgs.add(org);
+    const orgId = `org:${org}`;
+    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
+    html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
+    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
+    html += `</details>`;
+  }
+
+  const extraReposByOrg = new Map<string, { repo: string; hidden: boolean }[]>();
+  for (const repoKey of hiddenRepos) {
+    const [org, repo] = repoKey.split("/");
+    if (renderedOrgs.has(org)) continue;
+    if (!extraReposByOrg.has(org)) extraReposByOrg.set(org, []);
+    extraReposByOrg.get(org)!.push({ repo, hidden: true });
+  }
+  for (const repoKey of pendingUnhideRepos) {
+    const [org, repo] = repoKey.split("/");
+    if (renderedOrgs.has(org)) continue;
+    if (!extraReposByOrg.has(org)) extraReposByOrg.set(org, []);
+    extraReposByOrg.get(org)!.push({ repo, hidden: false });
+  }
+  for (const [org, repos] of extraReposByOrg) {
+    renderedOrgs.add(org);
+    const orgId = `org:${org}`;
+    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
+    html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
+    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
+    for (const { repo, hidden } of repos) {
+      html += renderRepoAccordion(org, repo, [], hidden);
+    }
+    html += `</details>`;
+  }
+
+  if (html === "") {
+    return '<div class="empty">No PRs</div>';
   }
 
   return html;
@@ -328,6 +446,16 @@ function bindContentEvents(container: HTMLElement) {
       const type = btn.getAttribute("data-fav-type") as "org" | "repo";
       const key = btn.getAttribute("data-fav-key")!;
       toggleFavorite(type, key);
+    });
+  });
+
+  container.querySelectorAll(".hide-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const type = btn.getAttribute("data-hide-type") as "org" | "repo";
+      const key = btn.getAttribute("data-hide-key")!;
+      toggleHidden(type, key);
     });
   });
 }
@@ -590,6 +718,8 @@ async function showSettings() {
       favorite_orgs: [...favoriteOrgs],
       favorite_repos: [...favoriteRepos],
       collapsed_accordions: [...collapsedAccordions],
+      hidden_orgs: [...hiddenOrgs],
+      hidden_repos: [...hiddenRepos],
     };
     await invoke("update_settings", { settings: updated });
     hideSettings();
@@ -608,6 +738,8 @@ function renderPrView(result: FetchResult) {
   tabBar.style.display = "";
   currentAttentionUrls = result.attention_urls;
   currentResult = result;
+  pendingUnhideOrgs.clear();
+  pendingUnhideRepos.clear();
   renderActiveTab();
 }
 

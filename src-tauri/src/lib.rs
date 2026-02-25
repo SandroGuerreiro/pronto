@@ -24,6 +24,10 @@ pub struct Settings {
     pub favorite_repos: Vec<String>,
     #[serde(default)]
     pub collapsed_accordions: Vec<String>,
+    #[serde(default)]
+    pub hidden_orgs: Vec<String>,
+    #[serde(default)]
+    pub hidden_repos: Vec<String>,
 }
 
 impl Default for Settings {
@@ -36,6 +40,8 @@ impl Default for Settings {
             favorite_orgs: vec![],
             favorite_repos: vec![],
             collapsed_accordions: vec![],
+            hidden_orgs: vec![],
+            hidden_repos: vec![],
         }
     }
 }
@@ -200,11 +206,11 @@ fn update_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), Stri
 async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
     let state = app.state::<AppState>();
     let token = get_token(&state)?;
-    let (merged_hours, show_merged) = {
+    let (merged_hours, show_merged, hidden_orgs, hidden_repos) = {
         let s = state.settings.lock().unwrap();
-        (s.merged_window_hours, s.show_recently_merged)
+        (s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone())
     };
-    let result = github::fetch_prs(&token, merged_hours, show_merged)
+    let result = github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos)
         .await
         .map_err(|e| e.to_string())?;
     Ok(process_result(&app, result, false))
@@ -244,16 +250,16 @@ async fn poll_prs(app: tauri::AppHandle) {
         let Some(state) = app.try_state::<AppState>() else {
             continue;
         };
-        let (notify, merged_hours, show_merged) = {
+        let (notify, merged_hours, show_merged, hidden_orgs, hidden_repos) = {
             let s = state.settings.lock().unwrap();
-            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged)
+            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone())
         };
         let token = match get_token(&state) {
             Ok(t) => t,
             Err(_) => continue,
         };
 
-        match github::fetch_prs(&token, merged_hours, show_merged).await {
+        match github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos).await {
             Ok(result) => {
                 process_result(&app, result, notify);
                 let _ = app.emit("prs-updated", ());
@@ -320,15 +326,15 @@ pub fn run() {
                         let Some(state) = h.try_state::<AppState>() else {
                             return;
                         };
-                        let (notify, merged_hours, show_merged) = {
+                        let (notify, merged_hours, show_merged, hidden_orgs, hidden_repos) = {
                             let s = state.settings.lock().unwrap();
-                            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged)
+                            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone())
                         };
                         let token = match get_token(&state) {
                             Ok(t) => t,
                             Err(_) => return,
                         };
-                        if let Ok(result) = github::fetch_prs(&token, merged_hours, show_merged).await {
+                        if let Ok(result) = github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos).await {
                             process_result(&h, result, notify);
                             let _ = h.emit("prs-updated", ());
                         }

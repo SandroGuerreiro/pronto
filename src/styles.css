@@ -227,8 +227,25 @@ details[open] > .accordion-header .accordion-chevron::before {
   padding: 0 2px;
   line-height: 1;
   flex-shrink: 0;
-  transition: color 0.15s;
+  transition: color 0.15s, opacity 0.15s;
   opacity: 0;
+}
+
+.hide-btn {
+  background: none;
+  border: none;
+  color: #71717a;
+  font-size: 0;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.hide-btn::before {
+  font-size: 13px;
+  content: "◉";
 }
 
 .accordion-header:hover .fav-btn,
@@ -243,6 +260,41 @@ details[open] > .accordion-header .accordion-chevron::before {
 .fav-btn.active {
   color: #eab308;
 }
+
+.hide-btn:hover {
+  color: #a1a1aa;
+}
+
+.hide-btn.active {
+  color: #a1a1aa;
+}
+
+.hide-btn.active::before {
+  content: "◌";
+}
+
+.hide-btn.active:hover {
+  color: #e4e4e7;
+}
+
+.hide-btn.active:hover::before {
+  content: "◉";
+}
+
+.hidden-accordion > .accordion-header .accordion-chevron::before {
+  border-color: #3f3f46;
+}
+
+.hidden-accordion > .accordion-header .accordion-label {
+  color: #52525b;
+  text-decoration: line-through;
+  font-style: italic;
+}
+
+.hidden-accordion > .accordion-header .accordion-count {
+  opacity: 0.4;
+}
+
 
 .pr-card {
   display: flex;

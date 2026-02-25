@@ -160,6 +160,8 @@ pub async fn fetch_prs(
     token: &str,
     merged_window_hours: u64,
     show_recently_merged: bool,
+    hidden_orgs: &[String],
+    hidden_repos: &[String],
 ) -> Result<FetchResult, Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
 
@@ -167,10 +169,18 @@ pub async fn fetch_prs(
         .format("%Y-%m-%d")
         .to_string();
 
+    let mut exclusions = String::new();
+    for org in hidden_orgs {
+        exclusions.push_str(&format!(" -org:{}", org));
+    }
+    for repo in hidden_repos {
+        exclusions.push_str(&format!(" -repo:{}", repo));
+    }
+
     let query = GraphQLQuery {
         query: format!(
             r#"{{
-  open: search(query: "author:@me type:pr state:open", type: ISSUE, first: 20) {{
+  open: search(query: "author:@me type:pr state:open{exclusions}", type: ISSUE, first: 20) {{
     nodes {{
       ... on PullRequest {{
         title
@@ -188,7 +198,7 @@ pub async fn fetch_prs(
       }}
     }}
   }}
-  recentlyMerged: search(query: "author:@me type:pr is:merged merged:>{cutoff}", type: ISSUE, first: 10) {{
+  recentlyMerged: search(query: "author:@me type:pr is:merged merged:>{cutoff}{exclusions}", type: ISSUE, first: 10) {{
     nodes {{
       ... on PullRequest {{
         title
