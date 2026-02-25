@@ -42,14 +42,16 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         .unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
     let resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
+    let in_queue = pr.merge_queue_entry.is_some();
     format!(
-        "{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}",
         review,
         checks,
         pr.comments.total_count,
         pr.reviews.total_count,
         unresolved,
-        resolved
+        resolved,
+        in_queue
     )
 }
 
@@ -115,21 +117,26 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
-                let app = tray_handle.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.move_window(Position::TrayCenter);
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
+                toggle_window(tray_handle.app_handle());
             }
         })
         .build(app)?;
 
     Ok(())
+}
+
+pub fn toggle_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = window.move_window(Position::TrayCenter);
+            }));
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
 }
 
 pub fn update_tray_icon(app: &AppHandle, attention: bool) {

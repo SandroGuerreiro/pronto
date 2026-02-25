@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,10 +317,22 @@ pub fn run() {
                 poll_prs(handle).await;
             });
 
-            let shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyP);
+            let toggle_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyP);
             let handle = app.handle().clone();
             app.global_shortcut()
-                .on_shortcut(shortcut, move |_app, _shortcut, _event| {
+                .on_shortcut(toggle_shortcut, move |_app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        tray::toggle_window(&handle);
+                    }
+                })?;
+
+            let reload_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyR);
+            let handle = app.handle().clone();
+            app.global_shortcut()
+                .on_shortcut(reload_shortcut, move |_app, _shortcut, event| {
+                    if event.state != ShortcutState::Pressed {
+                        return;
+                    }
                     let h = handle.clone();
                     tauri::async_runtime::spawn(async move {
                         let Some(state) = h.try_state::<AppState>() else {

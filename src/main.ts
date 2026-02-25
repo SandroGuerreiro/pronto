@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface Reviews {
@@ -781,8 +782,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.getElementById("settings-panel")!.style.display !== "none") {
-      hideSettings();
+    if (e.key === "Escape") {
+      if (document.getElementById("settings-panel")!.style.display !== "none") {
+        hideSettings();
+      } else {
+        getCurrentWindow().hide();
+      }
     }
   });
 
