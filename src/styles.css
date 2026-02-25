@@ -124,6 +124,21 @@ body {
   font-weight: 600;
 }
 
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  background-color: #eab308;
+  border-radius: 8px;
+}
+
 /* Accordions */
 
 .accordion {

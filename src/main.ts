@@ -394,12 +394,36 @@ function renderAccordionContent(prs: PullRequest[]): string {
   return html;
 }
 
+function updateTabBadges() {
+  if (!currentResult) return;
+  const openCount = currentResult.open.filter(pr => currentAttentionUrls.includes(pr.url)).length;
+  const mergedCount = currentResult.recently_merged.filter(pr => currentAttentionUrls.includes(pr.url)).length;
+  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
+    const tab = btn.getAttribute("data-tab");
+    const badge = btn.querySelector(".tab-badge");
+    const count = tab === "open" ? openCount : mergedCount;
+    if (count > 0) {
+      if (badge) {
+        badge.textContent = String(count);
+      } else {
+        const span = document.createElement("span");
+        span.className = "tab-badge";
+        span.textContent = String(count);
+        btn.appendChild(span);
+      }
+    } else if (badge) {
+      badge.remove();
+    }
+  });
+}
+
 function renderActiveTab() {
   if (!currentResult) return;
   const content = document.getElementById("content")!;
   const prs = activeTab === "open" ? currentResult.open : currentResult.recently_merged;
   content.innerHTML = renderAccordionContent(prs);
   bindContentEvents(content);
+  updateTabBadges();
 }
 
 function setActiveTab(tab: "open" | "merged") {
@@ -418,12 +442,26 @@ function bindContentEvents(container: HTMLElement) {
       if (url) openUrl(url);
     });
 
+    let dismissTimer: ReturnType<typeof setTimeout> | null = null;
     card.addEventListener("mouseenter", () => {
       if (Date.now() - readyToHover < 500) return;
       if (card.classList.contains("attention")) {
-        card.classList.remove("attention");
-        const url = card.getAttribute("data-url");
-        if (url) invoke("dismiss_pr", { url });
+        dismissTimer = setTimeout(() => {
+
+          card.classList.remove("attention");
+          const url = card.getAttribute("data-url");
+          if (url) {
+            currentAttentionUrls = currentAttentionUrls.filter(u => u !== url);
+            invoke("dismiss_pr", { url });
+          }
+          updateTabBadges();
+        }, 800);
+      }
+    });
+    card.addEventListener("mouseleave", () => {
+      if (dismissTimer) {
+        clearTimeout(dismissTimer);
+        dismissTimer = null;
       }
     });
   });

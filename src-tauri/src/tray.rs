@@ -55,10 +55,11 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
     )
 }
 
-/// Returns URLs of open PRs whose state changed since last seen.
+/// Returns URLs of PRs whose state changed since last seen.
 /// PRs not yet in `seen` are treated as new baselines -- no attention on first encounter.
+/// Also flags recently merged PRs that were previously tracked (e.g. left the merge queue).
 pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> Vec<String> {
-    result
+    let mut urls: Vec<String> = result
         .open
         .iter()
         .filter(|pr| {
@@ -69,7 +70,15 @@ pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> V
             }
         })
         .map(|pr| pr.url.clone())
-        .collect()
+        .collect();
+
+    for pr in &result.recently_merged {
+        if seen.contains_key(&pr.url) {
+            urls.push(pr.url.clone());
+        }
+    }
+
+    urls
 }
 
 pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {

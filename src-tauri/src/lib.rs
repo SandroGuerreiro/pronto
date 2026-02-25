@@ -93,6 +93,7 @@ fn send_attention_notification(app: &tauri::AppHandle, result: &github::FetchRes
     let titles: Vec<&str> = result
         .open
         .iter()
+        .chain(result.recently_merged.iter())
         .filter(|pr| result.attention_urls.contains(&pr.url))
         .map(|pr| pr.title.as_str())
         .collect();
@@ -129,6 +130,10 @@ fn process_result(
                 if !seen.contains_key(&pr.url) {
                     seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
                 }
+            }
+
+            for pr in &result.recently_merged {
+                seen.remove(&pr.url);
             }
         }
 
