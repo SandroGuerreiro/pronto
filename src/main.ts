@@ -102,6 +102,7 @@ interface Settings {
   hidden_orgs: string[];
   hidden_repos: string[];
   hidden_prs: HiddenPr[];
+  group_by_repository: boolean;
   workflow_monitor_enabled: boolean;
   workflow_org: string;
   workflow_repo: string;
@@ -171,6 +172,7 @@ let hiddenRepos = new Set<string>();
 let hiddenPrs = new Map<string, string>();
 let pendingUnhideOrgs = new Set<string>();
 let pendingUnhideRepos = new Set<string>();
+let groupByRepository = true;
 let savePending = false;
 let focusIndex = -1;
 let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -224,6 +226,7 @@ async function loadUserPrefs() {
   hiddenOrgs = new Set(s.hidden_orgs);
   hiddenRepos = new Set(s.hidden_repos);
   hiddenPrs = new Map((s.hidden_prs || []).map(h => [h.url, h.title]));
+  groupByRepository = s.group_by_repository !== false;
 }
 
 async function persistPrefs() {
@@ -482,12 +485,22 @@ function updateTabBadges() {
   });
 }
 
+function renderFlatList(prs: PullRequest[]): string {
+  if (prs.length === 0) {
+    return '<div class="empty">No PRs</div>';
+  }
+  const sorted = [...prs].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  return sorted.map(renderPrCard).join("");
+}
+
 function renderActiveTab() {
   if (!currentResult) return;
   focusIndex = -1;
   const content = document.getElementById("content")!;
   const prs = activeTab === "open" ? currentResult.open : currentResult.recently_merged;
-  content.innerHTML = renderAccordionContent(prs);
+  content.innerHTML = groupByRepository ? renderAccordionContent(prs) : renderFlatList(prs);
   bindContentEvents(content);
   updateTabBadges();
 }
@@ -767,64 +780,77 @@ async function showSettings() {
   panel.innerHTML = `
     <div class="settings-view">
       <div class="settings-title">Settings</div>
+      <input type="text" id="settings-search" class="settings-search" placeholder="Search settings…" autocomplete="off" spellcheck="false" />
 
-      <div class="settings-group">
-        <label class="settings-label">Polling interval</label>
-        <select id="setting-poll" class="settings-select">
-          <option value="60"${settings.poll_interval_secs === 60 ? " selected" : ""}>1 minute</option>
-          <option value="120"${settings.poll_interval_secs === 120 ? " selected" : ""}>2 minutes</option>
-          <option value="300"${settings.poll_interval_secs === 300 ? " selected" : ""}>5 minutes</option>
-          <option value="600"${settings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
-        </select>
-      </div>
-
-      <div class="settings-group">
-        <label class="settings-label">
-          <span>Notifications</span>
-          <input type="checkbox" id="setting-notifications" class="settings-toggle"${settings.notifications_enabled ? " checked" : ""} />
-        </label>
-      </div>
-
-      <div class="settings-group">
-        <label class="settings-label">
-          <span>Show recently merged</span>
-          <input type="checkbox" id="setting-merged" class="settings-toggle"${settings.show_recently_merged ? " checked" : ""} />
-        </label>
-      </div>
-
-      <div class="settings-group" id="merged-window-group"${settings.show_recently_merged ? "" : ' style="display:none"'}>
-        <label class="settings-label">Merged time window</label>
-        <select id="setting-merged-hours" class="settings-select">
-          <option value="12"${settings.merged_window_hours === 12 ? " selected" : ""}>12 hours</option>
-          <option value="24"${settings.merged_window_hours === 24 ? " selected" : ""}>24 hours</option>
-          <option value="48"${settings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
-        </select>
-      </div>
-
-      <div class="settings-group workflow-section">
-        <label class="settings-label">
-          <span>Workflow monitor</span>
-          <input type="checkbox" id="setting-workflow-enabled" class="settings-toggle"${settings.workflow_monitor_enabled ? " checked" : ""} />
-        </label>
-      </div>
-
-      <div id="workflow-config-group"${settings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
+      <div class="settings-section">
+        <div class="settings-section-title">General</div>
         <div class="settings-group">
-          <label class="settings-label">Organization</label>
-          <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" />
+          <label class="settings-label">Polling interval</label>
+          <select id="setting-poll" class="settings-select">
+            <option value="60"${settings.poll_interval_secs === 60 ? " selected" : ""}>1 minute</option>
+            <option value="120"${settings.poll_interval_secs === 120 ? " selected" : ""}>2 minutes</option>
+            <option value="300"${settings.poll_interval_secs === 300 ? " selected" : ""}>5 minutes</option>
+            <option value="600"${settings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
+          </select>
         </div>
         <div class="settings-group">
-          <label class="settings-label">Repository</label>
-          <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" />
-        </div>
-        <div class="settings-group">
-          <label class="settings-label">Workflow file</label>
-          <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" />
+          <label class="settings-label">
+            <span>Notifications</span>
+            <input type="checkbox" id="setting-notifications" class="settings-toggle"${settings.notifications_enabled ? " checked" : ""} />
+          </label>
         </div>
       </div>
 
-      <div class="settings-group hidden-prs-section">
-        <label class="settings-label">Hidden PRs</label>
+      <div class="settings-section">
+        <div class="settings-section-title">Display</div>
+        <div class="settings-group">
+          <label class="settings-label">
+            <span>Group by repository</span>
+            <input type="checkbox" id="setting-group-repo" class="settings-toggle"${settings.group_by_repository !== false ? " checked" : ""} />
+          </label>
+        </div>
+        <div class="settings-group">
+          <label class="settings-label">
+            <span>Show recently merged</span>
+            <input type="checkbox" id="setting-merged" class="settings-toggle"${settings.show_recently_merged ? " checked" : ""} />
+          </label>
+        </div>
+        <div class="settings-group" id="merged-window-group"${settings.show_recently_merged ? "" : ' style="display:none"'}>
+          <label class="settings-label">Merged time window</label>
+          <select id="setting-merged-hours" class="settings-select">
+            <option value="12"${settings.merged_window_hours === 12 ? " selected" : ""}>12 hours</option>
+            <option value="24"${settings.merged_window_hours === 24 ? " selected" : ""}>24 hours</option>
+            <option value="48"${settings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Workflow</div>
+        <div class="settings-group">
+          <label class="settings-label">
+            <span>Monitor workflow</span>
+            <input type="checkbox" id="setting-workflow-enabled" class="settings-toggle"${settings.workflow_monitor_enabled ? " checked" : ""} />
+          </label>
+        </div>
+        <div id="workflow-config-group"${settings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
+          <div class="settings-group">
+            <label class="settings-label">Organization</label>
+            <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" />
+          </div>
+          <div class="settings-group">
+            <label class="settings-label">Repository</label>
+            <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" />
+          </div>
+          <div class="settings-group">
+            <label class="settings-label">Workflow file</label>
+            <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" />
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Hidden PRs</div>
         <div class="hidden-prs-list">
           ${hiddenPrs.size > 0 ? [...hiddenPrs.entries()].map(([url, title]) => `
             <div class="hidden-pr-row" data-pr-url="${url.replace(/"/g, "&quot;")}">
@@ -863,8 +889,7 @@ async function showSettings() {
       if (row) row.remove();
       const list = panel.querySelector(".hidden-prs-list");
       if (list && list.children.length === 0) {
-        const section = panel.querySelector(".hidden-prs-section");
-        if (section) section.remove();
+        list.innerHTML = '<div class="hidden-prs-empty">No hidden PRs</div>';
       }
     });
   });
@@ -881,17 +906,50 @@ async function showSettings() {
       hidden_orgs: [...hiddenOrgs],
       hidden_repos: [...hiddenRepos],
       hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
+      group_by_repository: (document.getElementById("setting-group-repo") as HTMLInputElement).checked,
       workflow_monitor_enabled: (document.getElementById("setting-workflow-enabled") as HTMLInputElement).checked,
       workflow_org: (document.getElementById("setting-workflow-org") as HTMLInputElement).value.trim(),
       workflow_repo: (document.getElementById("setting-workflow-repo") as HTMLInputElement).value.trim(),
       workflow_name: (document.getElementById("setting-workflow-name") as HTMLInputElement).value.trim(),
     };
+    groupByRepository = updated.group_by_repository;
     await invoke("update_settings", { settings: updated });
     hideSettings();
     loadPrs();
   });
 
   document.getElementById("settings-back-btn")!.addEventListener("click", hideSettings);
+
+  const searchInput = document.getElementById("settings-search") as HTMLInputElement;
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.toLowerCase().trim();
+    panel.querySelectorAll<HTMLElement>(".settings-section").forEach((section) => {
+      const title = section.querySelector(".settings-section-title")?.textContent?.toLowerCase() || "";
+      const groups = section.querySelectorAll<HTMLElement>(".settings-group, #workflow-config-group > .settings-group");
+      let sectionMatch = !q || title.includes(q);
+      let anyGroupVisible = false;
+
+      groups.forEach((group) => {
+        const label = group.textContent?.toLowerCase() || "";
+        const visible = sectionMatch || label.includes(q);
+        group.style.display = visible ? "" : "none";
+        if (visible) anyGroupVisible = true;
+      });
+
+      const hiddenList = section.querySelector<HTMLElement>(".hidden-prs-list");
+      if (hiddenList) {
+        const listText = hiddenList.textContent?.toLowerCase() || "";
+        if (!q || title.includes(q) || listText.includes(q)) {
+          hiddenList.style.display = "";
+          anyGroupVisible = true;
+        } else {
+          hiddenList.style.display = "none";
+        }
+      }
+
+      section.style.display = (anyGroupVisible || sectionMatch) ? "" : "none";
+    });
+  });
 }
 
 function updateWorkflowIndicator(status: WorkflowStatus | null) {

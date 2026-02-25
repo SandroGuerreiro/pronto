@@ -865,20 +865,54 @@ details[open] > .accordion-header .accordion-chevron::before {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
-.workflow-section {
+.settings-search {
+  width: 100%;
+  padding: 8px 10px 8px 30px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e4e4e7;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 9px center;
+}
+
+.settings-search::placeholder {
+  color: #52525b;
+}
+
+.settings-search:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.settings-section {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 #workflow-config-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.hidden-prs-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 12px;
 }
 
 .hidden-prs-list {

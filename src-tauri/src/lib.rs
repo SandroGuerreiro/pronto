@@ -17,6 +17,8 @@ pub struct HiddenPr {
     pub title: String,
 }
 
+fn default_true() -> bool { true }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub poll_interval_secs: u64,
@@ -35,6 +37,8 @@ pub struct Settings {
     pub hidden_repos: Vec<String>,
     #[serde(default)]
     pub hidden_prs: Vec<HiddenPr>,
+    #[serde(default = "default_true")]
+    pub group_by_repository: bool,
     #[serde(default)]
     pub workflow_monitor_enabled: bool,
     #[serde(default)]
@@ -58,6 +62,7 @@ impl Default for Settings {
             hidden_orgs: vec![],
             hidden_repos: vec![],
             hidden_prs: vec![],
+            group_by_repository: true,
             workflow_monitor_enabled: false,
             workflow_org: String::new(),
             workflow_repo: String::new(),
