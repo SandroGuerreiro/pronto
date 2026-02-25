@@ -152,6 +152,25 @@ let hiddenRepos = new Set<string>();
 let pendingUnhideOrgs = new Set<string>();
 let pendingUnhideRepos = new Set<string>();
 let savePending = false;
+let focusIndex = -1;
+
+function getFocusables(): Element[] {
+  const content = document.getElementById("content")!;
+  return [...content.querySelectorAll("summary.accordion-header, .pr-card")];
+}
+
+function setFocus(index: number) {
+  const items = getFocusables();
+  if (items.length === 0) return;
+
+  const prev = document.querySelector(".kb-focus");
+  if (prev) prev.classList.remove("kb-focus");
+
+  focusIndex = Math.max(0, Math.min(index, items.length - 1));
+  const el = items[focusIndex];
+  el.classList.add("kb-focus");
+  el.scrollIntoView({ block: "nearest" });
+}
 
 async function loadUserPrefs() {
   const s = await invoke<Settings>("get_settings");
@@ -419,6 +438,7 @@ function updateTabBadges() {
 
 function renderActiveTab() {
   if (!currentResult) return;
+  focusIndex = -1;
   const content = document.getElementById("content")!;
   const prs = activeTab === "open" ? currentResult.open : currentResult.recently_merged;
   content.innerHTML = renderAccordionContent(prs);
@@ -820,12 +840,89 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
 
   document.addEventListener("keydown", (e) => {
+    const settingsOpen = document.getElementById("settings-panel")!.style.display !== "none";
+
     if (e.key === "Escape") {
-      if (document.getElementById("settings-panel")!.style.display !== "none") {
+      if (settingsOpen) {
         hideSettings();
       } else {
         getCurrentWindow().hide();
       }
+      return;
+    }
+
+    if (settingsOpen || !currentResult) return;
+
+    const items = getFocusables();
+    if (!items.length && !["1", "2", "Tab"].includes(e.key)) return;
+
+    switch (e.key) {
+      case "j":
+      case "ArrowDown":
+        e.preventDefault();
+        setFocus(focusIndex + 1);
+        break;
+      case "k":
+      case "ArrowUp":
+        e.preventDefault();
+        setFocus(focusIndex - 1);
+        break;
+      case "h":
+      case "ArrowLeft": {
+        e.preventDefault();
+        if (focusIndex < 0) break;
+        const el = items[focusIndex];
+        const details = el.closest("details");
+        if (details && (details as HTMLDetailsElement).open) {
+          (details as HTMLDetailsElement).open = false;
+          details.dispatchEvent(new Event("toggle"));
+        }
+        break;
+      }
+      case "l":
+      case "ArrowRight": {
+        e.preventDefault();
+        if (focusIndex < 0) break;
+        const el = items[focusIndex];
+        const details = el.closest("details");
+        if (details && !(details as HTMLDetailsElement).open) {
+          (details as HTMLDetailsElement).open = true;
+          details.dispatchEvent(new Event("toggle"));
+        }
+        break;
+      }
+      case "Enter": {
+        e.preventDefault();
+        if (focusIndex < 0) break;
+        const el = items[focusIndex];
+        if (el.classList.contains("pr-card")) {
+          const url = el.getAttribute("data-url");
+          if (url) openUrl(url);
+        } else if (el.tagName === "SUMMARY") {
+          const details = el.closest("details") as HTMLDetailsElement;
+          if (details) {
+            details.open = !details.open;
+            details.dispatchEvent(new Event("toggle"));
+          }
+        }
+        break;
+      }
+      case "1":
+        e.preventDefault();
+        setActiveTab("open");
+        break;
+      case "2":
+        e.preventDefault();
+        setActiveTab("merged");
+        break;
+      case "Tab":
+        e.preventDefault();
+        if (e.shiftKey) {
+          setActiveTab(activeTab === "open" ? "merged" : "open");
+        } else {
+          setActiveTab(activeTab === "open" ? "merged" : "open");
+        }
+        break;
     }
   });
 
