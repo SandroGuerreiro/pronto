@@ -154,6 +154,28 @@ pub struct FetchResult {
     pub open: Vec<PullRequest>,
     pub recently_merged: Vec<PullRequest>,
     pub attention_urls: Vec<String>,
+    pub workflow_status: Option<WorkflowStatus>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkflowStatus {
+    pub conclusion: String,
+    pub workflow_name: String,
+    pub repo: String,
+    pub updated_at: String,
+    pub html_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorkflowRunsResponse {
+    workflow_runs: Vec<WorkflowRun>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorkflowRun {
+    conclusion: Option<String>,
+    updated_at: String,
+    html_url: String,
 }
 
 pub async fn fetch_prs(
@@ -162,7 +184,7 @@ pub async fn fetch_prs(
     show_recently_merged: bool,
     hidden_orgs: &[String],
     hidden_repos: &[String],
-) -> Result<FetchResult, Box<dyn std::error::Error>> {
+) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
     let client = reqwest::Client::new();
 
     let cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
@@ -238,5 +260,47 @@ pub async fn fetch_prs(
             vec![]
         },
         attention_urls: vec![],
+        workflow_status: None,
     })
+}
+
+pub async fn fetch_workflow_status(
+    token: &str,
+    org: &str,
+    repo: &str,
+    workflow_name: &str,
+) -> Result<Option<WorkflowStatus>, Box<dyn std::error::Error + Send + Sync>> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/workflows/{}/runs?per_page=10&status=completed",
+        org, repo, workflow_name
+    );
+
+    let response = client
+        .get(&url)
+        .header(AUTHORIZATION, format!("Bearer {}", token))
+        .header(USER_AGENT, "pronto")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+
+    let runs: WorkflowRunsResponse = response.json().await?;
+    let run = runs.workflow_runs.iter().find(|r| {
+        matches!(r.conclusion.as_deref(), Some("success") | Some("failure"))
+    });
+
+    let Some(run) = run else {
+        return Ok(None);
+    };
+
+    Ok(Some(WorkflowStatus {
+        conclusion: run.conclusion.clone().unwrap(),
+        workflow_name: workflow_name.to_string(),
+        repo: format!("{}/{}", org, repo),
+        updated_at: run.updated_at.clone(),
+        html_url: run.html_url.clone(),
+    }))
 }

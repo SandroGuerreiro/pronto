@@ -35,6 +35,14 @@ pub struct Settings {
     pub hidden_repos: Vec<String>,
     #[serde(default)]
     pub hidden_prs: Vec<HiddenPr>,
+    #[serde(default)]
+    pub workflow_monitor_enabled: bool,
+    #[serde(default)]
+    pub workflow_org: String,
+    #[serde(default)]
+    pub workflow_repo: String,
+    #[serde(default)]
+    pub workflow_name: String,
 }
 
 impl Default for Settings {
@@ -50,6 +58,10 @@ impl Default for Settings {
             hidden_orgs: vec![],
             hidden_repos: vec![],
             hidden_prs: vec![],
+            workflow_monitor_enabled: false,
+            workflow_org: String::new(),
+            workflow_repo: String::new(),
+            workflow_name: String::new(),
         }
     }
 }
@@ -78,6 +90,7 @@ pub struct AppState {
     pub seen_prs: Mutex<HashMap<String, String>>,
     pub cached_token: Mutex<Option<String>>,
     pub settings: Mutex<Settings>,
+    pub last_workflow_status: Mutex<Option<github::WorkflowStatus>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -350,14 +363,20 @@ fn filter_hidden_prs(mut result: github::FetchResult, hidden_prs: &[HiddenPr]) -
 async fn fetch_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
     let state = app.state::<AppState>();
     let token = get_token(&state)?;
-    let (merged_hours, show_merged, hidden_orgs, hidden_repos, hidden_prs) = {
+    let (merged_hours, show_merged, hidden_orgs, hidden_repos, hidden_prs, settings_clone) = {
         let s = state.settings.lock().unwrap();
-        (s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone(), s.hidden_prs.clone())
+        (s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone(), s.hidden_prs.clone(), s.clone())
     };
-    let result = github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos)
+    let mut result = github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos)
         .await
         .map_err(|e| e.to_string())?;
-    let result = filter_hidden_prs(result, &hidden_prs);
+    result = filter_hidden_prs(result, &hidden_prs);
+
+    if let Some(wf) = fetch_workflow_if_enabled(&token, &settings_clone).await {
+        check_workflow_attention(&app, &wf, false);
+        result.workflow_status = Some(wf);
+    }
+
     Ok(process_result(&app, result, false))
 }
 
@@ -384,6 +403,104 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
     tray::update_tray_icon(&app, has_attention);
 }
 
+fn check_workflow_attention(
+    app: &tauri::AppHandle,
+    new_status: &github::WorkflowStatus,
+    notify: bool,
+) -> bool {
+    let Some(state) = app.try_state::<AppState>() else {
+        return false;
+    };
+    let mut last = state.last_workflow_status.lock().unwrap();
+    let changed = match last.as_ref() {
+        Some(prev) => prev.conclusion != new_status.conclusion,
+        None => false,
+    };
+
+    if changed && notify {
+        ensure_notification_app(app);
+        let title = format!("{} — {}", new_status.repo, new_status.workflow_name);
+        let body = if new_status.conclusion == "success" {
+            "Workflow succeeded".to_string()
+        } else {
+            format!("Workflow {}", new_status.conclusion)
+        };
+        let url = new_status.html_url.clone();
+        let app_handle = app.clone();
+
+        std::thread::spawn(move || {
+            let response = mac_notification_sys::Notification::new()
+                .title(&title)
+                .message(&body)
+                .main_button(mac_notification_sys::MainButton::SingleAction("Open"))
+                .wait_for_click(true)
+                .send();
+
+            if let Ok(response) = response {
+                match response {
+                    mac_notification_sys::NotificationResponse::Click
+                    | mac_notification_sys::NotificationResponse::ActionButton(_) => {
+                        let _ = open::that(&url);
+                        if let Some(state) = app_handle.try_state::<AppState>() {
+                            let mut wf = state.last_workflow_status.lock().unwrap();
+                            if let Some(ref s) = *wf {
+                                let mut updated = s.clone();
+                                updated.conclusion = updated.conclusion.clone();
+                                *wf = Some(updated);
+                            }
+                        }
+                        let _ = app_handle.emit("prs-updated", ());
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
+
+    *last = Some(new_status.clone());
+    changed
+}
+
+async fn fetch_workflow_if_enabled(
+    token: &str,
+    settings: &Settings,
+) -> Option<github::WorkflowStatus> {
+    if !settings.workflow_monitor_enabled
+        || settings.workflow_org.is_empty()
+        || settings.workflow_repo.is_empty()
+        || settings.workflow_name.is_empty()
+    {
+        return None;
+    }
+    github::fetch_workflow_status(
+        token,
+        &settings.workflow_org,
+        &settings.workflow_repo,
+        &settings.workflow_name,
+    )
+    .await
+    .ok()
+    .flatten()
+}
+
+#[tauri::command]
+fn dismiss_workflow(app: tauri::AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let last = state.last_workflow_status.lock().unwrap();
+    if last.is_none() {
+        return;
+    }
+    drop(last);
+
+    let has_pr_attention = {
+        let cache = state.cached_prs.lock().unwrap();
+        cache.as_ref().map(|r| !r.attention_urls.is_empty()).unwrap_or(false)
+    };
+    tray::update_tray_icon(&app, has_pr_attention);
+}
+
 async fn poll_prs(app: tauri::AppHandle) {
     loop {
         let interval = app
@@ -395,19 +512,32 @@ async fn poll_prs(app: tauri::AppHandle) {
         let Some(state) = app.try_state::<AppState>() else {
             continue;
         };
-        let (notify, merged_hours, show_merged, hidden_orgs, hidden_repos, hidden_prs) = {
+        let (notify, merged_hours, show_merged, hidden_orgs, hidden_repos, hidden_prs, settings_clone) = {
             let s = state.settings.lock().unwrap();
-            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone(), s.hidden_prs.clone())
+            (s.notifications_enabled, s.merged_window_hours, s.show_recently_merged, s.hidden_orgs.clone(), s.hidden_repos.clone(), s.hidden_prs.clone(), s.clone())
         };
         let token = match get_token(&state) {
             Ok(t) => t,
             Err(_) => continue,
         };
 
-        match github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos).await {
-            Ok(result) => {
-                let result = filter_hidden_prs(result, &hidden_prs);
-                process_result(&app, result, notify);
+        let pr_fetch = github::fetch_prs(&token, merged_hours, show_merged, &hidden_orgs, &hidden_repos).await;
+        match pr_fetch {
+            Ok(mut result) => {
+                result = filter_hidden_prs(result, &hidden_prs);
+
+                if let Some(wf) = fetch_workflow_if_enabled(&token, &settings_clone).await {
+                    let wf_attention = check_workflow_attention(&app, &wf, notify);
+                    result.workflow_status = Some(wf);
+                    let pr_result = process_result(&app, result, notify);
+
+                    if wf_attention && pr_result.attention_urls.is_empty() {
+                        tray::update_tray_icon(&app, true);
+                    }
+                } else {
+                    process_result(&app, result, notify);
+                }
+
                 let _ = app.emit("prs-updated", ());
             }
             Err(e) => {
@@ -428,6 +558,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_prs,
             dismiss_pr,
+            dismiss_workflow,
             check_auth,
             start_login,
             poll_login,
@@ -443,6 +574,7 @@ pub fn run() {
                 seen_prs: Mutex::new(HashMap::new()),
                 cached_token: Mutex::new(None),
                 settings: Mutex::new(settings),
+                last_workflow_status: Mutex::new(None),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

@@ -53,6 +53,70 @@ body {
   flex: 1;
 }
 
+.workflow-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.workflow-indicator:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.workflow-indicator .wf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.workflow-indicator .wf-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.workflow-indicator.wf-success .wf-dot {
+  background-color: #22c55e;
+}
+
+.workflow-indicator.wf-success .wf-label {
+  color: #22c55e;
+}
+
+.workflow-indicator.wf-failure .wf-dot {
+  background-color: #ef4444;
+}
+
+.workflow-indicator.wf-failure .wf-label {
+  color: #ef4444;
+}
+
+.workflow-indicator.wf-other .wf-dot {
+  background-color: #71717a;
+}
+
+.workflow-indicator.wf-other .wf-label {
+  color: #71717a;
+}
+
+.workflow-indicator.wf-attention {
+  animation: wf-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes wf-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .header-settings-btn {
   background: none;
   border: none;
@@ -779,6 +843,37 @@ details[open] > .accordion-header .accordion-chevron::before {
   flex-direction: column;
   gap: 8px;
   margin-top: 4px;
+}
+
+.settings-input {
+  width: 100%;
+  padding: 8px 10px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #e4e4e7;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.settings-input::placeholder {
+  color: #52525b;
+}
+
+.settings-input:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.workflow-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+#workflow-config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .hidden-prs-section {

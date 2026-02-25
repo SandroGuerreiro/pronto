@@ -63,10 +63,19 @@ interface PullRequest {
   commits: CommitConnection;
 }
 
+interface WorkflowStatus {
+  conclusion: string;
+  workflow_name: string;
+  repo: string;
+  updated_at: string;
+  html_url: string;
+}
+
 interface FetchResult {
   open: PullRequest[];
   recently_merged: PullRequest[];
   attention_urls: string[];
+  workflow_status: WorkflowStatus | null;
 }
 
 interface DeviceCodeResponse {
@@ -93,6 +102,10 @@ interface Settings {
   hidden_orgs: string[];
   hidden_repos: string[];
   hidden_prs: HiddenPr[];
+  workflow_monitor_enabled: boolean;
+  workflow_org: string;
+  workflow_repo: string;
+  workflow_name: string;
 }
 
 function getStatus(pr: PullRequest): { label: string; class: string } {
@@ -161,6 +174,8 @@ let pendingUnhideRepos = new Set<string>();
 let savePending = false;
 let focusIndex = -1;
 let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
+let lastWorkflowConclusion: string | null = null;
+let workflowHasAttention = false;
 
 function getFocusables(): Element[] {
   const content = document.getElementById("content")!;
@@ -786,6 +801,28 @@ async function showSettings() {
         </select>
       </div>
 
+      <div class="settings-group workflow-section">
+        <label class="settings-label">
+          <span>Workflow monitor</span>
+          <input type="checkbox" id="setting-workflow-enabled" class="settings-toggle"${settings.workflow_monitor_enabled ? " checked" : ""} />
+        </label>
+      </div>
+
+      <div id="workflow-config-group"${settings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
+        <div class="settings-group">
+          <label class="settings-label">Organization</label>
+          <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" />
+        </div>
+        <div class="settings-group">
+          <label class="settings-label">Repository</label>
+          <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" />
+        </div>
+        <div class="settings-group">
+          <label class="settings-label">Workflow file</label>
+          <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" />
+        </div>
+      </div>
+
       <div class="settings-group hidden-prs-section">
         <label class="settings-label">Hidden PRs</label>
         <div class="hidden-prs-list">
@@ -811,6 +848,11 @@ async function showSettings() {
   document.getElementById("setting-merged")!.addEventListener("change", (e) => {
     const checked = (e.target as HTMLInputElement).checked;
     document.getElementById("merged-window-group")!.style.display = checked ? "" : "none";
+  });
+
+  document.getElementById("setting-workflow-enabled")!.addEventListener("change", (e) => {
+    const checked = (e.target as HTMLInputElement).checked;
+    document.getElementById("workflow-config-group")!.style.display = checked ? "" : "none";
   });
 
   panel.querySelectorAll(".hidden-pr-remove").forEach((btn) => {
@@ -839,6 +881,10 @@ async function showSettings() {
       hidden_orgs: [...hiddenOrgs],
       hidden_repos: [...hiddenRepos],
       hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
+      workflow_monitor_enabled: (document.getElementById("setting-workflow-enabled") as HTMLInputElement).checked,
+      workflow_org: (document.getElementById("setting-workflow-org") as HTMLInputElement).value.trim(),
+      workflow_repo: (document.getElementById("setting-workflow-repo") as HTMLInputElement).value.trim(),
+      workflow_name: (document.getElementById("setting-workflow-name") as HTMLInputElement).value.trim(),
     };
     await invoke("update_settings", { settings: updated });
     hideSettings();
@@ -846,6 +892,30 @@ async function showSettings() {
   });
 
   document.getElementById("settings-back-btn")!.addEventListener("click", hideSettings);
+}
+
+function updateWorkflowIndicator(status: WorkflowStatus | null) {
+  const indicator = document.getElementById("workflow-indicator")!;
+  if (!status) {
+    indicator.style.display = "none";
+    return;
+  }
+
+  const cls = status.conclusion === "success" ? "wf-success"
+    : status.conclusion === "failure" ? "wf-failure"
+    : "wf-other";
+
+  const changed = lastWorkflowConclusion !== null && lastWorkflowConclusion !== status.conclusion;
+  if (changed) {
+    workflowHasAttention = true;
+  }
+  lastWorkflowConclusion = status.conclusion;
+
+  const attentionCls = workflowHasAttention ? " wf-attention" : "";
+  indicator.className = `workflow-indicator ${cls}${attentionCls}`;
+  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${status.conclusion}</span>`;
+  indicator.title = `${status.repo} — ${status.workflow_name}\n${status.conclusion}\n${new Date(status.updated_at).toLocaleString()}`;
+  indicator.style.display = "";
 }
 
 function renderPrView(result: FetchResult) {
@@ -860,6 +930,7 @@ function renderPrView(result: FetchResult) {
   currentResult = result;
   pendingUnhideOrgs.clear();
   pendingUnhideRepos.clear();
+  updateWorkflowIndicator(result.workflow_status);
   renderActiveTab();
 }
 
@@ -899,6 +970,35 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
+
+  const wfIndicator = document.getElementById("workflow-indicator")!;
+  wfIndicator.addEventListener("click", () => {
+    if (currentResult?.workflow_status) {
+      openUrl(currentResult.workflow_status.html_url);
+      if (workflowHasAttention) {
+        workflowHasAttention = false;
+        wfIndicator.classList.remove("wf-attention");
+        invoke("dismiss_workflow");
+      }
+    }
+  });
+
+  let wfDismissTimer: ReturnType<typeof setTimeout> | null = null;
+  wfIndicator.addEventListener("mouseenter", () => {
+    if (workflowHasAttention) {
+      wfDismissTimer = setTimeout(() => {
+        workflowHasAttention = false;
+        wfIndicator.classList.remove("wf-attention");
+        invoke("dismiss_workflow");
+      }, 800);
+    }
+  });
+  wfIndicator.addEventListener("mouseleave", () => {
+    if (wfDismissTimer) {
+      clearTimeout(wfDismissTimer);
+      wfDismissTimer = null;
+    }
+  });
 
   document.addEventListener("keydown", (e) => {
     const settingsOpen = document.getElementById("settings-panel")!.style.display !== "none";
