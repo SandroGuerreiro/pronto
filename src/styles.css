@@ -780,3 +780,58 @@ details[open] > .accordion-header .accordion-chevron::before {
   gap: 8px;
   margin-top: 4px;
 }
+
+.hidden-prs-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.hidden-prs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hidden-pr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.hidden-pr-title {
+  font-size: 12px;
+  color: #a1a1aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.hidden-pr-remove {
+  background: none;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.hidden-pr-remove:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.hidden-prs-empty {
+  font-size: 12px;
+  color: #52525b;
+  padding: 6px 8px;
+  font-style: italic;
+}

@@ -3364,6 +3364,7 @@ dependencies = [
  "chrono",
  "image",
  "keyring",
+ "mac-notification-sys",
  "open",
  "reqwest",
  "serde",

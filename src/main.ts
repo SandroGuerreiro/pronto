@@ -77,6 +77,11 @@ interface DeviceCodeResponse {
   interval: number;
 }
 
+interface HiddenPr {
+  url: string;
+  title: string;
+}
+
 interface Settings {
   poll_interval_secs: number;
   notifications_enabled: boolean;
@@ -87,6 +92,7 @@ interface Settings {
   collapsed_accordions: string[];
   hidden_orgs: string[];
   hidden_repos: string[];
+  hidden_prs: HiddenPr[];
 }
 
 function getStatus(pr: PullRequest): { label: string; class: string } {
@@ -149,19 +155,30 @@ let favoriteRepos = new Set<string>();
 let collapsedAccordions = new Set<string>();
 let hiddenOrgs = new Set<string>();
 let hiddenRepos = new Set<string>();
+let hiddenPrs = new Map<string, string>();
 let pendingUnhideOrgs = new Set<string>();
 let pendingUnhideRepos = new Set<string>();
 let savePending = false;
 let focusIndex = -1;
+let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getFocusables(): Element[] {
   const content = document.getElementById("content")!;
   return [...content.querySelectorAll("summary.accordion-header, .pr-card")];
 }
 
+function clearKbDismiss() {
+  if (kbDismissTimer) {
+    clearTimeout(kbDismissTimer);
+    kbDismissTimer = null;
+  }
+}
+
 function setFocus(index: number) {
   const items = getFocusables();
   if (items.length === 0) return;
+
+  clearKbDismiss();
 
   const prev = document.querySelector(".kb-focus");
   if (prev) prev.classList.remove("kb-focus");
@@ -170,6 +187,18 @@ function setFocus(index: number) {
   const el = items[focusIndex];
   el.classList.add("kb-focus");
   el.scrollIntoView({ block: "nearest" });
+
+  if (el.classList.contains("pr-card") && el.classList.contains("attention")) {
+    kbDismissTimer = setTimeout(() => {
+      el.classList.remove("attention");
+      const url = el.getAttribute("data-url");
+      if (url) {
+        currentAttentionUrls = currentAttentionUrls.filter(u => u !== url);
+        invoke("dismiss_pr", { url });
+      }
+      updateTabBadges();
+    }, 800);
+  }
 }
 
 async function loadUserPrefs() {
@@ -179,6 +208,7 @@ async function loadUserPrefs() {
   collapsedAccordions = new Set(s.collapsed_accordions);
   hiddenOrgs = new Set(s.hidden_orgs);
   hiddenRepos = new Set(s.hidden_repos);
+  hiddenPrs = new Map((s.hidden_prs || []).map(h => [h.url, h.title]));
 }
 
 async function persistPrefs() {
@@ -192,6 +222,7 @@ async function persistPrefs() {
     current.collapsed_accordions = [...collapsedAccordions];
     current.hidden_orgs = [...hiddenOrgs];
     current.hidden_repos = [...hiddenRepos];
+    current.hidden_prs = [...hiddenPrs.entries()].map(([url, title]) => ({ url, title }));
     await invoke("update_settings", { settings: current });
   });
 }
@@ -208,7 +239,7 @@ function renderPrCard(pr: PullRequest): string {
   statusParts.push(`<span class="${checks.class}">${checks.text}</span>`);
 
   return `
-    <div class="pr-card${currentAttentionUrls.includes(pr.url) ? " attention" : ""}" data-url="${pr.url}">
+    <div class="pr-card${currentAttentionUrls.includes(pr.url) ? " attention" : ""}" data-url="${pr.url}" data-title="${pr.title.replace(/"/g, "&quot;")}">
       <div class="pr-status ${status.class}">${status.label}</div>
       <div class="pr-info">
         <div class="pr-title">${pr.title}</div>
@@ -711,6 +742,7 @@ async function startLogin() {
 
 function hideSettings() {
   document.getElementById("settings-panel")!.style.display = "none";
+  document.getElementById("tab-bar")!.style.display = "";
 }
 
 async function showSettings() {
@@ -754,6 +786,18 @@ async function showSettings() {
         </select>
       </div>
 
+      <div class="settings-group hidden-prs-section">
+        <label class="settings-label">Hidden PRs</label>
+        <div class="hidden-prs-list">
+          ${hiddenPrs.size > 0 ? [...hiddenPrs.entries()].map(([url, title]) => `
+            <div class="hidden-pr-row" data-pr-url="${url.replace(/"/g, "&quot;")}">
+              <span class="hidden-pr-title">${title}</span>
+              <button class="hidden-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}">✕</button>
+            </div>
+          `).join("") : '<div class="hidden-prs-empty">No hidden PRs</div>'}
+        </div>
+      </div>
+
       <div class="settings-actions">
         <button id="settings-save-btn" class="login-btn">Save</button>
         <button id="settings-back-btn" class="login-btn login-btn-secondary">Back</button>
@@ -762,10 +806,25 @@ async function showSettings() {
   `;
 
   panel.style.display = "";
+  document.getElementById("tab-bar")!.style.display = "none";
 
   document.getElementById("setting-merged")!.addEventListener("change", (e) => {
     const checked = (e.target as HTMLInputElement).checked;
     document.getElementById("merged-window-group")!.style.display = checked ? "" : "none";
+  });
+
+  panel.querySelectorAll(".hidden-pr-remove").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-pr-url")!;
+      hiddenPrs.delete(url);
+      const row = btn.closest(".hidden-pr-row");
+      if (row) row.remove();
+      const list = panel.querySelector(".hidden-prs-list");
+      if (list && list.children.length === 0) {
+        const section = panel.querySelector(".hidden-prs-section");
+        if (section) section.remove();
+      }
+    });
   });
 
   document.getElementById("settings-save-btn")!.addEventListener("click", async () => {
@@ -779,9 +838,11 @@ async function showSettings() {
       collapsed_accordions: [...collapsedAccordions],
       hidden_orgs: [...hiddenOrgs],
       hidden_repos: [...hiddenRepos],
+      hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
     };
     await invoke("update_settings", { settings: updated });
     hideSettings();
+    loadPrs();
   });
 
   document.getElementById("settings-back-btn")!.addEventListener("click", hideSettings);
@@ -915,6 +976,30 @@ window.addEventListener("DOMContentLoaded", async () => {
         e.preventDefault();
         setActiveTab("merged");
         break;
+      case "i": {
+        e.preventDefault();
+        if (focusIndex < 0) break;
+        const el = items[focusIndex];
+        if (el.classList.contains("pr-card")) {
+          const url = el.getAttribute("data-url");
+          const title = el.getAttribute("data-title") || "";
+          if (url) {
+            hiddenPrs.set(url, title);
+            if (currentResult) {
+              currentResult.open = currentResult.open.filter(pr => pr.url !== url);
+              currentResult.recently_merged = currentResult.recently_merged.filter(pr => pr.url !== url);
+            }
+            renderActiveTab();
+            (async () => {
+              const current = await invoke<Settings>("get_settings");
+              current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
+              await invoke("update_settings", { settings: current });
+              loadPrs();
+            })();
+          }
+        }
+        break;
+      }
       case "Tab":
         e.preventDefault();
         if (e.shiftKey) {
