@@ -245,7 +245,7 @@ async function persistPrefs() {
   });
 }
 
-function renderPrCard(pr: PullRequest, showRepo: boolean = false): string {
+function renderPrCard(pr: PullRequest): string {
   const status = getStatus(pr);
   const { reviewText, statusText, statusClass } = getReviewStatus(pr);
   const checks = getChecksLabel(pr);
@@ -274,7 +274,7 @@ function renderPrCard(pr: PullRequest, showRepo: boolean = false): string {
       <div class="pr-info">
         <div class="pr-title">${pr.title}</div>
         <div class="pr-meta">
-          ${showRepo ? `<span class="pr-repo-label">${pr.repository.name}</span><span class="meta-sep">·</span>` : ""}
+          ${!groupByRepository ? `<span class="pr-repo-label">${pr.repository.name}</span><span class="meta-sep">·</span>` : ""}
           <span class="pr-reviews" title="Approvals">${reviewText}</span>
           <span class="meta-sep">·</span>
           <span class="pr-comments" title="Comments and unresolved threads"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${commentCount}</span>
@@ -508,7 +508,7 @@ function renderFlatList(prs: PullRequest[]): string {
   const sorted = [...prs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
-  return sorted.map(pr => renderPrCard(pr, true)).join("");
+  return sorted.map(renderPrCard).join("");
 }
 
 function renderActiveTab() {
@@ -910,7 +910,7 @@ async function showSettings() {
     });
   });
 
-  document.getElementById("settings-save-btn")!.addEventListener("click", async () => {
+  const applyAndClose = async () => {
     const updated: Settings = {
       poll_interval_secs: parseInt((document.getElementById("setting-poll") as HTMLSelectElement).value),
       notifications_enabled: (document.getElementById("setting-notifications") as HTMLInputElement).checked,
@@ -932,9 +932,16 @@ async function showSettings() {
     await invoke("update_settings", { settings: updated });
     hideSettings();
     loadPrs();
+  };
+
+  document.getElementById("settings-save-btn")!.addEventListener("click", async () => {
+    await applyAndClose();
   });
 
-  document.getElementById("settings-back-btn")!.addEventListener("click", hideSettings);
+  document.getElementById("settings-back-btn")!.addEventListener("click", () => {
+    hideSettings();
+    loadPrs();
+  });
 
   const searchInput = document.getElementById("settings-search") as HTMLInputElement;
   searchInput.addEventListener("input", () => {
@@ -1079,7 +1086,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     if (e.key === "Escape") {
       if (settingsOpen) {
-        hideSettings();
+        const saveBtn = document.getElementById("settings-save-btn") as HTMLButtonElement | null;
+        if (saveBtn) {
+          e.preventDefault();
+          saveBtn.click();
+        } else {
+          hideSettings();
+        }
       } else {
         getCurrentWindow().hide();
       }
