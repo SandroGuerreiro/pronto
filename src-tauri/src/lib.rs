@@ -2,7 +2,7 @@ pub mod auth;
 pub mod github;
 pub mod tray;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -96,6 +96,7 @@ pub struct AppState {
     pub cached_token: Mutex<Option<String>>,
     pub settings: Mutex<Settings>,
     pub last_workflow_status: Mutex<Option<github::WorkflowStatus>>,
+    pub notified_prs: Mutex<HashSet<String>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -208,12 +209,24 @@ fn send_attention_notification(
     result: &github::FetchResult,
     seen: &HashMap<String, String>,
 ) {
-    let attention_prs: Vec<&github::PullRequest> = result
+    let mut attention_prs: Vec<&github::PullRequest> = result
         .open
         .iter()
         .chain(result.recently_merged.iter())
         .filter(|pr| result.attention_urls.contains(&pr.url))
         .collect();
+
+    if let Some(state) = app.try_state::<AppState>() {
+        let mut notified = state.notified_prs.lock().unwrap();
+        attention_prs.retain(|pr| {
+            if notified.contains(&pr.url) {
+                false
+            } else {
+                notified.insert(pr.url.clone());
+                true
+            }
+        });
+    }
 
     if attention_prs.is_empty() {
         return;
@@ -243,16 +256,23 @@ fn send_attention_notification(
                     | mac_notification_sys::NotificationResponse::ActionButton(_) => {
                         let _ = open::that(&url);
                         if let Some(state) = app_handle.try_state::<AppState>() {
-                            let mut seen = state.seen_prs.lock().unwrap();
-                            seen.insert(url.clone(), fingerprint.clone());
-                            let has_attention = {
-                                let cache = state.cached_prs.lock().unwrap();
-                                cache.as_ref()
-                                    .map(|r| !tray::attention_urls(r, &seen).is_empty())
-                                    .unwrap_or(false)
-                            };
-                            drop(seen);
-                            tray::update_tray_icon(&app_handle, has_attention);
+                            {
+                                let mut seen = state.seen_prs.lock().unwrap();
+                                seen.insert(url.clone(), fingerprint.clone());
+                                let has_attention = {
+                                    let cache = state.cached_prs.lock().unwrap();
+                                    cache
+                                        .as_ref()
+                                        .map(|r| !tray::attention_urls(r, &seen).is_empty())
+                                        .unwrap_or(false)
+                                };
+                                drop(seen);
+                                tray::update_tray_icon(&app_handle, has_attention);
+                            }
+                            {
+                                let mut notified = state.notified_prs.lock().unwrap();
+                                notified.remove(&url);
+                            }
                             let _ = app_handle.emit("prs-updated", ());
                         }
                     }
@@ -400,12 +420,18 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
         (tray::attention_fingerprint(pr), result.clone())
     };
 
-    let mut seen = state.seen_prs.lock().unwrap();
-    seen.insert(url, fingerprint);
-    let has_attention = !tray::attention_urls(&result_clone, &seen).is_empty();
-    drop(seen);
+    {
+        let mut seen = state.seen_prs.lock().unwrap();
+        seen.insert(url.clone(), fingerprint);
+        let has_attention = !tray::attention_urls(&result_clone, &seen).is_empty();
+        drop(seen);
+        tray::update_tray_icon(&app, has_attention);
+    }
 
-    tray::update_tray_icon(&app, has_attention);
+    {
+        let mut notified = state.notified_prs.lock().unwrap();
+        notified.remove(&url);
+    }
 }
 
 fn check_workflow_attention(
@@ -580,6 +606,7 @@ pub fn run() {
                 cached_token: Mutex::new(None),
                 settings: Mutex::new(settings),
                 last_workflow_status: Mutex::new(None),
+                notified_prs: Mutex::new(HashSet::new()),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
