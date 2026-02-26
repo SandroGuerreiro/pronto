@@ -41,6 +41,7 @@ pub struct PullRequest {
     #[serde(rename = "reviewThreads")]
     pub review_threads: ReviewThreads,
     pub commits: CommitConnection,
+    pub author: Owner,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -153,6 +154,8 @@ impl PullRequest {
 pub struct FetchResult {
     pub open: Vec<PullRequest>,
     pub recently_merged: Vec<PullRequest>,
+    pub followed_open: Vec<PullRequest>,
+    pub followed_recently_merged: Vec<PullRequest>,
     pub attention_urls: Vec<String>,
     pub workflow_status: Option<WorkflowStatus>,
 }
@@ -178,31 +181,22 @@ struct WorkflowRun {
     html_url: String,
 }
 
-pub async fn fetch_prs(
+async fn fetch_prs_for_author(
+    client: &reqwest::Client,
     token: &str,
+    author: &str,
     merged_window_hours: u64,
     show_recently_merged: bool,
-    hidden_orgs: &[String],
-    hidden_repos: &[String],
-) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
-    let client = reqwest::Client::new();
-
+    exclusions: &str,
+) -> Result<(Vec<PullRequest>, Vec<PullRequest>), Box<dyn std::error::Error + Send + Sync>> {
     let cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
         .format("%Y-%m-%d")
         .to_string();
 
-    let mut exclusions = String::new();
-    for org in hidden_orgs {
-        exclusions.push_str(&format!(" -org:{}", org));
-    }
-    for repo in hidden_repos {
-        exclusions.push_str(&format!(" -repo:{}", repo));
-    }
-
     let query = GraphQLQuery {
         query: format!(
             r#"{{
-  open: search(query: "author:@me type:pr state:open{exclusions}", type: ISSUE, first: 20) {{
+  open: search(query: "author:{author} type:pr state:open{exclusions}", type: ISSUE, first: 20) {{
     nodes {{
       ... on PullRequest {{
         title
@@ -217,10 +211,11 @@ pub async fn fetch_prs(
         comments {{ totalCount }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+        author {{ login }}
       }}
     }}
   }}
-  recentlyMerged: search(query: "author:@me type:pr is:merged merged:>{cutoff}{exclusions}", type: ISSUE, first: 10) {{
+  recentlyMerged: search(query: "author:{author} type:pr is:merged merged:>{cutoff}{exclusions}", type: ISSUE, first: 10) {{
     nodes {{
       ... on PullRequest {{
         title
@@ -235,6 +230,7 @@ pub async fn fetch_prs(
         comments {{ totalCount }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+        author {{ login }}
       }}
     }}
   }}
@@ -252,25 +248,90 @@ pub async fn fetch_prs(
         .json::<GraphQLResponse>()
         .await?;
 
+    let open = response.data.open.nodes;
+    let recently_merged = if show_recently_merged {
+        response.data.recently_merged.nodes
+    } else {
+        vec![]
+    };
+
+    Ok((open, recently_merged))
+}
+
+fn build_exclusions(hidden_orgs: &[String], hidden_repos: &[String]) -> String {
+    let mut s = String::new();
+    for org in hidden_orgs {
+        s.push_str(&format!(" -org:{}", org));
+    }
+    for repo in hidden_repos {
+        s.push_str(&format!(" -repo:{}", repo));
+    }
+    s
+}
+
+pub async fn fetch_all_prs(
+    client: &reqwest::Client,
+    token: &str,
+    merged_window_hours: u64,
+    show_recently_merged: bool,
+    hidden_orgs: &[String],
+    hidden_repos: &[String],
+    followed_users: &[String],
+) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
+    let exclusions = build_exclusions(hidden_orgs, hidden_repos);
+
+    // Fetch PRs authored by the current user.
+    let (my_open, my_recently_merged) = fetch_prs_for_author(
+        &client,
+        token,
+        "@me",
+        merged_window_hours,
+        show_recently_merged,
+        &exclusions,
+    )
+    .await?;
+
+    // Fetch PRs authored by followed users.
+    let mut followed_open: Vec<PullRequest> = Vec::new();
+    let mut followed_recently_merged: Vec<PullRequest> = Vec::new();
+
+    for user in followed_users {
+        if user.trim().is_empty() {
+            continue;
+        }
+        let author = user.trim();
+        if let Ok((open, recent)) = fetch_prs_for_author(
+            &client,
+            token,
+            author,
+            merged_window_hours,
+            show_recently_merged,
+            &exclusions,
+        )
+        .await
+        {
+            followed_open.extend(open);
+            followed_recently_merged.extend(recent);
+        }
+    }
+
     Ok(FetchResult {
-        open: response.data.open.nodes,
-        recently_merged: if show_recently_merged {
-            response.data.recently_merged.nodes
-        } else {
-            vec![]
-        },
+        open: my_open,
+        recently_merged: my_recently_merged,
+        followed_open,
+        followed_recently_merged,
         attention_urls: vec![],
         workflow_status: None,
     })
 }
 
 pub async fn fetch_workflow_status(
+    client: &reqwest::Client,
     token: &str,
     org: &str,
     repo: &str,
     workflow_name: &str,
 ) -> Result<Option<WorkflowStatus>, Box<dyn std::error::Error + Send + Sync>> {
-    let client = reqwest::Client::new();
     let url = format!(
         "https://api.github.com/repos/{}/{}/actions/workflows/{}/runs?per_page=10&status=completed",
         org, repo, workflow_name
@@ -288,9 +349,10 @@ pub async fn fetch_workflow_status(
     }
 
     let runs: WorkflowRunsResponse = response.json().await?;
-    let run = runs.workflow_runs.iter().find(|r| {
-        matches!(r.conclusion.as_deref(), Some("success") | Some("failure"))
-    });
+    let run = runs
+        .workflow_runs
+        .iter()
+        .find(|r| matches!(r.conclusion.as_deref(), Some("success") | Some("failure")));
 
     let Some(run) = run else {
         return Ok(None);

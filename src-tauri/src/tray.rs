@@ -62,6 +62,7 @@ pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> V
     let mut urls: Vec<String> = result
         .open
         .iter()
+        .chain(result.followed_open.iter())
         .filter(|pr| {
             let fp = attention_fingerprint(pr);
             match seen.get(&pr.url) {
@@ -72,7 +73,11 @@ pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> V
         .map(|pr| pr.url.clone())
         .collect();
 
-    for pr in &result.recently_merged {
+    for pr in result
+        .recently_merged
+        .iter()
+        .chain(result.followed_recently_merged.iter())
+    {
         if seen.contains_key(&pr.url) {
             urls.push(pr.url.clone());
         }
