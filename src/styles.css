@@ -460,6 +460,18 @@ details[open] > .accordion-header .accordion-chevron::before {
   color: #a1a1aa;
 }
 
+.pr-repo-label {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e4e4e7;
+  background-color: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
 .pr-reviews {
   flex-shrink: 0;
 }

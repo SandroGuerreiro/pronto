@@ -245,10 +245,22 @@ async function persistPrefs() {
   });
 }
 
-function renderPrCard(pr: PullRequest): string {
+function renderPrCard(pr: PullRequest, showRepo: boolean = false): string {
   const status = getStatus(pr);
   const { reviewText, statusText, statusClass } = getReviewStatus(pr);
   const checks = getChecksLabel(pr);
+  const unresolvedThreads = pr.reviewThreads.nodes.filter(t => !t.isResolved).length;
+  const resolvedThreads = pr.reviewThreads.nodes.filter(t => t.isResolved).length;
+  const commentCount = pr.comments.totalCount + unresolvedThreads;
+
+  const statusTitle =
+    status.class === "in-queue"
+      ? "In merge queue"
+      : status.class === "open"
+      ? "Open PR"
+      : status.class === "merged"
+      ? "Merged PR"
+      : "Closed PR";
 
   const statusParts: string[] = [];
   if (statusText) {
@@ -258,15 +270,16 @@ function renderPrCard(pr: PullRequest): string {
 
   return `
     <div class="pr-card${currentAttentionUrls.includes(pr.url) ? " attention" : ""}" data-url="${pr.url}" data-title="${pr.title.replace(/"/g, "&quot;")}">
-      <div class="pr-status ${status.class}">${status.label}</div>
+      <div class="pr-status ${status.class}" title="${statusTitle}">${status.label}</div>
       <div class="pr-info">
         <div class="pr-title">${pr.title}</div>
         <div class="pr-meta">
-          <span class="pr-reviews">${reviewText}</span>
+          ${showRepo ? `<span class="pr-repo-label">${pr.repository.name}</span><span class="meta-sep">·</span>` : ""}
+          <span class="pr-reviews" title="Approvals">${reviewText}</span>
           <span class="meta-sep">·</span>
-          <span class="pr-comments"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${pr.comments.totalCount + pr.reviewThreads.nodes.filter(t => !t.isResolved).length}</span>
+          <span class="pr-comments" title="Comments and unresolved threads"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${commentCount}</span>
           <span class="meta-sep">·</span>
-          <span class="pr-resolved">▣ ${pr.reviewThreads.nodes.filter(t => t.isResolved).length}</span>
+          <span class="pr-resolved" title="Resolved threads">▣ ${resolvedThreads}</span>
         </div>
         <div class="pr-status-line">${statusParts.join('<span class="status-sep"> · </span>')}</div>
       </div>
@@ -350,7 +363,10 @@ function renderActionButtons(type: "org" | "repo", key: string): string {
   const hideSet = type === "org" ? hiddenOrgs : hiddenRepos;
   const isFav = favSet.has(key);
   const isHidden = hideSet.has(key);
-  return `<button class="hide-btn${isHidden ? " active" : ""}" data-hide-type="${type}" data-hide-key="${key}">${isHidden ? "◌" : "◉"}</button><button class="fav-btn${isFav ? " active" : ""}" data-fav-type="${type}" data-fav-key="${key}">${isFav ? "★" : "☆"}</button>`;
+  const scope = type === "org" ? "organization" : "repository";
+  const hideTitle = isHidden ? `Show ${scope}` : `Hide ${scope}`;
+  const favTitle = isFav ? `Unfavorite ${scope}` : `Favorite ${scope}`;
+  return `<button class="hide-btn${isHidden ? " active" : ""}" data-hide-type="${type}" data-hide-key="${key}" title="${hideTitle}" aria-label="${hideTitle}">${isHidden ? "◌" : "◉"}</button><button class="fav-btn${isFav ? " active" : ""}" data-fav-type="${type}" data-fav-key="${key}" title="${favTitle}" aria-label="${favTitle}">${isFav ? "★" : "☆"}</button>`;
 }
 
 function renderRepoAccordion(org: string, repo: string, prs: PullRequest[], isHidden: boolean): string {
@@ -492,7 +508,7 @@ function renderFlatList(prs: PullRequest[]): string {
   const sorted = [...prs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
-  return sorted.map(renderPrCard).join("");
+  return sorted.map(pr => renderPrCard(pr, true)).join("");
 }
 
 function renderActiveTab() {
@@ -855,7 +871,7 @@ async function showSettings() {
           ${hiddenPrs.size > 0 ? [...hiddenPrs.entries()].map(([url, title]) => `
             <div class="hidden-pr-row" data-pr-url="${url.replace(/"/g, "&quot;")}">
               <span class="hidden-pr-title">${title}</span>
-              <button class="hidden-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}">✕</button>
+              <button class="hidden-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}" title="Unhide PR" aria-label="Unhide PR">✕</button>
             </div>
           `).join("") : '<div class="hidden-prs-empty">No hidden PRs</div>'}
         </div>
