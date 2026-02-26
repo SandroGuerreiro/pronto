@@ -37,7 +37,7 @@ gh auth login
 
 ## What the Script Does
 
-The release script automates 8 steps:
+The release script automates 9 steps:
 
 1. **Validate inputs** - Checks version format and prerequisites
 2. **Bump versions** - Updates version in:
@@ -45,11 +45,12 @@ The release script automates 8 steps:
    - `src-tauri/tauri.conf.json`
    - `src-tauri/Cargo.toml`
 3. **Commit changes** - Creates a git commit with bumped versions
-4. **Build** - Runs `pnpm tauri build --bundles dmg`
-5. **Create git tag** - Tags the commit as `v<version>`
-6. **Push to GitHub** - Pushes commits and tag to origin
-7. **Create GitHub release** - Creates a release with the DMG file attached
-8. **Update Homebrew tap** -
+4. **Build** - Runs `pnpm tauri build --bundles app` (builds macOS app bundle)
+5. **Create DMG** - Uses `hdiutil` to create a compressed DMG from the app bundle
+6. **Create git tag** - Tags the commit as `v<version>`
+7. **Push to GitHub** - Pushes commits and tag to origin
+8. **Create GitHub release** - Creates a release with the DMG file attached
+9. **Update Homebrew tap** -
    - Clones your Homebrew tap repository
    - Updates `Casks/pronto.rb` with new version and SHA256
    - Pushes changes to the tap repository
