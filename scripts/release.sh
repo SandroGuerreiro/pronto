@@ -130,26 +130,14 @@ main() {
     git commit -m "Bump version to $new_version"
     log_success "Version bump committed"
 
-    # Step 3: Build Tauri app (without DMG to avoid bundler issues)
+    # Step 3: Build Tauri app
     log_info "Step 3/8: Building Tauri app..."
 
-    # Temporarily modify tauri.conf.json to exclude dmg bundling
-    local tauri_conf="$PROJECT_ROOT/src-tauri/tauri.conf.json"
-    local tauri_conf_backup="$tauri_conf.backup"
-    cp "$tauri_conf" "$tauri_conf_backup"
-
-    # Modify targets to exclude dmg (use macos instead of all)
-    sed -i '' 's/"targets": "all"/"targets": ["macos"]/' "$tauri_conf"
-
-    if ! pnpm tauri build; then
-        # Restore config on failure
-        mv "$tauri_conf_backup" "$tauri_conf"
+    # Build app bundle only (DMG will be created manually with hdiutil for better compatibility)
+    if ! pnpm tauri build --bundles app; then
         log_error "Build failed"
         exit 1
     fi
-
-    # Restore original config
-    mv "$tauri_conf_backup" "$tauri_conf"
 
     log_success "Build completed"
 

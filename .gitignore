@@ -34,3 +34,5 @@ src-tauri/target/
 
 .claude
 CLAUDE.md
+
+scripts/
