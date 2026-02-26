@@ -155,12 +155,45 @@ body {
   z-index: 10;
 }
 
+/* View switcher (My PRs / Followed) */
+
+.view-switcher {
+  display: flex;
+  gap: 4px;
+  padding: 8px 8px 0;
+}
+
+.view-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #71717a;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.view-btn:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #a1a1aa;
+}
+
+.view-btn.active {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-weight: 600;
+}
+
 /* Tab bar */
 
 .tab-bar {
   display: flex;
   gap: 2px;
-  padding: 6px 8px;
+  padding: 4px 8px 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -460,6 +493,68 @@ details[open] > .accordion-header .accordion-chevron::before {
   color: #a1a1aa;
 }
 
+.pr-section {
+  margin-bottom: 8px;
+}
+
+.pr-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 4px 6px;
+}
+
+.pr-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.follow-filter {
+  max-width: 140px;
+  padding: 4px 8px;
+  background-color: rgba(24, 24, 27, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #e4e4e7;
+  font-size: 11px;
+  outline: none;
+}
+
+.follow-filter-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.follow-filter-btn {
+  padding: 3px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #a1a1aa;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.follow-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e4e4e7;
+}
+
+.follow-filter-btn.active {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
 .pr-repo-label {
   max-width: 130px;
   overflow: hidden;
@@ -470,6 +565,16 @@ details[open] > .accordion-header .accordion-chevron::before {
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 10px;
+}
+
+.pr-author-label {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #a1a1aa;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .pr-reviews {
