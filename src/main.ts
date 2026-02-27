@@ -53,6 +53,13 @@ function renderPrView(result: FetchResult) {
 
 // ── Workflow indicator ────────────────────────────────────────────────────────
 
+function formatWorkflowStatus(status: string): string {
+  return status
+    .split("_")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 function updateWorkflowIndicator(status: WorkflowStatus | null) {
   const indicator = document.getElementById("workflow-indicator")!;
   if (!status) {
@@ -71,8 +78,9 @@ function updateWorkflowIndicator(status: WorkflowStatus | null) {
 
   const attentionCls = workflowHasAttention ? " wf-attention" : "";
   indicator.className = `workflow-indicator ${cls}${attentionCls}`;
-  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${status.status}</span>`;
-  indicator.title = `${status.repo} — ${status.workflow_name}\n${status.status}\n${new Date(status.updated_at).toLocaleString()}`;
+  const prettyStatus = formatWorkflowStatus(status.status);
+  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${prettyStatus}</span>`;
+  indicator.title = `${status.repo} — ${status.workflow_name}\n${prettyStatus}\n${new Date(status.updated_at).toLocaleString()}`;
   indicator.style.display = "";
 }
 
@@ -207,7 +215,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   const wfIndicator = document.getElementById("workflow-indicator")!;
   wfIndicator.addEventListener("click", () => {
     if (currentResult?.workflow_status) {
-      openUrl(currentResult.workflow_status.html_url);
+      const { repo, workflow_name } = currentResult.workflow_status;
+      const workflowUrl = `https://github.com/${repo}/actions/workflows/${workflow_name}`;
+      openUrl(workflowUrl);
       if (workflowHasAttention) {
         setWorkflowHasAttention(false);
         wfIndicator.classList.remove("wf-attention");
