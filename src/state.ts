@@ -1,0 +1,53 @@
+import type { FetchResult, TabName, FilterType } from "./types";
+
+// ── PR data ──────────────────────────────────────────────────────────────────
+export let currentAttentionUrls: string[] = [];
+export let currentResult: FetchResult | null = null;
+
+// ── UI state ─────────────────────────────────────────────────────────────────
+export let activeTab: TabName = "mine";
+export let activeFollowFilter: string = "all";
+export let showAuthorInCards: boolean = false;
+export let groupByRepository: boolean = true;
+export let focusIndex: number = -1;
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+export let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ── Workflow ──────────────────────────────────────────────────────────────────
+export let lastWorkflowConclusion: string | null = null;
+export let workflowHasAttention: boolean = false;
+
+// ── Preferences (loaded from Rust) ────────────────────────────────────────────
+export let favoriteOrgs = new Set<string>();
+export let favoriteRepos = new Set<string>();
+export let collapsedAccordions = new Set<string>();
+export let hiddenOrgs = new Set<string>();
+export let hiddenRepos = new Set<string>();
+export let hiddenPrs = new Map<string, string>();
+export let followedUsers: string[] = [];
+export let pendingUnhideOrgs = new Set<string>();
+export let pendingUnhideRepos = new Set<string>();
+
+// ── Search / filter (session-only, never persisted) ───────────────────────────
+export let searchQuery: string = "";
+export let activeFilter: FilterType = "all";
+
+// ── Setters ───────────────────────────────────────────────────────────────────
+export function setCurrentAttentionUrls(urls: string[]) { currentAttentionUrls = urls; }
+export function setCurrentResult(r: FetchResult | null) { currentResult = r; }
+export function setActiveTabState(tab: TabName) { activeTab = tab; }
+export function setActiveFollowFilter(f: string) { activeFollowFilter = f; }
+export function setShowAuthorInCards(v: boolean) { showAuthorInCards = v; }
+export function setGroupByRepository(v: boolean) { groupByRepository = v; }
+export function setFocusIndex(i: number) { focusIndex = i; }
+export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbDismissTimer = t; }
+export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
+export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }
+export function setFollowedUsers(users: string[]) { followedUsers = users; }
+export function setSearchQuery(q: string) { searchQuery = q; }
+export function setActiveFilter(f: FilterType) { activeFilter = f; }
+export function clearPendingUnhide() {
+  pendingUnhideOrgs.clear();
+  pendingUnhideRepos.clear();
+}

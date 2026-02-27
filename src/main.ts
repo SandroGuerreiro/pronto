@@ -2,189 +2,81 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import type { FetchResult, WorkflowStatus } from "./types";
+import {
+  currentAttentionUrls,
+  setCurrentAttentionUrls,
+  setCurrentResult,
+  clearPendingUnhide,
+  kbDismissTimer,
+  setKbDismissTimer,
+  focusIndex,
+  setFocusIndex,
+  activeTab,
+  workflowHasAttention,
+  setWorkflowHasAttention,
+  lastWorkflowConclusion,
+  setLastWorkflowConclusion,
+  currentResult,
+} from "./state";
+import { loadUserPrefs, initPrefs } from "./prefs";
+import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
+import { showSettings, hideSettings, initSettings } from "./settings";
+import { showLogin, initAuth } from "./auth";
 
-interface Reviews {
-  totalCount: number;
-}
+// ── PR loading ────────────────────────────────────────────────────────────────
 
-interface MergeQueueEntry {
-  position: number;
-}
-
-interface Owner {
-  login: string;
-}
-
-interface Repository {
-  name: string;
-  owner: Owner;
-}
-
-interface Comments {
-  totalCount: number;
-}
-
-interface StatusCheckRollup {
-  state: string;
-}
-
-interface Commit {
-  statusCheckRollup: StatusCheckRollup | null;
-}
-
-interface CommitNode {
-  commit: Commit;
-}
-
-interface CommitConnection {
-  nodes: CommitNode[];
-}
-
-interface ReviewThread {
-  isResolved: boolean;
-}
-
-interface ReviewThreads {
-  nodes: ReviewThread[];
-}
-
-interface PullRequest {
-  title: string;
-  url: string;
-  state: string;
-  merged: boolean;
-  createdAt: string;
-  repository: Repository;
-  mergeQueueEntry: MergeQueueEntry | null;
-  reviewDecision: string | null;
-  reviews: Reviews;
-  comments: Comments;
-  reviewThreads: ReviewThreads;
-  commits: CommitConnection;
-  author: Owner;
-}
-
-interface WorkflowStatus {
-  conclusion: string;
-  workflow_name: string;
-  repo: string;
-  updated_at: string;
-  html_url: string;
-}
-
-interface FetchResult {
-  open: PullRequest[];
-  recently_merged: PullRequest[];
-  followed_open: PullRequest[];
-  followed_recently_merged: PullRequest[];
-  attention_urls: string[];
-  workflow_status: WorkflowStatus | null;
-}
-
-interface DeviceCodeResponse {
-  device_code: string;
-  user_code: string;
-  verification_uri: string;
-  expires_in: number;
-  interval: number;
-}
-
-interface HiddenPr {
-  url: string;
-  title: string;
-}
-
-interface Settings {
-  poll_interval_secs: number;
-  notifications_enabled: boolean;
-  show_recently_merged: boolean;
-  merged_window_hours: number;
-  favorite_orgs: string[];
-  favorite_repos: string[];
-  collapsed_accordions: string[];
-  hidden_orgs: string[];
-  hidden_repos: string[];
-  hidden_prs: HiddenPr[];
-   followed_users: string[];
-  group_by_repository: boolean;
-  workflow_monitor_enabled: boolean;
-  workflow_org: string;
-  workflow_repo: string;
-  workflow_name: string;
-}
-
-function getStatus(pr: PullRequest): { label: string; class: string } {
-  if (pr.mergeQueueEntry) {
-    return { label: "◎", class: "in-queue" };
-  }
-  if (pr.state === "OPEN") {
-    return { label: "●", class: "open" };
-  }
-  if (pr.merged) {
-    return { label: "✓", class: "merged" };
-  }
-  return { label: "✗", class: "closed" };
-}
-
-function getChecksLabel(pr: PullRequest): { text: string; class: string } {
-  const rollup = pr.commits.nodes[0]?.commit.statusCheckRollup;
-  if (!rollup) {
-    return { text: "no checks", class: "checks-none" };
-  }
-  switch (rollup.state) {
-    case "SUCCESS":
-      return { text: "checks passed", class: "checks-pass" };
-    case "FAILURE":
-    case "ERROR":
-      return { text: "checks failed", class: "checks-fail" };
-    case "PENDING":
-    case "EXPECTED":
-      return { text: "checks running", class: "checks-pending" };
-    default:
-      return { text: rollup.state.toLowerCase(), class: "checks-none" };
+export async function loadPrs() {
+  const content = document.getElementById("content")!;
+  try {
+    const result = await invoke<FetchResult>("fetch_all_prs");
+    renderPrView(result);
+  } catch (e: unknown) {
+    if (typeof e === "string" && e.includes("not_authenticated")) {
+      showLogin();
+    } else {
+      content.innerHTML = `<div class="empty">Failed to load PRs</div>`;
+      console.error(e);
+    }
   }
 }
 
-function getReviewStatus(pr: PullRequest): {
-  reviewText: string;
-  statusText: string | null;
-  statusClass: string;
-} {
-  const approvals = pr.reviews.totalCount;
-  const reviewText = `☑ ${approvals}`;
-
-  switch (pr.reviewDecision) {
-    case "APPROVED":
-      return { reviewText, statusText: "approved", statusClass: "approved" };
-    case "CHANGES_REQUESTED":
-      return { reviewText, statusText: "changes requested", statusClass: "changes-requested" };
-    case "REVIEW_REQUIRED":
-      return { reviewText, statusText: "needs reviews", statusClass: "needs-reviews" };
-    default:
-      return { reviewText, statusText: null, statusClass: "" };
-  }
+function renderPrView(result: FetchResult) {
+  document.getElementById("signout-btn")!.style.display = "";
+  document.getElementById("main-nav")!.style.display = "";
+  setCurrentAttentionUrls(result.attention_urls);
+  setCurrentResult(result);
+  clearPendingUnhide();
+  updateWorkflowIndicator(result.workflow_status);
+  renderActiveTab();
 }
 
-let currentAttentionUrls: string[] = [];
-let currentResult: FetchResult | null = null;
-let activeTab: "mine" | "followed" | "merged" | "settings" = "mine";
-let favoriteOrgs = new Set<string>();
-let favoriteRepos = new Set<string>();
-let collapsedAccordions = new Set<string>();
-let hiddenOrgs = new Set<string>();
-let hiddenRepos = new Set<string>();
-let hiddenPrs = new Map<string, string>();
-let pendingUnhideOrgs = new Set<string>();
-let pendingUnhideRepos = new Set<string>();
-let groupByRepository = true;
-let savePending = false;
-let focusIndex = -1;
-let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
-let lastWorkflowConclusion: string | null = null;
-let workflowHasAttention = false;
-let followedUsers: string[] = [];
-let activeFollowFilter: string = "all";
-let showAuthorInCards = false;
+// ── Workflow indicator ────────────────────────────────────────────────────────
+
+function updateWorkflowIndicator(status: WorkflowStatus | null) {
+  const indicator = document.getElementById("workflow-indicator")!;
+  if (!status) {
+    indicator.style.display = "none";
+    return;
+  }
+
+  const cls =
+    status.conclusion === "success" ? "wf-success"
+    : status.conclusion === "failure" ? "wf-failure"
+    : "wf-other";
+
+  const changed = lastWorkflowConclusion !== null && lastWorkflowConclusion !== status.conclusion;
+  if (changed) setWorkflowHasAttention(true);
+  setLastWorkflowConclusion(status.conclusion);
+
+  const attentionCls = workflowHasAttention ? " wf-attention" : "";
+  indicator.className = `workflow-indicator ${cls}${attentionCls}`;
+  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${status.conclusion}</span>`;
+  indicator.title = `${status.repo} — ${status.workflow_name}\n${status.conclusion}\n${new Date(status.updated_at).toLocaleString()}`;
+  indicator.style.display = "";
+}
+
+// ── Keyboard focus ────────────────────────────────────────────────────────────
 
 function getFocusables(): Element[] {
   const content = document.getElementById("content")!;
@@ -194,7 +86,7 @@ function getFocusables(): Element[] {
 function clearKbDismiss() {
   if (kbDismissTimer) {
     clearTimeout(kbDismissTimer);
-    kbDismissTimer = null;
+    setKbDismissTimer(null);
   }
 }
 
@@ -203,1024 +95,30 @@ function setFocus(index: number) {
   if (items.length === 0) return;
 
   clearKbDismiss();
+  document.querySelector(".kb-focus")?.classList.remove("kb-focus");
 
-  const prev = document.querySelector(".kb-focus");
-  if (prev) prev.classList.remove("kb-focus");
-
-  focusIndex = Math.max(0, Math.min(index, items.length - 1));
-  const el = items[focusIndex];
+  const newIndex = Math.max(0, Math.min(index, items.length - 1));
+  setFocusIndex(newIndex);
+  const el = items[newIndex];
   el.classList.add("kb-focus");
   el.scrollIntoView({ block: "nearest" });
 
   if (el.classList.contains("pr-card") && el.classList.contains("attention")) {
-    kbDismissTimer = setTimeout(() => {
-      el.classList.remove("attention");
-      const url = el.getAttribute("data-url");
-      if (url) {
-        currentAttentionUrls = currentAttentionUrls.filter(u => u !== url);
-        invoke("dismiss_pr", { url });
-      }
-      updateTabBadges();
-    }, 800);
-  }
-}
-
-async function loadUserPrefs() {
-  const s = await invoke<Settings>("get_settings");
-  favoriteOrgs = new Set(s.favorite_orgs);
-  favoriteRepos = new Set(s.favorite_repos);
-  collapsedAccordions = new Set(s.collapsed_accordions);
-  hiddenOrgs = new Set(s.hidden_orgs);
-  hiddenRepos = new Set(s.hidden_repos);
-  hiddenPrs = new Map((s.hidden_prs || []).map(h => [h.url, h.title]));
-  groupByRepository = s.group_by_repository !== false;
-  followedUsers = s.followed_users || [];
-  if (activeFollowFilter !== "all" && !followedUsers.includes(activeFollowFilter)) {
-    activeFollowFilter = "all";
-  }
-}
-
-async function persistPrefs() {
-  if (savePending) return;
-  savePending = true;
-  queueMicrotask(async () => {
-    savePending = false;
-    const current = await invoke<Settings>("get_settings");
-    current.favorite_orgs = [...favoriteOrgs];
-    current.favorite_repos = [...favoriteRepos];
-    current.collapsed_accordions = [...collapsedAccordions];
-    current.hidden_orgs = [...hiddenOrgs];
-    current.hidden_repos = [...hiddenRepos];
-    current.hidden_prs = [...hiddenPrs.entries()].map(([url, title]) => ({ url, title }));
-    await invoke("update_settings", { settings: current });
-  });
-}
-
-function renderPrCard(pr: PullRequest): string {
-  const status = getStatus(pr);
-  const { reviewText, statusText, statusClass } = getReviewStatus(pr);
-  const checks = getChecksLabel(pr);
-  const unresolvedThreads = pr.reviewThreads.nodes.filter(t => !t.isResolved).length;
-  const resolvedThreads = pr.reviewThreads.nodes.filter(t => t.isResolved).length;
-  const commentCount = pr.comments.totalCount + unresolvedThreads;
-
-  const statusTitle =
-    status.class === "in-queue"
-      ? "In merge queue"
-      : status.class === "open"
-      ? "Open PR"
-      : status.class === "merged"
-      ? "Merged PR"
-      : "Closed PR";
-
-  const statusParts: string[] = [];
-  if (statusText) {
-    statusParts.push(`<span class="${statusClass}">${statusText}</span>`);
-  }
-  statusParts.push(`<span class="${checks.class}">${checks.text}</span>`);
-
-  return `
-    <div class="pr-card${currentAttentionUrls.includes(pr.url) ? " attention" : ""}" data-url="${pr.url}" data-title="${pr.title.replace(/"/g, "&quot;")}">
-      <div class="pr-status ${status.class}" title="${statusTitle}">${status.label}</div>
-      <div class="pr-info">
-        <div class="pr-title">${pr.title}</div>
-        <div class="pr-meta">
-          ${showAuthorInCards ? `<span class="pr-author-label">@${pr.author.login}</span><span class="meta-sep">·</span>` : ""}
-          ${!groupByRepository ? `<span class="pr-repo-label">${pr.repository.name}</span><span class="meta-sep">·</span>` : ""}
-          <span class="pr-reviews" title="Approvals">${reviewText}</span>
-          <span class="meta-sep">·</span>
-          <span class="pr-comments" title="Comments and unresolved threads"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${commentCount}</span>
-          <span class="meta-sep">·</span>
-          <span class="pr-resolved" title="Resolved threads">▣ ${resolvedThreads}</span>
-        </div>
-        <div class="pr-status-line">${statusParts.join('<span class="status-sep"> · </span>')}</div>
-      </div>
-    </div>
-  `;
-}
-
-type GroupedPrs = [string, [string, PullRequest[]][]][];
-
-function groupPrs(prs: PullRequest[]): GroupedPrs {
-  const orgMap = new Map<string, Map<string, PullRequest[]>>();
-
-  const sorted = [...prs].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-
-  for (const pr of sorted) {
-    const org = pr.repository.owner.login;
-    const repo = pr.repository.name;
-
-    if (!orgMap.has(org)) orgMap.set(org, new Map());
-    const repos = orgMap.get(org)!;
-    if (!repos.has(repo)) repos.set(repo, []);
-    repos.get(repo)!.push(pr);
-  }
-
-  const sortedOrgs = [...orgMap.entries()].sort((a, b) => {
-    const aRank = hiddenOrgs.has(a[0]) ? 2 : favoriteOrgs.has(a[0]) ? 0 : 1;
-    const bRank = hiddenOrgs.has(b[0]) ? 2 : favoriteOrgs.has(b[0]) ? 0 : 1;
-    if (aRank !== bRank) return aRank - bRank;
-    return a[0].localeCompare(b[0]);
-  });
-
-  return sortedOrgs.map(([org, repoMap]) => {
-    const sortedRepos = [...repoMap.entries()].sort((a, b) => {
-      const aKey = `${org}/${a[0]}`;
-      const bKey = `${org}/${b[0]}`;
-      const aRank = hiddenRepos.has(aKey) ? 2 : favoriteRepos.has(aKey) ? 0 : 1;
-      const bRank = hiddenRepos.has(bKey) ? 2 : favoriteRepos.has(bKey) ? 0 : 1;
-      if (aRank !== bRank) return aRank - bRank;
-      return a[0].localeCompare(b[0]);
-    });
-    return [org, sortedRepos];
-  });
-}
-
-function toggleFavorite(type: "org" | "repo", key: string) {
-  const set = type === "org" ? favoriteOrgs : favoriteRepos;
-  if (set.has(key)) {
-    set.delete(key);
-  } else {
-    set.add(key);
-  }
-  persistPrefs();
-  renderActiveTab();
-}
-
-async function toggleHidden(type: "org" | "repo", key: string) {
-  const set = type === "org" ? hiddenOrgs : hiddenRepos;
-  const pendingSet = type === "org" ? pendingUnhideOrgs : pendingUnhideRepos;
-  if (set.has(key)) {
-    set.delete(key);
-    pendingSet.add(key);
-  } else {
-    set.add(key);
-    pendingSet.delete(key);
-  }
-  renderActiveTab();
-  const current = await invoke<Settings>("get_settings");
-  current.favorite_orgs = [...favoriteOrgs];
-  current.favorite_repos = [...favoriteRepos];
-  current.collapsed_accordions = [...collapsedAccordions];
-  current.hidden_orgs = [...hiddenOrgs];
-  current.hidden_repos = [...hiddenRepos];
-  await invoke("update_settings", { settings: current });
-  loadPrs();
-}
-
-function renderActionButtons(type: "org" | "repo", key: string): string {
-  const favSet = type === "org" ? favoriteOrgs : favoriteRepos;
-  const hideSet = type === "org" ? hiddenOrgs : hiddenRepos;
-  const isFav = favSet.has(key);
-  const isHidden = hideSet.has(key);
-  const scope = type === "org" ? "organization" : "repository";
-  const hideTitle = isHidden ? `Show ${scope}` : `Hide ${scope}`;
-  const favTitle = isFav ? `Unfavorite ${scope}` : `Favorite ${scope}`;
-  return `<button class="hide-btn${isHidden ? " active" : ""}" data-hide-type="${type}" data-hide-key="${key}" title="${hideTitle}" aria-label="${hideTitle}">${isHidden ? "◌" : "◉"}</button><button class="fav-btn${isFav ? " active" : ""}" data-fav-type="${type}" data-fav-key="${key}" title="${favTitle}" aria-label="${favTitle}">${isFav ? "★" : "☆"}</button>`;
-}
-
-function renderRepoAccordion(org: string, repo: string, prs: PullRequest[], isHidden: boolean): string {
-  const repoKey = `${org}/${repo}`;
-  const repoId = `repo:${repoKey}`;
-  const repoOpen = collapsedAccordions.has(repoId) ? "" : " open";
-  const cls = isHidden ? " hidden-accordion" : "";
-  let html = `<details class="accordion repo-accordion${cls}" data-accordion-id="${repoId}"${repoOpen}>`;
-  html += `<summary class="accordion-header repo-header"><span class="accordion-chevron"></span><span class="accordion-label">${repo}</span><span class="accordion-count">${prs.length}</span>${renderActionButtons("repo", repoKey)}</summary>`;
-  if (!isHidden) {
-    html += prs.map(renderPrCard).join("");
-  }
-  html += `</details>`;
-  return html;
-}
-
-function renderAccordionContent(prs: PullRequest[]): string {
-  const grouped = groupPrs(prs);
-  const renderedOrgs = new Set<string>();
-  let html = "";
-
-  if (prs.length === 0 && hiddenOrgs.size === 0 && hiddenRepos.size === 0 && pendingUnhideOrgs.size === 0 && pendingUnhideRepos.size === 0) {
-    return '<div class="empty">No PRs</div>';
-  }
-
-  for (const [org, repos] of grouped) {
-    renderedOrgs.add(org);
-    const orgId = `org:${org}`;
-    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
-    const orgIsHidden = hiddenOrgs.has(org);
-    const cls = orgIsHidden ? " hidden-accordion" : "";
-    html += `<details class="accordion org-accordion${cls}" data-accordion-id="${orgId}"${orgOpen}>`;
-    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
-
-    if (!orgIsHidden) {
-      const renderedRepos = new Set<string>();
-      for (const [repo, repoPrs] of repos) {
-        renderedRepos.add(`${org}/${repo}`);
-        html += renderRepoAccordion(org, repo, repoPrs, hiddenRepos.has(`${org}/${repo}`));
-      }
-
-      for (const repoKey of hiddenRepos) {
-        if (renderedRepos.has(repoKey)) continue;
-        const [rOrg, rRepo] = repoKey.split("/");
-        if (rOrg !== org) continue;
-        html += renderRepoAccordion(org, rRepo, [], true);
-      }
-
-      for (const repoKey of pendingUnhideRepos) {
-        if (renderedRepos.has(repoKey)) continue;
-        const [rOrg, rRepo] = repoKey.split("/");
-        if (rOrg !== org) continue;
-        html += renderRepoAccordion(org, rRepo, [], false);
-      }
-    }
-
-    html += `</details>`;
-  }
-
-  for (const org of hiddenOrgs) {
-    if (renderedOrgs.has(org)) continue;
-    renderedOrgs.add(org);
-    const orgId = `org:${org}`;
-    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
-    html += `<details class="accordion org-accordion hidden-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
-    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
-    html += `</details>`;
-  }
-
-  for (const org of pendingUnhideOrgs) {
-    if (renderedOrgs.has(org)) continue;
-    renderedOrgs.add(org);
-    const orgId = `org:${org}`;
-    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
-    html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
-    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
-    html += `</details>`;
-  }
-
-  const extraReposByOrg = new Map<string, { repo: string; hidden: boolean }[]>();
-  for (const repoKey of hiddenRepos) {
-    const [org, repo] = repoKey.split("/");
-    if (renderedOrgs.has(org)) continue;
-    if (!extraReposByOrg.has(org)) extraReposByOrg.set(org, []);
-    extraReposByOrg.get(org)!.push({ repo, hidden: true });
-  }
-  for (const repoKey of pendingUnhideRepos) {
-    const [org, repo] = repoKey.split("/");
-    if (renderedOrgs.has(org)) continue;
-    if (!extraReposByOrg.has(org)) extraReposByOrg.set(org, []);
-    extraReposByOrg.get(org)!.push({ repo, hidden: false });
-  }
-  for (const [org, repos] of extraReposByOrg) {
-    renderedOrgs.add(org);
-    const orgId = `org:${org}`;
-    const orgOpen = collapsedAccordions.has(orgId) ? "" : " open";
-    html += `<details class="accordion org-accordion" data-accordion-id="${orgId}"${orgOpen}>`;
-    html += `<summary class="accordion-header org-header"><span class="accordion-chevron"></span><span class="accordion-label">${org}</span>${renderActionButtons("org", org)}</summary>`;
-    for (const { repo, hidden } of repos) {
-      html += renderRepoAccordion(org, repo, [], hidden);
-    }
-    html += `</details>`;
-  }
-
-  if (html === "") {
-    return '<div class="empty">No PRs</div>';
-  }
-
-  return html;
-}
-
-function updateTabBadges() {
-  if (!currentResult) return;
-  const mineCount = currentResult.open.filter(pr => currentAttentionUrls.includes(pr.url)).length;
-  const followedCount = (currentResult.followed_open || []).filter(pr => currentAttentionUrls.includes(pr.url)).length;
-  const mergedCount = [
-    ...currentResult.recently_merged,
-    ...(currentResult.followed_recently_merged || [])
-  ].filter(pr => currentAttentionUrls.includes(pr.url)).length;
-
-  const counts: Record<string, number> = { mine: mineCount, followed: followedCount, merged: mergedCount };
-
-  function setBadge(btn: Element, count: number) {
-    const badge = btn.querySelector(".tab-badge");
-    if (count > 0) {
-      if (badge) {
-        badge.textContent = String(count);
-      } else {
-        const span = document.createElement("span");
-        span.className = "tab-badge";
-        span.textContent = String(count);
-        btn.appendChild(span);
-      }
-    } else if (badge) {
-      badge.remove();
-    }
-  }
-
-  document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
-    const tab = btn.getAttribute("data-tab")!;
-    setBadge(btn, counts[tab] || 0);
-  });
-}
-
-function renderFlatList(prs: PullRequest[]): string {
-  if (prs.length === 0) {
-    return '<div class="empty">No PRs</div>';
-  }
-  const sorted = [...prs].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-  return sorted.map(renderPrCard).join("");
-}
-
-function renderSection(
-  title: string,
-  prs: PullRequest[],
-  options?: { isFollowed?: boolean }
-): string {
-  if (prs.length === 0) return "";
-
-  let list = prs;
-  if (options?.isFollowed && activeFollowFilter !== "all") {
-    list = prs.filter(pr => pr.author.login === activeFollowFilter);
-    if (list.length === 0) return "";
-  }
-
-  const body = groupByRepository ? renderAccordionContent(list) : renderFlatList(list);
-  const showFilter = options?.isFollowed && followedUsers.length > 1;
-  const filterHtml = showFilter
-    ? `<select class="follow-filter">
-         <option value="all"${activeFollowFilter === "all" ? " selected" : ""}>All users</option>
-         ${followedUsers
-           .map(
-             u =>
-               `<option value="${u}"${
-                 activeFollowFilter === u ? " selected" : ""
-               }>${u}</option>`
-           )
-           .join("")}
-       </select>`
-    : "";
-
-  return `
-    <section class="pr-section">
-      <div class="pr-section-header">
-        <div class="pr-section-title">${title}</div>
-        ${filterHtml}
-      </div>
-      ${body}
-    </section>
-  `;
-}
-
-function renderActiveTab() {
-  if (!currentResult) return;
-  focusIndex = -1;
-  const content = document.getElementById("content")!;
-  let html = "";
-
-  if (activeTab === "mine") {
-    const prs = currentResult.open;
-    html = prs.length > 0 || hiddenOrgs.size > 0 || hiddenRepos.size > 0
-      ? (groupByRepository ? renderAccordionContent(prs) : renderFlatList(prs))
-      : '<div class="empty">No open PRs</div>';
-
-  } else if (activeTab === "followed") {
-    if (followedUsers.length === 0) {
-      html = '<div class="empty">No followed developers. Add some in Settings.</div>';
-    } else {
-      const allOpen = currentResult.followed_open || [];
-      const attentionByUser: Record<string, number> = {};
-      for (const pr of allOpen) {
-        if (currentAttentionUrls.includes(pr.url)) {
-          const u = pr.author.login;
-          attentionByUser[u] = (attentionByUser[u] || 0) + 1;
+    setKbDismissTimer(
+      setTimeout(() => {
+        el.classList.remove("attention");
+        const url = el.getAttribute("data-url");
+        if (url) {
+          setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
+          invoke("dismiss_pr", { url });
         }
-      }
-      const filtered = activeFollowFilter === "all" ? allOpen : allOpen.filter(pr => pr.author.login === activeFollowFilter);
-
-      if (followedUsers.length > 1) {
-        const totalAttention = Object.values(attentionByUser).reduce((a, b) => a + b, 0);
-        html += `<div class="follow-filter-bar">
-          <button class="follow-filter-btn${activeFollowFilter === "all" ? " active" : ""}" data-filter="all">All${totalAttention ? `<span class="tab-badge">${totalAttention}</span>` : ""}</button>
-          ${followedUsers.map(u => {
-            const count = attentionByUser[u] || 0;
-            return `<button class="follow-filter-btn${activeFollowFilter === u ? " active" : ""}" data-filter="${u}">@${u}${count ? `<span class="tab-badge">${count}</span>` : ""}</button>`;
-          }).join("")}
-        </div>`;
-      }
-
-      showAuthorInCards = true;
-      html += filtered.length > 0
-        ? (groupByRepository ? renderAccordionContent(filtered) : renderFlatList(filtered))
-        : '<div class="empty">No PRs</div>';
-      showAuthorInCards = false;
-    }
-
-  } else if (activeTab === "merged") {
-    const mine = currentResult.recently_merged || [];
-    const following = currentResult.followed_recently_merged || [];
-    if (mine.length === 0 && following.length === 0) {
-      html = '<div class="empty">No recently merged PRs</div>';
-    } else {
-      if (mine.length > 0) html += renderSection("Mine", mine);
-      if (following.length > 0) {
-        showAuthorInCards = true;
-        html += renderSection("Following", following);
-        showAuthorInCards = false;
-      }
-    }
-  }
-
-  if (!html) html = '<div class="empty">No PRs</div>';
-  content.innerHTML = html;
-  bindContentEvents(content);
-  content.querySelectorAll<HTMLButtonElement>(".follow-filter-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      activeFollowFilter = btn.getAttribute("data-filter") || "all";
-      renderActiveTab();
-    });
-  });
-  updateTabBadges();
-}
-
-function setActiveTab(tab: "mine" | "followed" | "merged" | "settings") {
-  activeTab = tab;
-  document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
-  });
-  if (tab === "settings") {
-    showSettings();
-  } else {
-    renderActiveTab();
+        updateTabBadges();
+      }, 800)
+    );
   }
 }
 
-function bindContentEvents(container: HTMLElement) {
-  const readyToHover = Date.now();
-  container.querySelectorAll(".pr-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      const url = card.getAttribute("data-url");
-      if (url) openUrl(url);
-    });
-
-    let dismissTimer: ReturnType<typeof setTimeout> | null = null;
-    card.addEventListener("mouseenter", () => {
-      if (Date.now() - readyToHover < 500) return;
-      if (card.classList.contains("attention")) {
-        dismissTimer = setTimeout(() => {
-
-          card.classList.remove("attention");
-          const url = card.getAttribute("data-url");
-          if (url) {
-            currentAttentionUrls = currentAttentionUrls.filter(u => u !== url);
-            invoke("dismiss_pr", { url });
-          }
-          updateTabBadges();
-        }, 800);
-      }
-    });
-    card.addEventListener("mouseleave", () => {
-      if (dismissTimer) {
-        clearTimeout(dismissTimer);
-        dismissTimer = null;
-      }
-    });
-  });
-
-  container.querySelectorAll("details[data-accordion-id]").forEach((el) => {
-    el.addEventListener("toggle", () => {
-      const id = el.getAttribute("data-accordion-id")!;
-      if ((el as HTMLDetailsElement).open) {
-        collapsedAccordions.delete(id);
-      } else {
-        collapsedAccordions.add(id);
-      }
-      persistPrefs();
-    });
-  });
-
-  container.querySelectorAll(".fav-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const type = btn.getAttribute("data-fav-type") as "org" | "repo";
-      const key = btn.getAttribute("data-fav-key")!;
-      toggleFavorite(type, key);
-    });
-  });
-
-  container.querySelectorAll(".hide-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const type = btn.getAttribute("data-hide-type") as "org" | "repo";
-      const key = btn.getAttribute("data-hide-key")!;
-      toggleHidden(type, key);
-    });
-  });
-}
-
-function showLogin() {
-  const content = document.getElementById("content")!;
-  document.getElementById("signout-btn")!.style.display = "none";
-  document.getElementById("main-nav")!.style.display = "none";
-
-  content.innerHTML = `
-    <div class="login-view">
-      <div class="login-icon">🔑</div>
-      <div class="login-title">Connect to GitHub</div>
-      <div class="login-desc">Sign in to see your PRs.</div>
-      <button id="login-btn" class="login-btn">Sign in with GitHub</button>
-      <button id="pat-btn" class="login-btn login-btn-secondary">Use Personal Access Token</button>
-      <button id="login-quit-btn" class="login-quit-btn">Quit</button>
-    </div>
-  `;
-
-  document.getElementById("login-btn")!.addEventListener("click", startLogin);
-  document.getElementById("pat-btn")!.addEventListener("click", showPatInput);
-  const loginQuitBtn = document.getElementById("login-quit-btn")!;
-  addConfirmedClickHandler(loginQuitBtn, async () => {
-    const { exit } = await import("@tauri-apps/plugin-process");
-    await exit(0);
-  });
-}
-
-function showPermissionsInfo() {
-  const content = document.getElementById("content")!;
-
-  content.innerHTML = `
-    <div class="login-view permissions-view">
-      <div class="login-title">Required Permissions</div>
-
-      <div class="perm-section">
-        <div class="perm-section-title">Classic Token</div>
-        <div class="perm-section-desc">Create at <a id="perm-classic-link" href="#" class="login-link">github.com/settings/tokens</a></div>
-        <div class="perm-list">
-          <div class="perm-item"><span class="perm-scope">repo</span> Full control of private repositories</div>
-        </div>
-      </div>
-
-      <div class="perm-divider"></div>
-
-      <div class="perm-section">
-        <div class="perm-section-title">Fine-grained Token</div>
-        <div class="perm-section-desc">Create at <a id="perm-fine-link" href="#" class="login-link">github.com/settings/tokens?type=beta</a></div>
-        <div class="perm-list">
-          <div class="perm-item"><span class="perm-scope">Contents</span> Read-only</div>
-          <div class="perm-item"><span class="perm-scope">Metadata</span> Read-only</div>
-          <div class="perm-item"><span class="perm-scope">Pull requests</span> Read-only</div>
-        </div>
-        <div class="perm-note">Select the repositories you want to monitor.</div>
-      </div>
-
-      <button id="perm-back-btn" class="login-btn login-btn-secondary">Back</button>
-    </div>
-  `;
-
-  document.getElementById("perm-classic-link")!.addEventListener("click", (e) => {
-    e.preventDefault();
-    openUrl("https://github.com/settings/tokens");
-  });
-
-  document.getElementById("perm-fine-link")!.addEventListener("click", (e) => {
-    e.preventDefault();
-    openUrl("https://github.com/settings/tokens?type=beta");
-  });
-
-  document.getElementById("perm-back-btn")!.addEventListener("click", () => showPatInput());
-}
-
-function showPatInput() {
-  const content = document.getElementById("content")!;
-
-  content.innerHTML = `
-    <div class="login-view">
-      <div class="login-title">Personal Access Token</div>
-      <div class="login-desc">Paste a token with the right permissions. <a id="perm-info-link" href="#" class="login-link">What permissions do I need?</a></div>
-      <input id="pat-input" type="password" class="pat-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" spellcheck="false" />
-      <div id="pat-error" class="pat-error"></div>
-      <button id="pat-connect-btn" class="login-btn">Connect</button>
-      <button id="pat-back-btn" class="login-btn login-btn-secondary">Back</button>
-    </div>
-  `;
-
-  document.getElementById("perm-info-link")!.addEventListener("click", (e) => {
-    e.preventDefault();
-    showPermissionsInfo();
-  });
-
-  document.getElementById("pat-back-btn")!.addEventListener("click", () => showLogin());
-
-  document.getElementById("pat-connect-btn")!.addEventListener("click", async () => {
-    const input = document.getElementById("pat-input") as HTMLInputElement;
-    const error = document.getElementById("pat-error")!;
-    const btn = document.getElementById("pat-connect-btn") as HTMLButtonElement;
-    const token = input.value.trim();
-
-    if (!token) {
-      error.textContent = "Please enter a token.";
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = "Validating...";
-    error.textContent = "";
-
-    try {
-      await invoke("login_with_pat", { token });
-      await loadPrs();
-    } catch (e) {
-      error.textContent = "Invalid token. Please check and try again.";
-      btn.disabled = false;
-      btn.textContent = "Connect";
-    }
-  });
-
-  document.getElementById("pat-input")!.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      document.getElementById("pat-connect-btn")!.click();
-    }
-  });
-}
-
-async function startLogin() {
-  const content = document.getElementById("content")!;
-
-  content.innerHTML = `<div class="login-view"><div class="login-desc">Connecting to GitHub...</div></div>`;
-
-  try {
-    const resp = await invoke<DeviceCodeResponse>("start_login");
-
-    content.innerHTML = `
-      <div class="login-view">
-        <div class="login-title">Enter this code on GitHub</div>
-        <div class="login-code" id="device-code" title="Click to copy">${resp.user_code}</div>
-        <div id="copy-feedback" class="copy-feedback"></div>
-        <div class="login-desc">
-          Open <a id="verify-link" href="#" class="login-link">${resp.verification_uri}</a> and paste the code above.
-        </div>
-        <div class="login-status">Waiting for authorization...</div>
-      </div>
-    `;
-
-    document.getElementById("device-code")!.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(resp.user_code);
-      const feedback = document.getElementById("copy-feedback")!;
-      feedback.textContent = "Copied!";
-      setTimeout(() => { feedback.textContent = ""; }, 2000);
-    });
-
-    document.getElementById("verify-link")!.addEventListener("click", (e) => {
-      e.preventDefault();
-      openUrl(resp.verification_uri);
-    });
-
-    const interval = Math.max(resp.interval || 5, 8) * 1000;
-    let polling = false;
-    const poll = setInterval(async () => {
-      if (polling) return;
-      polling = true;
-      try {
-        const done = await invoke<boolean>("poll_login", { deviceCode: resp.device_code });
-        if (done) {
-          clearInterval(poll);
-          await loadPrs();
-          return;
-        }
-      } catch (e) {
-        clearInterval(poll);
-        content.innerHTML = `
-          <div class="login-view">
-            <div class="login-desc">Authorization failed. Please try again.</div>
-            <button id="login-retry-btn" class="login-btn">Retry</button>
-          </div>
-        `;
-        document.getElementById("login-retry-btn")!.addEventListener("click", () => showLogin());
-      } finally {
-        polling = false;
-      }
-    }, interval);
-  } catch (e) {
-    content.innerHTML = `
-      <div class="login-view">
-        <div class="login-desc">Failed to start login. Please try again.</div>
-        <button id="login-retry-btn" class="login-btn">Retry</button>
-      </div>
-    `;
-    document.getElementById("login-retry-btn")!.addEventListener("click", () => showLogin());
-    console.error(e);
-  }
-}
-
-function hideSettings() {
-  setActiveTab("mine");
-  loadPrs();
-}
-
-async function showSettings() {
-  const content = document.getElementById("content")!;
-  const settings = await invoke<Settings>("get_settings");
-
-  content.innerHTML = `
-    <div class="settings-view">
-      <div class="settings-title">Settings</div>
-      <input type="text" id="settings-search" class="settings-search" placeholder="Search settings…" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" spellcheck="false" />
-
-      <div class="settings-section">
-        <div class="settings-section-title">General</div>
-        <div class="settings-group">
-          <label class="settings-label">Polling interval</label>
-          <select id="setting-poll" class="settings-select">
-            <option value="60"${settings.poll_interval_secs === 60 ? " selected" : ""}>1 minute</option>
-            <option value="120"${settings.poll_interval_secs === 120 ? " selected" : ""}>2 minutes</option>
-            <option value="300"${settings.poll_interval_secs === 300 ? " selected" : ""}>5 minutes</option>
-            <option value="600"${settings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
-          </select>
-        </div>
-        <div class="settings-group">
-          <label class="settings-label">
-            <span>Notifications</span>
-            <input type="checkbox" id="setting-notifications" class="settings-toggle"${settings.notifications_enabled ? " checked" : ""} />
-          </label>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Display</div>
-        <div class="settings-group">
-          <label class="settings-label">
-            <span>Group by repository</span>
-            <input type="checkbox" id="setting-group-repo" class="settings-toggle"${settings.group_by_repository !== false ? " checked" : ""} />
-          </label>
-        </div>
-        <div class="settings-group">
-          <label class="settings-label">
-            <span>Show recently merged</span>
-            <input type="checkbox" id="setting-merged" class="settings-toggle"${settings.show_recently_merged ? " checked" : ""} />
-          </label>
-        </div>
-        <div class="settings-group" id="merged-window-group"${settings.show_recently_merged ? "" : ' style="display:none"'}>
-          <label class="settings-label">Merged time window</label>
-          <select id="setting-merged-hours" class="settings-select">
-            <option value="12"${settings.merged_window_hours === 12 ? " selected" : ""}>12 hours</option>
-            <option value="24"${settings.merged_window_hours === 24 ? " selected" : ""}>24 hours</option>
-            <option value="48"${settings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Workflow</div>
-        <div class="settings-group">
-          <label class="settings-label">
-            <span>Monitor workflow</span>
-            <input type="checkbox" id="setting-workflow-enabled" class="settings-toggle"${settings.workflow_monitor_enabled ? " checked" : ""} />
-          </label>
-        </div>
-        <div id="workflow-config-group"${settings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
-          <div class="settings-group">
-            <label class="settings-label">Organization</label>
-            <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" autocapitalize="off" autocorrect="off" spellcheck="false" />
-          </div>
-          <div class="settings-group">
-            <label class="settings-label">Repository</label>
-            <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" autocapitalize="off" autocorrect="off" spellcheck="false" />
-          </div>
-          <div class="settings-group">
-            <label class="settings-label">Workflow file</label>
-            <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" autocapitalize="off" autocorrect="off" spellcheck="false" />
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Followed users</div>
-        <div class="settings-group">
-          <label class="settings-label">
-            <span>Add GitHub username</span>
-          </label>
-          <div style="display: flex; gap: 6px;">
-            <input type="text" id="follow-user-input" class="settings-input" placeholder="e.g. octocat" autocapitalize="off" autocorrect="off" spellcheck="false" />
-            <button id="follow-user-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
-          </div>
-        </div>
-        <div class="hidden-prs-list" id="follow-users-list">
-          ${settings.followed_users && settings.followed_users.length > 0
-            ? settings.followed_users
-                .map(
-                  u => `
-            <div class="hidden-pr-row" data-user="${u}">
-              <span class="hidden-pr-title">${u}</span>
-              <button class="hidden-pr-remove follow-user-remove" data-user="${u}" title="Remove user" aria-label="Remove user">✕</button>
-            </div>`
-                )
-                .join("")
-            : '<div class="hidden-prs-empty">No followed users</div>'}
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Hidden PRs</div>
-        <div class="hidden-prs-list">
-          ${hiddenPrs.size > 0 ? [...hiddenPrs.entries()].map(([url, title]) => `
-            <div class="hidden-pr-row" data-pr-url="${url.replace(/"/g, "&quot;")}">
-              <span class="hidden-pr-title">${title}</span>
-              <button class="hidden-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}" title="Unhide PR" aria-label="Unhide PR">✕</button>
-            </div>
-          `).join("") : '<div class="hidden-prs-empty">No hidden PRs</div>'}
-        </div>
-      </div>
-
-    </div>
-  `;
-
-  document.getElementById("setting-merged")!.addEventListener("change", (e) => {
-    const checked = (e.target as HTMLInputElement).checked;
-    document.getElementById("merged-window-group")!.style.display = checked ? "" : "none";
-  });
-
-  document.getElementById("setting-workflow-enabled")!.addEventListener("change", (e) => {
-    const checked = (e.target as HTMLInputElement).checked;
-    document.getElementById("workflow-config-group")!.style.display = checked ? "" : "none";
-  });
-
-  content.querySelectorAll(".hidden-pr-remove").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const url = btn.getAttribute("data-pr-url")!;
-      hiddenPrs.delete(url);
-      const row = btn.closest(".hidden-pr-row");
-      if (row) row.remove();
-      const list = content.querySelector(".hidden-prs-list");
-      if (list && list.children.length === 0) {
-        list.innerHTML = '<div class="hidden-prs-empty">No hidden PRs</div>';
-      }
-      autoSaveSettings();
-    });
-  });
-
-  const followList = document.getElementById("follow-users-list")!;
-  const followInput = document.getElementById("follow-user-input") as HTMLInputElement;
-  const followAddBtn = document.getElementById("follow-user-add") as HTMLButtonElement;
-
-  const refreshFollowEmptyState = () => {
-    if (!followList.querySelector(".hidden-pr-row")) {
-      followList.innerHTML = '<div class="hidden-prs-empty">No followed users</div>';
-    }
-  };
-
-  followInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") followAddBtn.click();
-  });
-
-  followAddBtn.addEventListener("click", () => {
-    const raw = followInput.value.trim();
-    if (!raw) return;
-    const user = raw.replace(/^@/, "");
-    if (followedUsers.includes(user)) {
-      followInput.value = "";
-      return;
-    }
-    followedUsers.push(user);
-    const empty = followList.querySelector(".hidden-prs-empty");
-    if (empty) empty.remove();
-    const row = document.createElement("div");
-    row.className = "hidden-pr-row";
-    row.dataset.user = user;
-    row.innerHTML = `
-      <span class="hidden-pr-title">${user}</span>
-      <button class="hidden-pr-remove follow-user-remove" data-user="${user}" title="Remove user" aria-label="Remove user">✕</button>
-    `;
-    followList.appendChild(row);
-    followInput.value = "";
-    autoSaveSettings();
-  });
-
-  followList.querySelectorAll(".follow-user-remove").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const user = btn.getAttribute("data-user")!;
-      followedUsers = followedUsers.filter(u => u !== user);
-      const row = btn.closest(".hidden-pr-row");
-      if (row) row.remove();
-      refreshFollowEmptyState();
-      if (activeFollowFilter === user) {
-        activeFollowFilter = "all";
-      }
-      autoSaveSettings();
-    });
-  });
-
-  // Auto-save on any settings change
-  const autoSaveSettings = async () => {
-    const updated: Settings = {
-      poll_interval_secs: parseInt((document.getElementById("setting-poll") as HTMLSelectElement).value),
-      notifications_enabled: (document.getElementById("setting-notifications") as HTMLInputElement).checked,
-      show_recently_merged: (document.getElementById("setting-merged") as HTMLInputElement).checked,
-      merged_window_hours: parseInt((document.getElementById("setting-merged-hours") as HTMLSelectElement).value),
-      favorite_orgs: [...favoriteOrgs],
-      favorite_repos: [...favoriteRepos],
-      collapsed_accordions: [...collapsedAccordions],
-      hidden_orgs: [...hiddenOrgs],
-      hidden_repos: [...hiddenRepos],
-      hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
-      followed_users: followedUsers,
-      group_by_repository: (document.getElementById("setting-group-repo") as HTMLInputElement).checked,
-      workflow_monitor_enabled: (document.getElementById("setting-workflow-enabled") as HTMLInputElement).checked,
-      workflow_org: (document.getElementById("setting-workflow-org") as HTMLInputElement).value.trim(),
-      workflow_repo: (document.getElementById("setting-workflow-repo") as HTMLInputElement).value.trim(),
-      workflow_name: (document.getElementById("setting-workflow-name") as HTMLInputElement).value.trim(),
-    };
-    groupByRepository = updated.group_by_repository;
-    await invoke("update_settings", { settings: updated });
-  };
-
-  // Auto-save when inputs change
-  content.querySelectorAll("input, select").forEach((input) => {
-    input.addEventListener("change", autoSaveSettings);
-  });
-
-  const searchInput = document.getElementById("settings-search") as HTMLInputElement;
-  searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase().trim();
-    content.querySelectorAll<HTMLElement>(".settings-section").forEach((section) => {
-      const title = section.querySelector(".settings-section-title")?.textContent?.toLowerCase() || "";
-      const groups = section.querySelectorAll<HTMLElement>(".settings-group, #workflow-config-group > .settings-group");
-      let sectionMatch = !q || title.includes(q);
-      let anyGroupVisible = false;
-
-      groups.forEach((group) => {
-        const label = group.textContent?.toLowerCase() || "";
-        const visible = sectionMatch || label.includes(q);
-        group.style.display = visible ? "" : "none";
-        if (visible) anyGroupVisible = true;
-      });
-
-      const hiddenList = section.querySelector<HTMLElement>(".hidden-prs-list");
-      if (hiddenList) {
-        const listText = hiddenList.textContent?.toLowerCase() || "";
-        if (!q || title.includes(q) || listText.includes(q)) {
-          hiddenList.style.display = "";
-          anyGroupVisible = true;
-        } else {
-          hiddenList.style.display = "none";
-        }
-      }
-
-      section.style.display = (anyGroupVisible || sectionMatch) ? "" : "none";
-    });
-  });
-}
-
-function updateWorkflowIndicator(status: WorkflowStatus | null) {
-  const indicator = document.getElementById("workflow-indicator")!;
-  if (!status) {
-    indicator.style.display = "none";
-    return;
-  }
-
-  const cls = status.conclusion === "success" ? "wf-success"
-    : status.conclusion === "failure" ? "wf-failure"
-    : "wf-other";
-
-  const changed = lastWorkflowConclusion !== null && lastWorkflowConclusion !== status.conclusion;
-  if (changed) {
-    workflowHasAttention = true;
-  }
-  lastWorkflowConclusion = status.conclusion;
-
-  const attentionCls = workflowHasAttention ? " wf-attention" : "";
-  indicator.className = `workflow-indicator ${cls}${attentionCls}`;
-  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${status.conclusion}</span>`;
-  indicator.title = `${status.repo} — ${status.workflow_name}\n${status.conclusion}\n${new Date(status.updated_at).toLocaleString()}`;
-  indicator.style.display = "";
-}
-
-function renderPrView(result: FetchResult) {
-  document.getElementById("signout-btn")!.style.display = "";
-  document.getElementById("main-nav")!.style.display = "";
-  currentAttentionUrls = result.attention_urls;
-  currentResult = result;
-  pendingUnhideOrgs.clear();
-  pendingUnhideRepos.clear();
-  updateWorkflowIndicator(result.workflow_status);
-  renderActiveTab();
-}
-
-async function loadPrs() {
-  const content = document.getElementById("content")!;
-
-  try {
-    const result = await invoke<FetchResult>("fetch_all_prs");
-    renderPrView(result);
-  } catch (e: any) {
-    if (typeof e === "string" && e.includes("not_authenticated")) {
-      showLogin();
-    } else {
-      content.innerHTML = `<div class="empty">Failed to load PRs</div>`;
-      console.error(e);
-    }
-  }
-}
+// ── Confirmation click pattern ────────────────────────────────────────────────
 
 function addConfirmedClickHandler(btn: HTMLElement, action: () => Promise<void>) {
   let confirming = false;
@@ -1255,7 +153,21 @@ function addConfirmedClickHandler(btn: HTMLElement, action: () => Promise<void>)
   });
 }
 
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
 window.addEventListener("DOMContentLoaded", async () => {
+  // Wire up inter-module callbacks
+  initPrefs(
+    () => renderActiveTab(),
+    () => loadPrs()
+  );
+  initTabs(() => showSettings());
+  initSettings(() => {
+    setActiveTab("mine");
+    loadPrs();
+  });
+  initAuth(() => loadPrs());
+
   await loadUserPrefs();
 
   const isAuthed = await invoke<boolean>("check_auth");
@@ -1267,18 +179,20 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   listen("prs-updated", () => loadPrs());
 
+  // Nav tab buttons
   document.querySelectorAll("#main-nav .nav-item[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       setActiveTab(btn.getAttribute("data-tab") as "mine" | "followed" | "merged" | "settings");
     });
   });
 
+  // Workflow indicator
   const wfIndicator = document.getElementById("workflow-indicator")!;
   wfIndicator.addEventListener("click", () => {
     if (currentResult?.workflow_status) {
       openUrl(currentResult.workflow_status.html_url);
       if (workflowHasAttention) {
-        workflowHasAttention = false;
+        setWorkflowHasAttention(false);
         wfIndicator.classList.remove("wf-attention");
         invoke("dismiss_workflow");
       }
@@ -1289,7 +203,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   wfIndicator.addEventListener("mouseenter", () => {
     if (workflowHasAttention) {
       wfDismissTimer = setTimeout(() => {
-        workflowHasAttention = false;
+        setWorkflowHasAttention(false);
         wfIndicator.classList.remove("wf-attention");
         invoke("dismiss_workflow");
       }, 800);
@@ -1302,12 +216,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  document.addEventListener("keydown", (e) => {
+  // Keyboard navigation
+  document.addEventListener("keydown", async (e) => {
     const settingsOpen = activeTab === "settings";
 
     if (e.key === "Escape") {
+      e.preventDefault();
       if (settingsOpen) {
-        e.preventDefault();
         hideSettings();
       } else {
         getCurrentWindow().hide();
@@ -1319,7 +234,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     const items = getFocusables();
     if (!items.length && !["1", "2", "3", "Tab"].includes(e.key)) return;
-
 
     switch (e.key) {
       case "j":
@@ -1386,26 +300,8 @@ window.addEventListener("DOMContentLoaded", async () => {
         break;
       case "i": {
         e.preventDefault();
-        if (focusIndex < 0) break;
-        const el = items[focusIndex];
-        if (el.classList.contains("pr-card")) {
-          const url = el.getAttribute("data-url");
-          const title = el.getAttribute("data-title") || "";
-          if (url) {
-            hiddenPrs.set(url, title);
-            if (currentResult) {
-              currentResult.open = currentResult.open.filter(pr => pr.url !== url);
-              currentResult.recently_merged = currentResult.recently_merged.filter(pr => pr.url !== url);
-            }
-            renderActiveTab();
-            (async () => {
-              const current = await invoke<Settings>("get_settings");
-              current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
-              await invoke("update_settings", { settings: current });
-              loadPrs();
-            })();
-          }
-        }
+        const hidden = await hideCurrentFocusPr(focusIndex);
+        if (hidden) loadPrs();
         break;
       }
       case "Tab": {
@@ -1419,6 +315,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // Sign out + quit buttons
   const signoutBtn = document.getElementById("signout-btn");
   if (signoutBtn) {
     addConfirmedClickHandler(signoutBtn, async () => {

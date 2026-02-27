@@ -1,0 +1,112 @@
+export interface Reviews {
+  totalCount: number;
+}
+
+export interface MergeQueueEntry {
+  position: number;
+}
+
+export interface Owner {
+  login: string;
+}
+
+export interface Repository {
+  name: string;
+  owner: Owner;
+}
+
+export interface Comments {
+  totalCount: number;
+}
+
+export interface StatusCheckRollup {
+  state: string;
+}
+
+export interface Commit {
+  statusCheckRollup: StatusCheckRollup | null;
+}
+
+export interface CommitNode {
+  commit: Commit;
+}
+
+export interface CommitConnection {
+  nodes: CommitNode[];
+}
+
+export interface ReviewThread {
+  isResolved: boolean;
+}
+
+export interface ReviewThreads {
+  nodes: ReviewThread[];
+}
+
+export interface PullRequest {
+  title: string;
+  url: string;
+  state: string;
+  merged: boolean;
+  createdAt: string;
+  repository: Repository;
+  mergeQueueEntry: MergeQueueEntry | null;
+  reviewDecision: string | null;
+  reviews: Reviews;
+  comments: Comments;
+  reviewThreads: ReviewThreads;
+  commits: CommitConnection;
+  author: Owner;
+}
+
+export interface WorkflowStatus {
+  conclusion: string;
+  workflow_name: string;
+  repo: string;
+  updated_at: string;
+  html_url: string;
+}
+
+export interface FetchResult {
+  open: PullRequest[];
+  recently_merged: PullRequest[];
+  followed_open: PullRequest[];
+  followed_recently_merged: PullRequest[];
+  attention_urls: string[];
+  workflow_status: WorkflowStatus | null;
+}
+
+export interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+}
+
+export interface HiddenPr {
+  url: string;
+  title: string;
+}
+
+export interface Settings {
+  poll_interval_secs: number;
+  notifications_enabled: boolean;
+  show_recently_merged: boolean;
+  merged_window_hours: number;
+  favorite_orgs: string[];
+  favorite_repos: string[];
+  collapsed_accordions: string[];
+  hidden_orgs: string[];
+  hidden_repos: string[];
+  hidden_prs: HiddenPr[];
+  followed_users: string[];
+  group_by_repository: boolean;
+  workflow_monitor_enabled: boolean;
+  workflow_org: string;
+  workflow_repo: string;
+  workflow_name: string;
+}
+
+export type TabName = "mine" | "followed" | "merged" | "settings";
+export type FilterType = "all" | "needs-review" | "changes-requested" | "approved" | "failing" | "attention";
