@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
 use tauri_plugin_positioner::{Position, WindowExt};
 
-use crate::github::{FetchResult, PullRequest};
+use crate::github::{FetchResult, PrElementChanges, PullRequest};
 
 const TRAY_ID: &str = "main-tray";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
@@ -53,6 +53,32 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         resolved,
         in_queue
     )
+}
+
+/// Computes which individual elements changed on a PR by comparing against the old fingerprint.
+pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChanges {
+    let parts: Vec<&str> = old_fp.split('|').collect();
+    if parts.len() < 6 {
+        return PrElementChanges::default();
+    }
+    let new_checks = pr
+        .commits
+        .nodes
+        .first()
+        .and_then(|n| n.commit.status_check_rollup.as_ref())
+        .map(|r| r.state.as_str())
+        .unwrap_or("");
+    let new_unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+    let new_resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
+    PrElementChanges {
+        review_decision: parts[0] != pr.review_decision.as_deref().unwrap_or(""),
+        checks: parts[1] != new_checks,
+        approvals: parts[3].parse::<i32>().unwrap_or(0) != pr.reviews.total_count,
+        // comments element shows comments + unresolved combined, so highlight on either change
+        comments: parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count
+            || parts[4].parse::<usize>().unwrap_or(0) != new_unresolved,
+        resolved: parts[5].parse::<usize>().unwrap_or(0) != new_resolved,
+    }
 }
 
 /// Returns URLs of PRs whose state changed since last seen.

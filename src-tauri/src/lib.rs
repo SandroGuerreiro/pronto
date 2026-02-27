@@ -337,6 +337,22 @@ fn process_result(
             let mut seen = state.seen_prs.lock().unwrap();
             result.attention_urls = tray::attention_urls(&result, &seen);
 
+            // Compute per-element changes for every PR in attention_urls
+            let all_prs: Vec<&github::PullRequest> = result
+                .open
+                .iter()
+                .chain(result.followed_open.iter())
+                .collect();
+            result.element_changes = result
+                .attention_urls
+                .iter()
+                .filter_map(|url| {
+                    let old_fp = seen.get(url)?;
+                    let pr = all_prs.iter().find(|p| &p.url == url)?;
+                    Some((url.clone(), tray::compute_element_changes(pr, old_fp)))
+                })
+                .collect();
+
             if notify {
                 send_attention_notification(app, &result, &seen);
             }
@@ -695,7 +711,7 @@ async fn poll_prs(app: tauri::AppHandle) {
             Ok(mut result) => {
                 result = filter_hidden_prs(result, &hidden_prs);
 
-                let changed = if let Some(wf) =
+                let (changed, pr_result) = if let Some(wf) =
                     fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await
                 {
                     let wf_attention = check_workflow_attention(&app, &wf, notify);
@@ -705,13 +721,14 @@ async fn poll_prs(app: tauri::AppHandle) {
                     if wf_attention && pr_result.attention_urls.is_empty() {
                         set_tray_attention(&app, true);
                     }
-                    changed || wf_attention
+                    (changed || wf_attention, pr_result)
                 } else {
-                    process_result(&app, result, notify).1
+                    let (pr_result, changed) = process_result(&app, result, notify);
+                    (changed, pr_result)
                 };
 
                 if changed {
-                    let _ = app.emit("prs-updated", ());
+                    let _ = app.emit("prs-updated", pr_result);
                 }
             }
             Err(e) => {
@@ -801,7 +818,9 @@ pub fn run() {
                             show_merged,
                             hidden_orgs,
                             hidden_repos,
+                            hidden_prs,
                             followed_users,
+                            settings_clone,
                         ) = {
                             let s = state.settings.lock().unwrap();
                             (
@@ -810,14 +829,22 @@ pub fn run() {
                                 s.show_recently_merged,
                                 s.hidden_orgs.clone(),
                                 s.hidden_repos.clone(),
+                                s.hidden_prs.clone(),
                                 s.followed_users.clone(),
+                                Settings {
+                                    workflow_monitor_enabled: s.workflow_monitor_enabled,
+                                    workflow_org: s.workflow_org.clone(),
+                                    workflow_repo: s.workflow_repo.clone(),
+                                    workflow_name: s.workflow_name.clone(),
+                                    ..Default::default()
+                                },
                             )
                         };
                         let token = match get_token(&state) {
                             Ok(t) => t,
                             Err(_) => return,
                         };
-                        if let Ok(result) = github::fetch_all_prs(
+                        if let Ok(mut result) = github::fetch_all_prs(
                             &state.http_client,
                             &token,
                             merged_hours,
@@ -828,8 +855,13 @@ pub fn run() {
                         )
                         .await
                         {
-                            process_result(&h, result, notify).0;
-                            let _ = h.emit("prs-updated", ());
+                            result = filter_hidden_prs(result, &hidden_prs);
+                            if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await {
+                                check_workflow_attention(&h, &wf, notify);
+                                result.workflow_status = Some(wf);
+                            }
+                            let (pr_result, _) = process_result(&h, result, notify);
+                            let _ = h.emit("prs-updated", pr_result);
                         }
                     });
                 })?;

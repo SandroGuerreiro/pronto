@@ -383,25 +383,39 @@ export function bindContentEvents(container: HTMLElement) {
     }
 
     let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+    let hoverActive = false;
     card.addEventListener("mouseenter", () => {
       if (Date.now() - readyToHover < 500) return;
+      hoverActive = true;
+      const url = card.getAttribute("data-url");
+      // Prevent re-adding highlights on next render
+      if (url && currentResult?.element_changes) {
+        delete currentResult.element_changes[url];
+      }
       if (card.classList.contains("attention")) {
         dismissTimer = setTimeout(() => {
           card.classList.remove("attention");
-          const url = card.getAttribute("data-url");
           if (url) {
             setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
             invoke("dismiss_pr", { url });
           }
           updateTabBadges();
           updateFollowFilterBadges();
-        }, 800);
+        }, 300);
       }
     });
     card.addEventListener("mouseleave", () => {
       if (dismissTimer) {
         clearTimeout(dismissTimer);
         dismissTimer = null;
+      }
+      // Remove highlight classes after hover — color fades via transition on .status-detail
+      if (hoverActive) {
+        hoverActive = false;
+        card.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
+          .forEach((el) => el.classList.remove("highlight-attention"));
+        card.querySelectorAll<HTMLElement>(".highlight-changed")
+          .forEach((el) => el.classList.remove("highlight-changed"));
       }
     });
   });

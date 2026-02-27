@@ -68,12 +68,21 @@ export interface WorkflowStatus {
   html_url: string;
 }
 
+export interface PrElementChanges {
+  approvals: boolean;
+  comments: boolean;
+  resolved: boolean;
+  review_decision: boolean;
+  checks: boolean;
+}
+
 export interface FetchResult {
   open: PullRequest[];
   recently_merged: PullRequest[];
   followed_open: PullRequest[];
   followed_recently_merged: PullRequest[];
   attention_urls: string[];
+  element_changes: Record<string, PrElementChanges>;
   workflow_status: WorkflowStatus | null;
 }
 

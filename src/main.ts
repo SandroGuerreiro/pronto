@@ -103,18 +103,29 @@ function setFocus(index: number) {
   el.classList.add("kb-focus");
   el.scrollIntoView({ block: "nearest" });
 
-  if (el.classList.contains("pr-card") && el.classList.contains("attention")) {
-    setKbDismissTimer(
-      setTimeout(() => {
-        el.classList.remove("attention");
-        const url = el.getAttribute("data-url");
-        if (url) {
-          setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
-          invoke("dismiss_pr", { url });
-        }
-        updateTabBadges();
-      }, 800)
-    );
+  if (el.classList.contains("pr-card")) {
+    const url = el.getAttribute("data-url");
+    // Clear element highlights on keyboard focus
+    if (url && currentResult?.element_changes) {
+      delete currentResult.element_changes[url];
+    }
+    el.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
+      .forEach((e) => e.classList.remove("highlight-attention"));
+    el.querySelectorAll<HTMLElement>(".highlight-changed")
+      .forEach((e) => e.classList.remove("highlight-changed"));
+
+    if (el.classList.contains("attention")) {
+      setKbDismissTimer(
+        setTimeout(() => {
+          el.classList.remove("attention");
+          if (url) {
+            setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
+            invoke("dismiss_pr", { url });
+          }
+          updateTabBadges();
+        }, 300)
+      );
+    }
   }
 }
 
@@ -177,7 +188,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     showLogin();
   }
 
-  listen("prs-updated", () => loadPrs());
+  listen<FetchResult>("prs-updated", (event) => {
+    if (event.payload) {
+      renderPrView(event.payload);
+    } else {
+      loadPrs();
+    }
+  });
 
   // Nav tab buttons
   document.querySelectorAll("#main-nav .nav-item[data-tab]").forEach((btn) => {

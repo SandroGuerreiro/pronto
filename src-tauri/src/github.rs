@@ -150,6 +150,17 @@ impl PullRequest {
     }
 }
 
+/// Which individual elements changed on a PR since the last poll.
+/// Only populated for PRs that are in `attention_urls`.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PrElementChanges {
+    pub approvals: bool,
+    pub comments: bool,
+    pub resolved: bool,
+    pub review_decision: bool,
+    pub checks: bool,
+}
+
 #[derive(Serialize, Clone)]
 pub struct FetchResult {
     pub open: Vec<PullRequest>,
@@ -157,6 +168,7 @@ pub struct FetchResult {
     pub followed_open: Vec<PullRequest>,
     pub followed_recently_merged: Vec<PullRequest>,
     pub attention_urls: Vec<String>,
+    pub element_changes: std::collections::HashMap<String, PrElementChanges>,
     pub workflow_status: Option<WorkflowStatus>,
 }
 
@@ -323,6 +335,7 @@ pub async fn fetch_all_prs(
         followed_open,
         followed_recently_merged,
         attention_urls: vec![],
+        element_changes: std::collections::HashMap::new(),
         workflow_status: None,
     })
 }

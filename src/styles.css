@@ -190,7 +190,7 @@ body {
   padding: 10px 10px 10px 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: background-color 0.15s, border-left-color 0.5s ease, box-shadow 0.5s ease;
   border-left: 3px solid transparent;
 }
 
@@ -304,6 +304,7 @@ body {
   gap: 3px;
   flex-shrink: 0;
   color: #a1a1aa;
+  transition: color 0.3s ease;
 }
 
 .comment-icon {
@@ -318,6 +319,31 @@ body {
 .pr-status-line .checks-fail       { color: #ef4444; }
 .pr-status-line .checks-pending    { color: #eab308; }
 .pr-status-line .checks-none       { color: #71717a; }
+
+/* ── Highlight Attention Elements ─────────────────────────────────────── */
+
+.status-detail.highlight-attention {
+  color: #fbbf24;
+}
+
+.pr-card:hover .status-detail.highlight-attention,
+.pr-card.kb-focus .status-detail.highlight-attention {
+  color: #e4e4e7;
+}
+
+.pr-status-line .highlight-changed {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 0.3s ease;
+}
+
+.pr-card:hover .pr-status-line .highlight-changed,
+.pr-card.kb-focus .pr-status-line .highlight-changed {
+  text-decoration-color: transparent;
+}
 
 /* ============================================================
    ACCORDIONS — org/repo collapsible groups
