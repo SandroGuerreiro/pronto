@@ -35,7 +35,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px 10px;
+  padding: 10px 14px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -43,14 +43,6 @@ body {
   height: 30px;
   width: auto;
   object-fit: contain;
-}
-
-.panel-subtitle {
-  font-size: 11px;
-  color: #52525b;
-  font-weight: 500;
-  letter-spacing: 0.3px;
-  flex: 1;
 }
 
 .workflow-indicator {
@@ -64,6 +56,7 @@ body {
   cursor: pointer;
   transition: background-color 0.15s, opacity 0.15s;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .workflow-indicator:hover {
@@ -117,23 +110,6 @@ body {
   50% { opacity: 0.5; }
 }
 
-.header-settings-btn {
-  background: none;
-  border: none;
-  color: #71717a;
-  font-size: 18px;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 6px;
-  transition: all 0.15s;
-  line-height: 1;
-}
-
-.header-settings-btn:hover {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: #e4e4e7;
-}
-
 .panel-body {
   flex: 1;
   position: relative;
@@ -147,78 +123,100 @@ body {
   padding: 8px;
 }
 
-.settings-overlay {
-  position: absolute;
-  inset: 0;
-  background-color: #1c1c1e;
-  overflow-y: auto;
-  z-index: 10;
-}
+/* Sidebar navigation */
 
-/* View switcher (My PRs / Followed) */
-
-.view-switcher {
+.panel-main {
   display: flex;
-  gap: 4px;
-  padding: 8px 8px 0;
-}
-
-.view-btn {
+  flex-direction: row;
   flex: 1;
-  padding: 8px 12px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: #71717a;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.view-btn:hover {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: #a1a1aa;
-}
-
-.view-btn.active {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  font-weight: 600;
-}
-
-/* Tab bar */
-
-.tab-bar {
+.sidebar {
   display: flex;
+  flex-direction: column;
+  width: 64px;
+  flex-shrink: 0;
+  padding: 6px 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   gap: 2px;
-  padding: 4px 8px 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.tab {
-  flex: 1;
-  padding: 6px 12px;
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 4px;
   background: none;
   border: none;
-  border-radius: 6px;
-  color: #71717a;
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: 8px;
+  color: #52525b;
   cursor: pointer;
   transition: all 0.15s;
+  margin: 0 6px;
+  position: relative;
 }
 
-.tab:hover {
-  background-color: rgba(255, 255, 255, 0.06);
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
   color: #a1a1aa;
 }
 
-.tab.active {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #e4e4e7;
-  font-weight: 600;
+.nav-item.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.nav-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.nav-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.nav-spacer {
+  flex: 1;
+}
+
+.nav-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 4px 8px;
+}
+
+.nav-item-action {
+  color: #3f3f46;
+}
+
+.nav-item-action:hover {
+  color: #a1a1aa;
+}
+
+.nav-item-action.confirming {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.nav-item-action.confirming:hover {
+  color: #fca5a5;
+}
+
+.nav-item .tab-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 14px;
+  height: 14px;
+  font-size: 9px;
+  padding: 0 4px;
+  margin-left: 0;
 }
 
 .tab-badge {
@@ -645,31 +643,28 @@ details[open] > .accordion-header .accordion-chevron::before {
 }
 
 
-.panel-footer {
-  padding: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.footer-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.footer-btn {
-  flex: 1;
-  padding: 6px;
+.login-quit-btn {
   background: none;
   border: none;
-  border-radius: 6px;
-  color: #71717a;
-  font-size: 12px;
+  color: #3f3f46;
+  font-size: 11px;
   cursor: pointer;
-  transition: all 0.15s;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.15s;
+  margin-top: 4px;
 }
 
-.footer-btn:hover {
-  background-color: rgba(255, 255, 255, 0.06);
-  color: #e4e4e7;
+.login-quit-btn:hover {
+  color: #a1a1aa;
+}
+
+.login-quit-btn.confirming {
+  color: #f87171;
+}
+
+.login-quit-btn.confirming:hover {
+  color: #fca5a5;
 }
 
 .loading {
@@ -953,13 +948,6 @@ details[open] > .accordion-header .accordion-chevron::before {
 .settings-toggle:checked::after {
   transform: translateX(16px);
   background-color: #ffffff;
-}
-
-.settings-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
 }
 
 .settings-input {

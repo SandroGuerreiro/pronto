@@ -12,35 +12,50 @@
     <div class="panel">
       <header class="panel-header">
         <img src="/logo.png" alt="pronto" class="panel-logo" />
-        <span class="panel-subtitle">PR status</span>
         <span id="workflow-indicator" class="workflow-indicator" style="display: none;"></span>
-        <button id="settings-btn" class="header-settings-btn" style="display: none;" title="Settings">⚙</button>
       </header>
 
-      <div id="view-switcher" class="view-switcher" style="display: none;">
-        <button class="view-btn active" data-view="mine">My PRs</button>
-        <button class="view-btn" data-view="followed">Followed</button>
-      </div>
+      <div class="panel-main">
+        <nav id="main-nav" class="sidebar" style="display: none;">
+          <button class="nav-item active" data-tab="mine" title="My open PRs">
+            <span class="nav-icon">⊕</span>
+            <span class="nav-label">Mine</span>
+          </button>
+          <button class="nav-item" data-tab="followed" title="Followed developers">
+            <span class="nav-icon">◉</span>
+            <span class="nav-label">Followed</span>
+          </button>
+          <button class="nav-item" data-tab="merged" title="Recently merged">
+            <span class="nav-icon">✓</span>
+            <span class="nav-label">Merged</span>
+          </button>
 
-      <div id="tab-bar" class="tab-bar" style="display: none;">
-        <button class="tab active" data-tab="open" title="Open PRs">Open</button>
-        <button class="tab" data-tab="merged" title="Recently merged PRs">Recently Merged</button>
-      </div>
+          <div class="nav-spacer"></div>
 
-      <div class="panel-body">
-        <div id="content">
-          <div class="loading">Loading...</div>
+          <button class="nav-item" data-tab="settings" id="settings-btn" title="Settings">
+            <span class="nav-icon">⚙</span>
+            <span class="nav-label">Settings</span>
+          </button>
+
+          <div class="nav-divider"></div>
+
+          <button class="nav-item nav-item-action" id="signout-btn" title="Sign out" style="display: none;">
+            <span class="nav-icon">↪</span>
+            <span class="nav-label">Sign out</span>
+          </button>
+          <button class="nav-item nav-item-action" id="quit-btn" title="Quit">
+            <span class="nav-icon">✕</span>
+            <span class="nav-label">Quit</span>
+          </button>
+        </nav>
+
+        <div class="panel-body">
+          <div id="content">
+            <div class="loading">Loading...</div>
+          </div>
         </div>
-
-        <div id="settings-panel" class="settings-overlay" style="display: none;"></div>
       </div>
 
-      <footer class="panel-footer">
-        <div class="footer-actions">
-          <button id="signout-btn" class="footer-btn" style="display: none;">Sign out</button>
-          <button id="quit-btn" class="footer-btn">Quit</button>
-        </div>
-      </footer>
     </div>
   </body>
 </html>

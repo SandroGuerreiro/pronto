@@ -167,8 +167,7 @@ function getReviewStatus(pr: PullRequest): {
 
 let currentAttentionUrls: string[] = [];
 let currentResult: FetchResult | null = null;
-let activeTab: "open" | "merged" = "open";
-let primaryView: "mine" | "followed" = "mine";
+let activeTab: "mine" | "followed" | "merged" | "settings" = "mine";
 let favoriteOrgs = new Set<string>();
 let favoriteRepos = new Set<string>();
 let collapsedAccordions = new Set<string>();
@@ -493,10 +492,14 @@ function renderAccordionContent(prs: PullRequest[]): string {
 
 function updateTabBadges() {
   if (!currentResult) return;
-  const openCount = currentResult.open.filter(pr => currentAttentionUrls.includes(pr.url)).length;
-  const mergedCount = currentResult.recently_merged.filter(pr => currentAttentionUrls.includes(pr.url)).length;
-  const followedOpenCount = (currentResult.followed_open || []).filter(pr => currentAttentionUrls.includes(pr.url)).length;
-  const followedMergedCount = (currentResult.followed_recently_merged || []).filter(pr => currentAttentionUrls.includes(pr.url)).length;
+  const mineCount = currentResult.open.filter(pr => currentAttentionUrls.includes(pr.url)).length;
+  const followedCount = (currentResult.followed_open || []).filter(pr => currentAttentionUrls.includes(pr.url)).length;
+  const mergedCount = [
+    ...currentResult.recently_merged,
+    ...(currentResult.followed_recently_merged || [])
+  ].filter(pr => currentAttentionUrls.includes(pr.url)).length;
+
+  const counts: Record<string, number> = { mine: mineCount, followed: followedCount, merged: mergedCount };
 
   function setBadge(btn: Element, count: number) {
     const badge = btn.querySelector(".tab-badge");
@@ -514,18 +517,9 @@ function updateTabBadges() {
     }
   }
 
-  document.querySelectorAll(".view-switcher .view-btn").forEach((btn) => {
-    const view = btn.getAttribute("data-view");
-    setBadge(btn, view === "mine" ? openCount + mergedCount : followedOpenCount + followedMergedCount);
-  });
-
-  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
-    const tab = btn.getAttribute("data-tab");
-    if (primaryView === "mine") {
-      setBadge(btn, tab === "open" ? openCount : mergedCount);
-    } else {
-      setBadge(btn, tab === "open" ? followedOpenCount : followedMergedCount);
-    }
+  document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
+    const tab = btn.getAttribute("data-tab")!;
+    setBadge(btn, counts[tab] || 0);
   });
 }
 
@@ -583,27 +577,27 @@ function renderActiveTab() {
   if (!currentResult) return;
   focusIndex = -1;
   const content = document.getElementById("content")!;
-
   let html = "";
 
-  if (primaryView === "followed") {
+  if (activeTab === "mine") {
+    const prs = currentResult.open;
+    html = prs.length > 0 || hiddenOrgs.size > 0 || hiddenRepos.size > 0
+      ? (groupByRepository ? renderAccordionContent(prs) : renderFlatList(prs))
+      : '<div class="empty">No open PRs</div>';
+
+  } else if (activeTab === "followed") {
     if (followedUsers.length === 0) {
-      html = '<div class="empty">No followed developers. Add some in settings.</div>';
+      html = '<div class="empty">No followed developers. Add some in Settings.</div>';
     } else {
       const allOpen = currentResult.followed_open || [];
-      const allMerged = currentResult.followed_recently_merged || [];
-
-      // Per-user attention counts (from both tabs, for filter bar badges)
       const attentionByUser: Record<string, number> = {};
-      for (const pr of [...allOpen, ...allMerged]) {
+      for (const pr of allOpen) {
         if (currentAttentionUrls.includes(pr.url)) {
           const u = pr.author.login;
           attentionByUser[u] = (attentionByUser[u] || 0) + 1;
         }
       }
-
-      const activeList = activeTab === "open" ? allOpen : allMerged;
-      const filtered = activeFollowFilter === "all" ? activeList : activeList.filter(pr => pr.author.login === activeFollowFilter);
+      const filtered = activeFollowFilter === "all" ? allOpen : allOpen.filter(pr => pr.author.login === activeFollowFilter);
 
       if (followedUsers.length > 1) {
         const totalAttention = Object.values(attentionByUser).reduce((a, b) => a + b, 0);
@@ -622,15 +616,23 @@ function renderActiveTab() {
         : '<div class="empty">No PRs</div>';
       showAuthorInCards = false;
     }
-  } else {
-    const mine = activeTab === "open" ? currentResult.open : currentResult.recently_merged;
-    html += renderSection("My PRs", mine);
+
+  } else if (activeTab === "merged") {
+    const mine = currentResult.recently_merged || [];
+    const following = currentResult.followed_recently_merged || [];
+    if (mine.length === 0 && following.length === 0) {
+      html = '<div class="empty">No recently merged PRs</div>';
+    } else {
+      if (mine.length > 0) html += renderSection("Mine", mine);
+      if (following.length > 0) {
+        showAuthorInCards = true;
+        html += renderSection("Following", following);
+        showAuthorInCards = false;
+      }
+    }
   }
 
-  if (!html) {
-    html = '<div class="empty">No PRs</div>';
-  }
-
+  if (!html) html = '<div class="empty">No PRs</div>';
   content.innerHTML = html;
   bindContentEvents(content);
   content.querySelectorAll<HTMLButtonElement>(".follow-filter-btn").forEach((btn) => {
@@ -642,20 +644,16 @@ function renderActiveTab() {
   updateTabBadges();
 }
 
-function setActiveTab(tab: "open" | "merged") {
+function setActiveTab(tab: "mine" | "followed" | "merged" | "settings") {
   activeTab = tab;
-  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
+  document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-tab") === tab);
   });
-  renderActiveTab();
-}
-
-function setPrimaryView(view: "mine" | "followed") {
-  primaryView = view;
-  document.querySelectorAll(".view-switcher .view-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-view") === view);
-  });
-  renderActiveTab();
+  if (tab === "settings") {
+    showSettings();
+  } else {
+    renderActiveTab();
+  }
 }
 
 function bindContentEvents(container: HTMLElement) {
@@ -725,12 +723,8 @@ function bindContentEvents(container: HTMLElement) {
 
 function showLogin() {
   const content = document.getElementById("content")!;
-  const signoutBtn = document.getElementById("signout-btn")!;
-  const settingsBtn = document.getElementById("settings-btn")!;
-  signoutBtn.style.display = "none";
-  settingsBtn.style.display = "none";
-  document.getElementById("view-switcher")!.style.display = "none";
-  document.getElementById("tab-bar")!.style.display = "none";
+  document.getElementById("signout-btn")!.style.display = "none";
+  document.getElementById("main-nav")!.style.display = "none";
 
   content.innerHTML = `
     <div class="login-view">
@@ -739,11 +733,17 @@ function showLogin() {
       <div class="login-desc">Sign in to see your PRs.</div>
       <button id="login-btn" class="login-btn">Sign in with GitHub</button>
       <button id="pat-btn" class="login-btn login-btn-secondary">Use Personal Access Token</button>
+      <button id="login-quit-btn" class="login-quit-btn">Quit</button>
     </div>
   `;
 
   document.getElementById("login-btn")!.addEventListener("click", startLogin);
   document.getElementById("pat-btn")!.addEventListener("click", showPatInput);
+  const loginQuitBtn = document.getElementById("login-quit-btn")!;
+  addConfirmedClickHandler(loginQuitBtn, async () => {
+    const { exit } = await import("@tauri-apps/plugin-process");
+    await exit(0);
+  });
 }
 
 function showPermissionsInfo() {
@@ -798,7 +798,7 @@ function showPatInput() {
     <div class="login-view">
       <div class="login-title">Personal Access Token</div>
       <div class="login-desc">Paste a token with the right permissions. <a id="perm-info-link" href="#" class="login-link">What permissions do I need?</a></div>
-      <input id="pat-input" type="password" class="pat-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
+      <input id="pat-input" type="password" class="pat-input" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" spellcheck="false" />
       <div id="pat-error" class="pat-error"></div>
       <button id="pat-connect-btn" class="login-btn">Connect</button>
       <button id="pat-back-btn" class="login-btn login-btn-secondary">Back</button>
@@ -914,19 +914,18 @@ async function startLogin() {
 }
 
 function hideSettings() {
-  document.getElementById("settings-panel")!.style.display = "none";
-  document.getElementById("view-switcher")!.style.display = "";
-  document.getElementById("tab-bar")!.style.display = "";
+  setActiveTab("mine");
+  loadPrs();
 }
 
 async function showSettings() {
-  const panel = document.getElementById("settings-panel")!;
+  const content = document.getElementById("content")!;
   const settings = await invoke<Settings>("get_settings");
 
-  panel.innerHTML = `
+  content.innerHTML = `
     <div class="settings-view">
       <div class="settings-title">Settings</div>
-      <input type="text" id="settings-search" class="settings-search" placeholder="Search settings…" autocomplete="off" spellcheck="false" />
+      <input type="text" id="settings-search" class="settings-search" placeholder="Search settings…" autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off" spellcheck="false" />
 
       <div class="settings-section">
         <div class="settings-section-title">General</div>
@@ -982,15 +981,15 @@ async function showSettings() {
         <div id="workflow-config-group"${settings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
           <div class="settings-group">
             <label class="settings-label">Organization</label>
-            <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" />
+            <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" autocapitalize="off" autocorrect="off" spellcheck="false" />
           </div>
           <div class="settings-group">
             <label class="settings-label">Repository</label>
-            <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" />
+            <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" autocapitalize="off" autocorrect="off" spellcheck="false" />
           </div>
           <div class="settings-group">
             <label class="settings-label">Workflow file</label>
-            <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" />
+            <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" autocapitalize="off" autocorrect="off" spellcheck="false" />
           </div>
         </div>
       </div>
@@ -1002,7 +1001,7 @@ async function showSettings() {
             <span>Add GitHub username</span>
           </label>
           <div style="display: flex; gap: 6px;">
-            <input type="text" id="follow-user-input" class="settings-input" placeholder="e.g. octocat" />
+            <input type="text" id="follow-user-input" class="settings-input" placeholder="e.g. octocat" autocapitalize="off" autocorrect="off" spellcheck="false" />
             <button id="follow-user-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
           </div>
         </div>
@@ -1033,15 +1032,8 @@ async function showSettings() {
         </div>
       </div>
 
-      <div class="settings-actions">
-        <button id="settings-save-btn" class="login-btn">Save</button>
-      </div>
     </div>
   `;
-
-  panel.style.display = "";
-  document.getElementById("view-switcher")!.style.display = "none";
-  document.getElementById("tab-bar")!.style.display = "none";
 
   document.getElementById("setting-merged")!.addEventListener("change", (e) => {
     const checked = (e.target as HTMLInputElement).checked;
@@ -1053,16 +1045,17 @@ async function showSettings() {
     document.getElementById("workflow-config-group")!.style.display = checked ? "" : "none";
   });
 
-  panel.querySelectorAll(".hidden-pr-remove").forEach((btn) => {
+  content.querySelectorAll(".hidden-pr-remove").forEach((btn) => {
     btn.addEventListener("click", () => {
       const url = btn.getAttribute("data-pr-url")!;
       hiddenPrs.delete(url);
       const row = btn.closest(".hidden-pr-row");
       if (row) row.remove();
-      const list = panel.querySelector(".hidden-prs-list");
+      const list = content.querySelector(".hidden-prs-list");
       if (list && list.children.length === 0) {
         list.innerHTML = '<div class="hidden-prs-empty">No hidden PRs</div>';
       }
+      autoSaveSettings();
     });
   });
 
@@ -1075,6 +1068,10 @@ async function showSettings() {
       followList.innerHTML = '<div class="hidden-prs-empty">No followed users</div>';
     }
   };
+
+  followInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") followAddBtn.click();
+  });
 
   followAddBtn.addEventListener("click", () => {
     const raw = followInput.value.trim();
@@ -1096,6 +1093,7 @@ async function showSettings() {
     `;
     followList.appendChild(row);
     followInput.value = "";
+    autoSaveSettings();
   });
 
   followList.querySelectorAll(".follow-user-remove").forEach((btn) => {
@@ -1108,36 +1106,8 @@ async function showSettings() {
       if (activeFollowFilter === user) {
         activeFollowFilter = "all";
       }
+      autoSaveSettings();
     });
-  });
-
-  const applyAndClose = async () => {
-    const updated: Settings = {
-      poll_interval_secs: parseInt((document.getElementById("setting-poll") as HTMLSelectElement).value),
-      notifications_enabled: (document.getElementById("setting-notifications") as HTMLInputElement).checked,
-      show_recently_merged: (document.getElementById("setting-merged") as HTMLInputElement).checked,
-      merged_window_hours: parseInt((document.getElementById("setting-merged-hours") as HTMLSelectElement).value),
-      favorite_orgs: [...favoriteOrgs],
-      favorite_repos: [...favoriteRepos],
-      collapsed_accordions: [...collapsedAccordions],
-      hidden_orgs: [...hiddenOrgs],
-      hidden_repos: [...hiddenRepos],
-      hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
-      followed_users: followedUsers,
-      group_by_repository: (document.getElementById("setting-group-repo") as HTMLInputElement).checked,
-      workflow_monitor_enabled: (document.getElementById("setting-workflow-enabled") as HTMLInputElement).checked,
-      workflow_org: (document.getElementById("setting-workflow-org") as HTMLInputElement).value.trim(),
-      workflow_repo: (document.getElementById("setting-workflow-repo") as HTMLInputElement).value.trim(),
-      workflow_name: (document.getElementById("setting-workflow-name") as HTMLInputElement).value.trim(),
-    };
-    groupByRepository = updated.group_by_repository;
-    await invoke("update_settings", { settings: updated });
-    hideSettings();
-    loadPrs();
-  };
-
-  document.getElementById("settings-save-btn")!.addEventListener("click", async () => {
-    await applyAndClose();
   });
 
   // Auto-save on any settings change
@@ -1165,14 +1135,14 @@ async function showSettings() {
   };
 
   // Auto-save when inputs change
-  panel.querySelectorAll("input, select").forEach((input) => {
+  content.querySelectorAll("input, select").forEach((input) => {
     input.addEventListener("change", autoSaveSettings);
   });
 
   const searchInput = document.getElementById("settings-search") as HTMLInputElement;
   searchInput.addEventListener("input", () => {
     const q = searchInput.value.toLowerCase().trim();
-    panel.querySelectorAll<HTMLElement>(".settings-section").forEach((section) => {
+    content.querySelectorAll<HTMLElement>(".settings-section").forEach((section) => {
       const title = section.querySelector(".settings-section-title")?.textContent?.toLowerCase() || "";
       const groups = section.querySelectorAll<HTMLElement>(".settings-group, #workflow-config-group > .settings-group");
       let sectionMatch = !q || title.includes(q);
@@ -1226,13 +1196,8 @@ function updateWorkflowIndicator(status: WorkflowStatus | null) {
 }
 
 function renderPrView(result: FetchResult) {
-  const signoutBtn = document.getElementById("signout-btn")!;
-  const settingsBtn = document.getElementById("settings-btn")!;
-
-  signoutBtn.style.display = "";
-  settingsBtn.style.display = "";
-  document.getElementById("view-switcher")!.style.display = "";
-  document.getElementById("tab-bar")!.style.display = primaryView === "mine" ? "" : "none";
+  document.getElementById("signout-btn")!.style.display = "";
+  document.getElementById("main-nav")!.style.display = "";
   currentAttentionUrls = result.attention_urls;
   currentResult = result;
   pendingUnhideOrgs.clear();
@@ -1257,6 +1222,39 @@ async function loadPrs() {
   }
 }
 
+function addConfirmedClickHandler(btn: HTMLElement, action: () => Promise<void>) {
+  let confirming = false;
+  let cancelTimeout: ReturnType<typeof setTimeout> | null = null;
+  const labelEl = btn.querySelector<HTMLElement>(".nav-label") ?? btn;
+  const originalLabel = labelEl.textContent ?? "";
+
+  const cancelConfirm = () => {
+    confirming = false;
+    btn.classList.remove("confirming");
+    labelEl.textContent = originalLabel;
+    if (cancelTimeout) clearTimeout(cancelTimeout);
+    cancelTimeout = null;
+  };
+
+  btn.addEventListener("click", async () => {
+    if (!confirming) {
+      confirming = true;
+      btn.classList.add("confirming");
+      labelEl.textContent = "Sure?";
+      cancelTimeout = setTimeout(cancelConfirm, 3000);
+    } else {
+      cancelConfirm();
+      await action();
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (confirming && !btn.contains(e.target as Node)) {
+      cancelConfirm();
+    }
+  });
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   await loadUserPrefs();
 
@@ -1269,21 +1267,11 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   listen("prs-updated", () => loadPrs());
 
-  document.querySelectorAll(".view-switcher .view-btn").forEach((btn) => {
+  document.querySelectorAll("#main-nav .nav-item[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const view = btn.getAttribute("data-view") as "mine" | "followed";
-      setPrimaryView(view);
+      setActiveTab(btn.getAttribute("data-tab") as "mine" | "followed" | "merged" | "settings");
     });
   });
-
-  document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tab = btn.getAttribute("data-tab") as "open" | "merged";
-      setActiveTab(tab);
-    });
-  });
-
-  document.getElementById("settings-btn")?.addEventListener("click", () => showSettings());
 
   const wfIndicator = document.getElementById("workflow-indicator")!;
   wfIndicator.addEventListener("click", () => {
@@ -1315,17 +1303,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.addEventListener("keydown", (e) => {
-    const settingsOpen = document.getElementById("settings-panel")!.style.display !== "none";
+    const settingsOpen = activeTab === "settings";
 
     if (e.key === "Escape") {
       if (settingsOpen) {
-        const saveBtn = document.getElementById("settings-save-btn") as HTMLButtonElement | null;
-        if (saveBtn) {
-          e.preventDefault();
-          saveBtn.click();
-        } else {
-          hideSettings();
-        }
+        e.preventDefault();
+        hideSettings();
       } else {
         getCurrentWindow().hide();
       }
@@ -1391,15 +1374,15 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
       case "1":
         e.preventDefault();
-        setActiveTab("open");
+        setActiveTab("mine");
         break;
       case "2":
         e.preventDefault();
-        setActiveTab("merged");
+        setActiveTab("followed");
         break;
       case "3":
         e.preventDefault();
-        setPrimaryView("followed");
+        setActiveTab("merged");
         break;
       case "i": {
         e.preventDefault();
@@ -1425,28 +1408,30 @@ window.addEventListener("DOMContentLoaded", async () => {
         }
         break;
       }
-      case "Tab":
+      case "Tab": {
         e.preventDefault();
-        if (e.shiftKey) {
-          if (primaryView === "followed") setPrimaryView("mine");
-          else if (activeTab === "open") { setPrimaryView("followed"); }
-          else setActiveTab("open");
-        } else {
-          if (primaryView === "mine" && activeTab === "open") setActiveTab("merged");
-          else if (primaryView === "mine" && activeTab === "merged") setPrimaryView("followed");
-          else { setPrimaryView("mine"); setActiveTab("open"); }
-        }
+        const cycle = ["mine", "followed", "merged"] as const;
+        const i = cycle.indexOf(activeTab as "mine" | "followed" | "merged");
+        const next = cycle[(i + (e.shiftKey ? 2 : 1)) % 3];
+        setActiveTab(next);
         break;
+      }
     }
   });
 
-  document.getElementById("signout-btn")?.addEventListener("click", async () => {
-    await invoke("logout");
-    showLogin();
-  });
+  const signoutBtn = document.getElementById("signout-btn");
+  if (signoutBtn) {
+    addConfirmedClickHandler(signoutBtn, async () => {
+      await invoke("logout");
+      showLogin();
+    });
+  }
 
-  document.getElementById("quit-btn")?.addEventListener("click", async () => {
-    const { exit } = await import("@tauri-apps/plugin-process");
-    await exit(0);
-  });
+  const quitBtn = document.getElementById("quit-btn");
+  if (quitBtn) {
+    addConfirmedClickHandler(quitBtn, async () => {
+      const { exit } = await import("@tauri-apps/plugin-process");
+      await exit(0);
+    });
+  }
 });
