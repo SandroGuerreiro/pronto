@@ -299,6 +299,62 @@ export function updateTabBadges() {
   });
 }
 
+// ── Follow filter button badges ───────────────────────────────────────────────
+
+export function updateFollowFilterBadges() {
+  if (!currentResult || activeTab !== "followed") return;
+  const allOpen = currentResult.followed_open || [];
+  const attentionByUser: Record<string, number> = {};
+
+  for (const pr of allOpen) {
+    if (currentAttentionUrls.includes(pr.url)) {
+      const u = pr.author.login;
+      attentionByUser[u] = (attentionByUser[u] || 0) + 1;
+    }
+  }
+
+  const totalAttention = Object.values(attentionByUser).reduce((a, b) => a + b, 0);
+
+  // Update "All" button
+  const allBtn = document.querySelector<HTMLButtonElement>(".follow-filter-btn[data-filter='all']");
+  if (allBtn) {
+    let badge = allBtn.querySelector<HTMLElement>(".tab-badge");
+    if (totalAttention > 0) {
+      if (badge) {
+        badge.textContent = String(totalAttention);
+      } else {
+        const span = document.createElement("span");
+        span.className = "tab-badge";
+        span.textContent = String(totalAttention);
+        allBtn.appendChild(span);
+      }
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
+  // Update user buttons
+  document.querySelectorAll<HTMLButtonElement>(".follow-filter-btn[data-filter], .follow-filter-dropdown-item[data-filter]").forEach((btn) => {
+    const user = btn.getAttribute("data-filter");
+    if (user && user !== "all") {
+      const count = attentionByUser[user] || 0;
+      let badge = btn.querySelector<HTMLElement>(".tab-badge");
+      if (count > 0) {
+        if (badge) {
+          badge.textContent = String(count);
+        } else {
+          const span = document.createElement("span");
+          span.className = "tab-badge";
+          span.textContent = String(count);
+          btn.appendChild(span);
+        }
+      } else if (badge) {
+        badge.remove();
+      }
+    }
+  });
+}
+
 // ── Content events ────────────────────────────────────────────────────────────
 
 export function bindContentEvents(container: HTMLElement) {
@@ -338,6 +394,7 @@ export function bindContentEvents(container: HTMLElement) {
             invoke("dismiss_pr", { url });
           }
           updateTabBadges();
+          updateFollowFilterBadges();
         }, 800);
       }
     });
