@@ -61,6 +61,7 @@ export interface PullRequest {
 
 export interface WorkflowStatus {
   conclusion: string;
+  status: string;
   workflow_name: string;
   repo: string;
   updated_at: string;

@@ -163,6 +163,7 @@ pub struct FetchResult {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorkflowStatus {
     pub conclusion: String,
+    pub status: String,
     pub workflow_name: String,
     pub repo: String,
     pub updated_at: String,
@@ -176,6 +177,7 @@ struct WorkflowRunsResponse {
 
 #[derive(Debug, Deserialize)]
 struct WorkflowRun {
+    status: String,
     conclusion: Option<String>,
     updated_at: String,
     html_url: String,
@@ -333,7 +335,7 @@ pub async fn fetch_workflow_status(
     workflow_name: &str,
 ) -> Result<Option<WorkflowStatus>, Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
-        "https://api.github.com/repos/{}/{}/actions/workflows/{}/runs?per_page=10&status=completed",
+        "https://api.github.com/repos/{}/{}/actions/workflows/{}/runs?per_page=10",
         org, repo, workflow_name
     );
 
@@ -349,17 +351,37 @@ pub async fn fetch_workflow_status(
     }
 
     let runs: WorkflowRunsResponse = response.json().await?;
-    let run = runs
+
+    // Find the latest successful or failed run for the status indicator (dot)
+    let indicator_run = runs
         .workflow_runs
         .iter()
         .find(|r| matches!(r.conclusion.as_deref(), Some("success") | Some("failure")));
 
-    let Some(run) = run else {
+    // Find the latest run overall for the text (success, failure, or in_progress)
+    let text_run = runs.workflow_runs.first();
+
+    let Some(run) = indicator_run.or(text_run) else {
         return Ok(None);
     };
 
+    let conclusion = indicator_run
+        .and_then(|r| r.conclusion.as_deref())
+        .unwrap_or("unknown");
+
+    let status = text_run
+        .map(|r| {
+            if let Some(c) = &r.conclusion {
+                c.clone()
+            } else {
+                r.status.clone()
+            }
+        })
+        .unwrap_or_default();
+
     Ok(Some(WorkflowStatus {
-        conclusion: run.conclusion.clone().unwrap(),
+        conclusion: conclusion.to_string(),
+        status,
         workflow_name: workflow_name.to_string(),
         repo: format!("{}/{}", org, repo),
         updated_at: run.updated_at.clone(),

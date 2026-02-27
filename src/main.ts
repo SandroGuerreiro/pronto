@@ -71,8 +71,8 @@ function updateWorkflowIndicator(status: WorkflowStatus | null) {
 
   const attentionCls = workflowHasAttention ? " wf-attention" : "";
   indicator.className = `workflow-indicator ${cls}${attentionCls}`;
-  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${status.conclusion}</span>`;
-  indicator.title = `${status.repo} — ${status.workflow_name}\n${status.conclusion}\n${new Date(status.updated_at).toLocaleString()}`;
+  indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${status.status}</span>`;
+  indicator.title = `${status.repo} — ${status.workflow_name}\n${status.status}\n${new Date(status.updated_at).toLocaleString()}`;
   indicator.style.display = "";
 }
 
