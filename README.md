@@ -89,8 +89,8 @@ This uses the OAuth Device Flow with the `repo` scope.
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+Shift+P` | Toggle the popup open / closed |
-| `Cmd+Shift+R` | Manually reload PR data |
+| `Cmd+Ctrl+P` | Toggle the popup open / closed |
+| `Cmd+Ctrl+R` | Manually reload PR data |
 
 ### Inside the popup
 

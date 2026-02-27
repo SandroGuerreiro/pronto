@@ -451,7 +451,15 @@ fn filter_hidden_prs(
 async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
     let state = app.state::<AppState>();
     let token = get_token(&state)?;
-    let (merged_hours, show_merged, hidden_orgs, hidden_repos, hidden_prs, followed_users, settings_clone) = {
+    let (
+        merged_hours,
+        show_merged,
+        hidden_orgs,
+        hidden_repos,
+        hidden_prs,
+        followed_users,
+        settings_clone,
+    ) = {
         let s = state.settings.lock().unwrap();
         (
             s.merged_window_hours,
@@ -675,7 +683,9 @@ async fn poll_prs(app: tauri::AppHandle) {
             Ok(mut result) => {
                 result = filter_hidden_prs(result, &hidden_prs);
 
-                let changed = if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await {
+                let changed = if let Some(wf) =
+                    fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await
+                {
                     let wf_attention = check_workflow_attention(&app, &wf, notify);
                     result.workflow_status = Some(wf);
                     let (pr_result, changed) = process_result(&app, result, notify);
@@ -751,7 +761,7 @@ pub fn run() {
             });
 
             let toggle_shortcut =
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyP);
+                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyP);
             let handle = app.handle().clone();
             app.global_shortcut()
                 .on_shortcut(toggle_shortcut, move |_app, _shortcut, event| {
@@ -761,7 +771,7 @@ pub fn run() {
                 })?;
 
             let reload_shortcut =
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyR);
+                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyR);
             let handle = app.handle().clone();
             app.global_shortcut()
                 .on_shortcut(reload_shortcut, move |_app, _shortcut, event| {
