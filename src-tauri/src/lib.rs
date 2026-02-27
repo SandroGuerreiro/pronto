@@ -539,8 +539,19 @@ fn check_workflow_attention(
         return false;
     };
     let mut last = state.last_workflow_status.lock().unwrap();
+
+    // If workflow is in_progress, don't notify and don't update last status
+    // This allows us to detect conclusion changes even if in_progress occurs in between
+    if new_status.conclusion == "unknown" {
+        return false;
+    }
+
     let changed = match last.as_ref() {
-        Some(prev) => prev.conclusion != new_status.conclusion,
+        Some(prev) => {
+            // Only notify if the actual conclusion changed (not in_progress)
+            // e.g., failure -> success or success -> failure
+            prev.conclusion != new_status.conclusion && prev.conclusion != "unknown"
+        }
         None => false,
     };
 
@@ -576,6 +587,7 @@ fn check_workflow_attention(
         });
     }
 
+    // Only update last status if it's an actual conclusion, not in_progress
     *last = Some(new_status.clone());
     changed
 }
