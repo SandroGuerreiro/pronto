@@ -133,6 +133,7 @@ export function renderPrCard(pr: PullRequest): string {
         </div>
         <div class="pr-status-line">${statusParts.join('<span class="status-sep"> · </span>')}</div>
       </div>
+      <button class="copy-btn" title="Copy PR URL (or press 'c')" aria-label="Copy PR URL"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="7" height="7" rx="1"/><rect x="7" y="7" width="7" height="7" rx="1"/></svg></button>
     </div>
   `;
 }

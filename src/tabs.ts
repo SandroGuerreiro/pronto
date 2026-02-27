@@ -311,6 +311,21 @@ export function bindContentEvents(container: HTMLElement) {
       if (url) openUrl(url);
     });
 
+    // Copy button
+    const copyBtn = card.querySelector<HTMLButtonElement>(".copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const url = card.getAttribute("data-url");
+        if (url) {
+          navigator.clipboard.writeText(url).then(() => {
+            copyBtn.classList.add("copied");
+            setTimeout(() => copyBtn.classList.remove("copied"), 1500);
+          });
+        }
+      });
+    }
+
     let dismissTimer: ReturnType<typeof setTimeout> | null = null;
     card.addEventListener("mouseenter", () => {
       if (Date.now() - readyToHover < 500) return;

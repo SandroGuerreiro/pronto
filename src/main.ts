@@ -304,6 +304,24 @@ window.addEventListener("DOMContentLoaded", async () => {
         if (hidden) loadPrs();
         break;
       }
+      case "c": {
+        e.preventDefault();
+        if (focusIndex < 0) break;
+        const el = items[focusIndex];
+        if (el.classList.contains("pr-card")) {
+          const url = el.getAttribute("data-url");
+          if (url) {
+            navigator.clipboard.writeText(url).then(() => {
+              const copyBtn = el.querySelector<HTMLButtonElement>(".copy-btn");
+              if (copyBtn) {
+                copyBtn.classList.add("copied");
+                setTimeout(() => copyBtn.classList.remove("copied"), 1500);
+              }
+            });
+          }
+        }
+        break;
+      }
       case "Tab": {
         e.preventDefault();
         const cycle = ["mine", "followed", "merged"] as const;
