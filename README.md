@@ -156,8 +156,15 @@ The built `.dmg` will be at `src-tauri/target/release/bundle/dmg/`.
 ```
 pronto/
 ├── src/                    # Frontend (TypeScript + HTML + CSS)
-│   ├── main.ts             # UI logic: PR rendering, settings, keyboard nav
-│   └── styles.css          # Popup styling
+│   ├── main.ts             # Entry point: PR list initialization, keyboard nav
+│   ├── types.ts            # TypeScript interfaces and enums
+│   ├── state.ts            # Global mutable state management
+│   ├── renderer.ts         # PR card and accordion rendering
+│   ├── prefs.ts            # User preferences and favorites
+│   ├── tabs.ts             # Tab switching and content rendering
+│   ├── settings.ts         # Settings modal UI
+│   ├── auth.ts             # Login and authentication UI
+│   └── styles.css          # All popup styling
 ├── index.html              # Popup HTML shell
 ├── public/
 │   └── logo.png            # Horizontal logo used in the popup header
