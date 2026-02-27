@@ -822,9 +822,57 @@ details[open] > .section-header .accordion-chevron::before {
 
 .settings-view {
   display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
+.settings-sidebar {
+  width: 72px;
+  display: flex;
   flex-direction: column;
-  padding: 20px 16px;
-  gap: 16px;
+  gap: 2px;
+  padding: 12px 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.settings-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  color: #71717a;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  font-weight: 500;
+}
+
+.settings-tab:hover {
+  color: #a1a1aa;
+}
+
+.settings-tab.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.settings-tab span {
+  display: block;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .settings-title {
@@ -1013,6 +1061,55 @@ details[open] > .section-header .accordion-chevron::before {
   color: #52525b;
   padding: 6px 8px;
   font-style: italic;
+}
+
+/* ============================================================
+   KEYBINDINGS
+   ============================================================ */
+
+.kb-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kb-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+}
+
+.kb-label {
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+.kb-key {
+  font-family: "Monaco", "Courier New", monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  padding: 2px 7px;
+  cursor: pointer;
+  min-width: 32px;
+  text-align: center;
+  color: #e4e4e7;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.kb-key:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.kb-key.capturing {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
 }
 
 /* ============================================================

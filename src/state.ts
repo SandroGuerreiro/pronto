@@ -1,4 +1,5 @@
 import type { FetchResult, TabName, FilterType } from "./types";
+import { DEFAULT_KEYBINDINGS } from "./types";
 
 // ── PR data ──────────────────────────────────────────────────────────────────
 export let currentAttentionUrls: string[] = [];
@@ -50,4 +51,10 @@ export function setActiveFilter(f: FilterType) { activeFilter = f; }
 export function clearPendingUnhide() {
   pendingUnhideOrgs.clear();
   pendingUnhideRepos.clear();
+}
+
+// ── Keybindings ────────────────────────────────────────────────────────────
+export let keybindings: Record<string, string> = { ...DEFAULT_KEYBINDINGS };
+export function setKeybindings(kb: Record<string, string>) {
+  keybindings = { ...DEFAULT_KEYBINDINGS, ...kb };
 }

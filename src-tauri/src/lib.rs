@@ -51,6 +51,8 @@ pub struct Settings {
     pub workflow_repo: String,
     #[serde(default)]
     pub workflow_name: String,
+    #[serde(default)]
+    pub keybindings: HashMap<String, String>,
 }
 
 impl Default for Settings {
@@ -72,6 +74,7 @@ impl Default for Settings {
             workflow_org: String::new(),
             workflow_repo: String::new(),
             workflow_name: String::new(),
+            keybindings: HashMap::new(),
         }
     }
 }
@@ -632,6 +635,71 @@ async fn fetch_workflow_if_enabled(
     .flatten()
 }
 
+/// Parse a shortcut string like "Super+Ctrl+P" into (Modifiers, Code)
+fn parse_shortcut_string(s: &str) -> Result<Shortcut, String> {
+    let parts: Vec<&str> = s.split('+').collect();
+    if parts.is_empty() {
+        return Err("Empty shortcut string".to_string());
+    }
+
+    let mut modifiers = Modifiers::empty();
+    let mut key_part = "";
+
+    for part in &parts {
+        match *part {
+            "Super" => modifiers |= Modifiers::SUPER,
+            "Ctrl" => modifiers |= Modifiers::CONTROL,
+            "Shift" => modifiers |= Modifiers::SHIFT,
+            "Alt" => modifiers |= Modifiers::ALT,
+            k => key_part = k,
+        }
+    }
+
+    let code = match key_part.to_uppercase().as_str() {
+        "P" => Code::KeyP,
+        "R" => Code::KeyR,
+        "A" => Code::KeyA,
+        "B" => Code::KeyB,
+        "C" => Code::KeyC,
+        "D" => Code::KeyD,
+        "E" => Code::KeyE,
+        "F" => Code::KeyF,
+        "G" => Code::KeyG,
+        "H" => Code::KeyH,
+        "I" => Code::KeyI,
+        "J" => Code::KeyJ,
+        "K" => Code::KeyK,
+        "L" => Code::KeyL,
+        "M" => Code::KeyM,
+        "N" => Code::KeyN,
+        "O" => Code::KeyO,
+        "Q" => Code::KeyQ,
+        "S" => Code::KeyS,
+        "T" => Code::KeyT,
+        "U" => Code::KeyU,
+        "V" => Code::KeyV,
+        "W" => Code::KeyW,
+        "X" => Code::KeyX,
+        "Y" => Code::KeyY,
+        "Z" => Code::KeyZ,
+        "0" => Code::Digit0,
+        "1" => Code::Digit1,
+        "2" => Code::Digit2,
+        "3" => Code::Digit3,
+        "4" => Code::Digit4,
+        "5" => Code::Digit5,
+        "6" => Code::Digit6,
+        "7" => Code::Digit7,
+        "8" => Code::Digit8,
+        "9" => Code::Digit9,
+        " " | "SPACE" => Code::Space,
+        "ENTER" => Code::Enter,
+        _ => return Err(format!("Unknown key: {}", key_part)),
+    };
+
+    Ok(Shortcut::new(Some(modifiers), code))
+}
+
 #[tauri::command]
 fn dismiss_workflow(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
@@ -651,6 +719,117 @@ fn dismiss_workflow(app: tauri::AppHandle) {
             .unwrap_or(false)
     };
     set_tray_attention(&app, has_pr_attention);
+}
+
+#[tauri::command]
+fn update_global_shortcuts(
+    app: tauri::AppHandle,
+    toggle: String,
+    reload: String,
+) -> Result<(), String> {
+    // Unregister all existing shortcuts
+    app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+
+    // Parse and register toggle shortcut
+    let toggle_shortcut = parse_shortcut_string(&toggle)?;
+    let handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(toggle_shortcut, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                tray::toggle_window(&handle);
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    // Parse and register reload shortcut
+    let reload_shortcut = parse_shortcut_string(&reload)?;
+    let handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(reload_shortcut, move |_app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            let h = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                let Some(state) = h.try_state::<AppState>() else {
+                    return;
+                };
+                let (
+                    notify,
+                    merged_hours,
+                    show_merged,
+                    hidden_orgs,
+                    hidden_repos,
+                    hidden_prs,
+                    followed_users,
+                    settings_clone,
+                ) = {
+                    let s = state.settings.lock().unwrap();
+                    (
+                        s.notifications_enabled,
+                        s.merged_window_hours,
+                        s.show_recently_merged,
+                        s.hidden_orgs.clone(),
+                        s.hidden_repos.clone(),
+                        s.hidden_prs.clone(),
+                        s.followed_users.clone(),
+                        Settings {
+                            workflow_monitor_enabled: s.workflow_monitor_enabled,
+                            workflow_org: s.workflow_org.clone(),
+                            workflow_repo: s.workflow_repo.clone(),
+                            workflow_name: s.workflow_name.clone(),
+                            ..Default::default()
+                        },
+                    )
+                };
+                let token = match get_token(&state) {
+                    Ok(t) => t,
+                    Err(_) => return,
+                };
+
+                let pr_fetch = github::fetch_all_prs(
+                    &state.http_client,
+                    &token,
+                    merged_hours,
+                    show_merged,
+                    &hidden_orgs,
+                    &hidden_repos,
+                    &followed_users,
+                )
+                .await;
+                if let Ok(result) = pr_fetch {
+                    let result = filter_hidden_prs(result, &hidden_prs);
+
+                    if let Some(wf) =
+                        fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await
+                    {
+                        let mut result_with_wf = result;
+                        result_with_wf.workflow_status = Some(wf.clone());
+                        let _wf_attention = check_workflow_attention(&h, &wf, notify);
+                        let (pr_result, _changed) = process_result(&h, result_with_wf, notify);
+                        let mut seen = state.seen_prs.lock().unwrap();
+                        for pr in &pr_result.open {
+                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
+                        }
+                        for pr in &pr_result.recently_merged {
+                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
+                        }
+                    } else {
+                        let (pr_result, _changed) = process_result(&h, result, notify);
+                        let mut seen = state.seen_prs.lock().unwrap();
+                        for pr in &pr_result.open {
+                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
+                        }
+                        for pr in &pr_result.recently_merged {
+                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
+                        }
+                    }
+                }
+            });
+        })
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 async fn poll_prs(app: tauri::AppHandle) {
@@ -757,6 +936,7 @@ pub fn run() {
             logout,
             get_settings,
             update_settings,
+            update_global_shortcuts,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));

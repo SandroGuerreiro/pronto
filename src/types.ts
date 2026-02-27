@@ -116,7 +116,23 @@ export interface Settings {
   workflow_org: string;
   workflow_repo: string;
   workflow_name: string;
+  keybindings?: Record<string, string>;
 }
+
+export const DEFAULT_KEYBINDINGS: Record<string, string> = {
+  navigate_down: "j",
+  navigate_up: "k",
+  expand: "l",
+  collapse: "h",
+  open_pr: "Enter",
+  hide_pr: "i",
+  copy_url: "c",
+  tab_owned: "1",
+  tab_followed: "2",
+  tab_merged: "3",
+  global_toggle: "Super+Ctrl+P",
+  global_reload: "Super+Ctrl+R",
+};
 
 export type TabName = "mine" | "followed" | "merged" | "settings";
 export type FilterType = "all" | "needs-review" | "changes-requested" | "approved" | "failing" | "attention";

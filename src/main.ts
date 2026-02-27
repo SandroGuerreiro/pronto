@@ -18,6 +18,8 @@ import {
   lastWorkflowConclusion,
   setLastWorkflowConclusion,
   currentResult,
+  keybindings,
+  setKeybindings,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -189,6 +191,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   await loadUserPrefs();
 
+  // Load keybindings from settings
+  const settings = await invoke<any>("get_settings");
+  if (settings?.keybindings) {
+    setKeybindings(settings.keybindings);
+  }
+
   const isAuthed = await invoke<boolean>("check_auth");
   if (isAuthed) {
     loadPrs();
@@ -260,103 +268,124 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (settingsOpen || !currentResult) return;
 
     const items = getFocusables();
-    if (!items.length && !["1", "2", "3", "Tab"].includes(e.key)) return;
+    const tabKeys = [keybindings.tab_owned, keybindings.tab_followed, keybindings.tab_merged, "Tab"];
+    if (!items.length && !tabKeys.includes(e.key)) return;
 
-    switch (e.key) {
-      case "j":
-      case "ArrowDown":
-        e.preventDefault();
-        setFocus(focusIndex + 1);
-        break;
-      case "k":
-      case "ArrowUp":
-        e.preventDefault();
-        setFocus(focusIndex - 1);
-        break;
-      case "h":
-      case "ArrowLeft": {
-        e.preventDefault();
-        if (focusIndex < 0) break;
-        const el = items[focusIndex];
-        const details = el.closest("details");
-        if (details && (details as HTMLDetailsElement).open) {
-          (details as HTMLDetailsElement).open = false;
+    // Navigate down
+    if (e.key === keybindings.navigate_down || e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocus(focusIndex + 1);
+      return;
+    }
+
+    // Navigate up
+    if (e.key === keybindings.navigate_up || e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocus(focusIndex - 1);
+      return;
+    }
+
+    // Collapse
+    if (e.key === keybindings.collapse || e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (focusIndex < 0) return;
+      const el = items[focusIndex];
+      const details = el.closest("details");
+      if (details && (details as HTMLDetailsElement).open) {
+        (details as HTMLDetailsElement).open = false;
+        details.dispatchEvent(new Event("toggle"));
+      }
+      return;
+    }
+
+    // Expand
+    if (e.key === keybindings.expand || e.key === "ArrowRight") {
+      e.preventDefault();
+      if (focusIndex < 0) return;
+      const el = items[focusIndex];
+      const details = el.closest("details");
+      if (details && !(details as HTMLDetailsElement).open) {
+        (details as HTMLDetailsElement).open = true;
+        details.dispatchEvent(new Event("toggle"));
+      }
+      return;
+    }
+
+    // Open PR
+    if (e.key === keybindings.open_pr) {
+      e.preventDefault();
+      if (focusIndex < 0) return;
+      const el = items[focusIndex];
+      if (el.classList.contains("pr-card")) {
+        const url = el.getAttribute("data-url");
+        if (url) openUrl(url);
+      } else if (el.tagName === "SUMMARY") {
+        const details = el.closest("details") as HTMLDetailsElement;
+        if (details) {
+          details.open = !details.open;
           details.dispatchEvent(new Event("toggle"));
         }
-        break;
       }
-      case "l":
-      case "ArrowRight": {
-        e.preventDefault();
-        if (focusIndex < 0) break;
-        const el = items[focusIndex];
-        const details = el.closest("details");
-        if (details && !(details as HTMLDetailsElement).open) {
-          (details as HTMLDetailsElement).open = true;
-          details.dispatchEvent(new Event("toggle"));
+      return;
+    }
+
+    // Tab: Owned
+    if (e.key === keybindings.tab_owned) {
+      e.preventDefault();
+      setActiveTab("mine");
+      return;
+    }
+
+    // Tab: Followed
+    if (e.key === keybindings.tab_followed) {
+      e.preventDefault();
+      setActiveTab("followed");
+      return;
+    }
+
+    // Tab: Merged
+    if (e.key === keybindings.tab_merged) {
+      e.preventDefault();
+      setActiveTab("merged");
+      return;
+    }
+
+    // Hide PR
+    if (e.key === keybindings.hide_pr) {
+      e.preventDefault();
+      const hidden = await hideCurrentFocusPr(focusIndex);
+      if (hidden) loadPrs();
+      return;
+    }
+
+    // Copy URL
+    if (e.key === keybindings.copy_url) {
+      e.preventDefault();
+      if (focusIndex < 0) return;
+      const el = items[focusIndex];
+      if (el.classList.contains("pr-card")) {
+        const url = el.getAttribute("data-url");
+        if (url) {
+          navigator.clipboard.writeText(url).then(() => {
+            const copyBtn = el.querySelector<HTMLButtonElement>(".copy-btn");
+            if (copyBtn) {
+              copyBtn.classList.add("copied");
+              setTimeout(() => copyBtn.classList.remove("copied"), 1500);
+            }
+          });
         }
-        break;
       }
-      case "Enter": {
-        e.preventDefault();
-        if (focusIndex < 0) break;
-        const el = items[focusIndex];
-        if (el.classList.contains("pr-card")) {
-          const url = el.getAttribute("data-url");
-          if (url) openUrl(url);
-        } else if (el.tagName === "SUMMARY") {
-          const details = el.closest("details") as HTMLDetailsElement;
-          if (details) {
-            details.open = !details.open;
-            details.dispatchEvent(new Event("toggle"));
-          }
-        }
-        break;
-      }
-      case "1":
-        e.preventDefault();
-        setActiveTab("mine");
-        break;
-      case "2":
-        e.preventDefault();
-        setActiveTab("followed");
-        break;
-      case "3":
-        e.preventDefault();
-        setActiveTab("merged");
-        break;
-      case "i": {
-        e.preventDefault();
-        const hidden = await hideCurrentFocusPr(focusIndex);
-        if (hidden) loadPrs();
-        break;
-      }
-      case "c": {
-        e.preventDefault();
-        if (focusIndex < 0) break;
-        const el = items[focusIndex];
-        if (el.classList.contains("pr-card")) {
-          const url = el.getAttribute("data-url");
-          if (url) {
-            navigator.clipboard.writeText(url).then(() => {
-              const copyBtn = el.querySelector<HTMLButtonElement>(".copy-btn");
-              if (copyBtn) {
-                copyBtn.classList.add("copied");
-                setTimeout(() => copyBtn.classList.remove("copied"), 1500);
-              }
-            });
-          }
-        }
-        break;
-      }
-      case "Tab": {
-        e.preventDefault();
-        const cycle = ["mine", "followed", "merged"] as const;
-        const i = cycle.indexOf(activeTab as "mine" | "followed" | "merged");
-        const next = cycle[(i + (e.shiftKey ? 2 : 1)) % 3];
-        setActiveTab(next);
-        break;
-      }
+      return;
+    }
+
+    // Cycle tabs with Tab key
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const cycle = ["mine", "followed", "merged"] as const;
+      const i = cycle.indexOf(activeTab as "mine" | "followed" | "merged");
+      const next = cycle[(i + (e.shiftKey ? 2 : 1)) % 3];
+      setActiveTab(next);
+      return;
     }
   });
 
