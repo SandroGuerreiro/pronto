@@ -30,6 +30,11 @@ import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, ini
 import { showSettings, hideSettings, initSettings, loadNotifPrefsFromSettings } from "./settings";
 import { showLogin, initAuth } from "./auth";
 
+// ── Polling indicators ────────────────────────────────────────────────────────
+
+let lastCheckedAt: Date | null = null;
+let pollIntervalSecs = 60;
+
 // ── PR loading ────────────────────────────────────────────────────────────────
 
 export async function loadPrs() {
@@ -55,6 +60,8 @@ function renderPrView(result: FetchResult) {
   clearPendingUnhide();
   updateWorkflowIndicator(result.workflow_status);
   renderActiveTab();
+  lastCheckedAt = new Date();
+  updatePollStatus();
 }
 
 // ── Workflow indicator ────────────────────────────────────────────────────────
@@ -88,6 +95,21 @@ function updateWorkflowIndicator(status: WorkflowStatus | null) {
   indicator.innerHTML = `<span class="wf-dot"></span><span class="wf-label">${prettyStatus}</span>`;
   indicator.title = `${status.repo} — ${status.workflow_name}\n${prettyStatus}\n${new Date(status.updated_at).toLocaleString()}`;
   indicator.style.display = "";
+}
+
+// ── Polling status indicators ─────────────────────────────────────────────────
+
+function updatePollStatus() {
+  const el = document.getElementById("poll-status");
+  if (!el || !lastCheckedAt) return;
+  const elapsedSecs = Math.floor((Date.now() - lastCheckedAt.getTime()) / 1000);
+  const remaining = pollIntervalSecs - elapsedSecs;
+  if (remaining > 0) {
+    el.textContent = `Polling in ${remaining}s`;
+  } else {
+    const mins = Math.floor(Math.abs(remaining) / 60);
+    el.textContent = mins > 0 ? `Last checked ${mins}m ago` : `Last checked just now`;
+  }
 }
 
 // ── Keyboard focus ────────────────────────────────────────────────────────────
@@ -187,7 +209,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     () => loadPrs()
   );
   initTabs(() => showSettings());
-  initSettings(() => {
+  initSettings(async () => {
+    const updated = await invoke<Settings>("get_settings");
+    pollIntervalSecs = updated.poll_interval_secs;
     setActiveTab("mine");
     loadPrs();
   });
@@ -201,6 +225,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     setKeybindings(settings.keybindings);
   }
   loadNotifPrefsFromSettings(settings);
+
+  // Initialize polling indicators
+  pollIntervalSecs = settings.poll_interval_secs;
+  lastCheckedAt = new Date();
+  updatePollStatus();
+  setInterval(updatePollStatus, 5000);
 
   // Toggle merged tab visibility based on settings
   const mergedBtn = document.querySelector('[data-tab="merged"]') as HTMLElement | null;
@@ -233,12 +263,26 @@ window.addEventListener("DOMContentLoaded", async () => {
     showLogin();
   }
 
-  listen<FetchResult>("prs-updated", (event) => {
+  await listen<FetchResult>("prs-updated", (event) => {
     if (event.payload) {
       renderPrView(event.payload);
     } else {
       loadPrs();
     }
+  });
+
+  // Polling event listeners
+  await listen("polling-started", () => {
+    document.querySelector<HTMLImageElement>(".panel-logo")?.classList.add("polling");
+    document.getElementById("spinner")!.style.display = "";
+    document.getElementById("poll-status")!.textContent = "Polling...";
+  });
+
+  await listen("polling-complete", () => {
+    document.querySelector<HTMLImageElement>(".panel-logo")?.classList.remove("polling");
+    document.getElementById("spinner")!.style.display = "none";
+    lastCheckedAt = new Date();
+    updatePollStatus();
   });
 
   // Nav tab buttons

@@ -837,6 +837,7 @@ fn update_global_shortcuts(
                 let Some(state) = h.try_state::<AppState>() else {
                     return;
                 };
+                let _ = h.emit("polling-started", ());
                 let (
                     notify,
                     merged_hours,
@@ -896,24 +897,13 @@ fn update_global_shortcuts(
                         result_with_wf.workflow_status = Some(wf.clone());
                         let _wf_attention = check_workflow_attention(&h, &wf, notify);
                         let (pr_result, _changed) = process_result(&h, result_with_wf, notify);
-                        let mut seen = state.seen_prs.lock().unwrap();
-                        for pr in &pr_result.open {
-                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
-                        }
-                        for pr in &pr_result.recently_merged {
-                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
-                        }
+                        let _ = h.emit("prs-updated", pr_result);
                     } else {
                         let (pr_result, _changed) = process_result(&h, result, notify);
-                        let mut seen = state.seen_prs.lock().unwrap();
-                        for pr in &pr_result.open {
-                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
-                        }
-                        for pr in &pr_result.recently_merged {
-                            seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
-                        }
+                        let _ = h.emit("prs-updated", pr_result);
                     }
                 }
+                let _ = h.emit("polling-complete", ());
             });
         })
         .map_err(|e| e.to_string())?;
@@ -928,6 +918,7 @@ async fn poll_prs(app: tauri::AppHandle) {
             .map(|s| s.settings.lock().unwrap().poll_interval_secs)
             .unwrap_or(60);
         tokio::time::sleep(Duration::from_secs(interval)).await;
+        let _ = app.emit("polling-started", ());
 
         let Some(state) = app.try_state::<AppState>() else {
             continue;
@@ -1009,6 +1000,7 @@ async fn poll_prs(app: tauri::AppHandle) {
                 eprintln!("[pronto] Poll failed: {}", e);
             }
         }
+        let _ = app.emit("polling-complete", ());
     }
 }
 
