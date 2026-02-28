@@ -22,6 +22,8 @@ import {
   setKeybindings,
   showRecentlyMerged,
   setShowRecentlyMerged,
+  showClosed,
+  setShowClosed,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -211,6 +213,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // Toggle closed tab visibility based on settings
+  const closedBtn = document.querySelector('[data-tab="closed"]') as HTMLElement | null;
+  if (closedBtn) {
+    if (settings?.show_closed) {
+      setShowClosed(true);
+      closedBtn.style.display = "";
+    } else {
+      setShowClosed(false);
+      closedBtn.style.display = "none";
+    }
+  }
+
   const isAuthed = await invoke<boolean>("check_auth");
   if (isAuthed) {
     loadPrs();
@@ -229,7 +243,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Nav tab buttons
   document.querySelectorAll("#main-nav .nav-item[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      setActiveTab(btn.getAttribute("data-tab") as "mine" | "followed" | "merged" | "settings");
+      setActiveTab(btn.getAttribute("data-tab") as TabName);
     });
   });
 
@@ -366,6 +380,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    // Tab: Closed
+    if (e.key === keybindings.tab_closed && showClosed) {
+      e.preventDefault();
+      setActiveTab("closed");
+      return;
+    }
+
     // Hide PR
     if (e.key === keybindings.hide_pr) {
       e.preventDefault();
@@ -397,13 +418,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Cycle tabs with Tab key
     if (e.key === "Tab") {
       e.preventDefault();
-      const cycle: ("mine" | "followed" | "merged")[] = ["mine", "followed"];
+      const cycle: TabName[] = ["mine", "followed"];
       if (showRecentlyMerged) {
         cycle.push("merged");
       }
-      const i = cycle.indexOf(activeTab as "mine" | "followed" | "merged");
+      if (showClosed) {
+        cycle.push("closed");
+      }
+      const i = cycle.indexOf(activeTab);
       const next = cycle[(i + (e.shiftKey ? 2 : 1)) % cycle.length];
-      setActiveTab(next as TabName);
+      setActiveTab(next);
       return;
     }
   });

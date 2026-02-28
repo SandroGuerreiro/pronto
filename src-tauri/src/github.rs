@@ -16,6 +16,8 @@ pub struct Data {
     pub open: SearchResult,
     #[serde(rename = "recentlyMerged")]
     pub recently_merged: SearchResult,
+    #[serde(rename = "recentlyClosed")]
+    pub recently_closed: SearchResult,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,8 +167,10 @@ pub struct PrElementChanges {
 pub struct FetchResult {
     pub open: Vec<PullRequest>,
     pub recently_merged: Vec<PullRequest>,
+    pub recently_closed: Vec<PullRequest>,
     pub followed_open: Vec<PullRequest>,
     pub followed_recently_merged: Vec<PullRequest>,
+    pub followed_recently_closed: Vec<PullRequest>,
     pub attention_urls: Vec<String>,
     pub element_changes: std::collections::HashMap<String, PrElementChanges>,
     pub workflow_status: Option<WorkflowStatus>,
@@ -201,9 +205,14 @@ async fn fetch_prs_for_author(
     author: &str,
     merged_window_hours: u64,
     show_recently_merged: bool,
+    closed_window_hours: u64,
+    show_recently_closed: bool,
     exclusions: &str,
-) -> Result<(Vec<PullRequest>, Vec<PullRequest>), Box<dyn std::error::Error + Send + Sync>> {
-    let cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
+) -> Result<(Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>), Box<dyn std::error::Error + Send + Sync>> {
+    let merged_cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
+        .format("%Y-%m-%d")
+        .to_string();
+    let closed_cutoff = (chrono::Utc::now() - chrono::Duration::hours(closed_window_hours as i64))
         .format("%Y-%m-%d")
         .to_string();
 
@@ -229,7 +238,26 @@ async fn fetch_prs_for_author(
       }}
     }}
   }}
-  recentlyMerged: search(query: "author:{author} type:pr is:merged merged:>{cutoff}{exclusions}", type: ISSUE, first: 10) {{
+  recentlyMerged: search(query: "author:{author} type:pr is:merged merged:>{merged_cutoff}{exclusions}", type: ISSUE, first: 10) {{
+    nodes {{
+      ... on PullRequest {{
+        title
+        url
+        state
+        merged
+        createdAt
+        repository {{ name owner {{ login }} }}
+        mergeQueueEntry {{ position }}
+        reviewDecision
+        reviews(states: APPROVED) {{ totalCount }}
+        comments {{ totalCount }}
+        reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+        commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+        author {{ login }}
+      }}
+    }}
+  }}
+  recentlyClosed: search(query: "author:{author} type:pr is:unmerged is:closed closed:>{closed_cutoff}{exclusions}", type: ISSUE, first: 10) {{
     nodes {{
       ... on PullRequest {{
         title
@@ -268,8 +296,13 @@ async fn fetch_prs_for_author(
     } else {
         vec![]
     };
+    let recently_closed = if show_recently_closed {
+        response.data.recently_closed.nodes
+    } else {
+        vec![]
+    };
 
-    Ok((open, recently_merged))
+    Ok((open, recently_merged, recently_closed))
 }
 
 fn build_exclusions(hidden_orgs: &[String], hidden_repos: &[String]) -> String {
@@ -288,6 +321,8 @@ pub async fn fetch_all_prs(
     token: &str,
     merged_window_hours: u64,
     show_recently_merged: bool,
+    closed_window_hours: u64,
+    show_recently_closed: bool,
     hidden_orgs: &[String],
     hidden_repos: &[String],
     followed_users: &[String],
@@ -295,12 +330,14 @@ pub async fn fetch_all_prs(
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
     // Fetch PRs authored by the current user.
-    let (my_open, my_recently_merged) = fetch_prs_for_author(
+    let (my_open, my_recently_merged, my_recently_closed) = fetch_prs_for_author(
         &client,
         token,
         "@me",
         merged_window_hours,
         show_recently_merged,
+        closed_window_hours,
+        show_recently_closed,
         &exclusions,
     )
     .await?;
@@ -308,32 +345,38 @@ pub async fn fetch_all_prs(
     // Fetch PRs authored by followed users.
     let mut followed_open: Vec<PullRequest> = Vec::new();
     let mut followed_recently_merged: Vec<PullRequest> = Vec::new();
+    let mut followed_recently_closed: Vec<PullRequest> = Vec::new();
 
     for user in followed_users {
         if user.trim().is_empty() {
             continue;
         }
         let author = user.trim();
-        if let Ok((open, recent)) = fetch_prs_for_author(
+        if let Ok((open, recent, closed)) = fetch_prs_for_author(
             &client,
             token,
             author,
             merged_window_hours,
             show_recently_merged,
+            closed_window_hours,
+            show_recently_closed,
             &exclusions,
         )
         .await
         {
             followed_open.extend(open);
             followed_recently_merged.extend(recent);
+            followed_recently_closed.extend(closed);
         }
     }
 
     Ok(FetchResult {
         open: my_open,
         recently_merged: my_recently_merged,
+        recently_closed: my_recently_closed,
         followed_open,
         followed_recently_merged,
+        followed_recently_closed,
         attention_urls: vec![],
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,

@@ -9,6 +9,7 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 - **Tray icon widget** -- lives in your menu bar, not the dock
 - **Open PRs at a glance** -- see title, repo, review status, comments, and CI checks
 - **Recently merged** -- shows PRs merged in a configurable time window (12h / 24h / 48h), in a separate tab
+- **Recently closed** -- shows unmerged closed PRs in a configurable time window (12h / 24h / 48h), disabled by default
 - **Needs attention notifications** -- tray icon badge + native macOS notification when a PR's status changes (reviews, comments, CI, merge queue transitions)
 - **Notification actions** -- notification title is the PR name, body describes what changed; clicking the notification opens the PR and clears its attention status
 - **Dismiss on hover** -- hovering over a highlighted PR card for ~800ms acknowledges it; once all are dismissed, the tray badge clears
@@ -102,8 +103,10 @@ This uses the OAuth Device Flow with the `repo` scope.
 | `h` / `←` | Collapse focused accordion |
 | `Enter` | Open focused PR in browser / toggle accordion |
 | `i` | Hide focused PR (add to blacklist) |
-| `1` | Switch to Open tab |
-| `2` | Switch to Recently Merged tab |
+| `1` | Switch to Owned tab |
+| `2` | Switch to Followed tab |
+| `3` | Switch to Recently Merged tab |
+| `4` | Switch to Recently Closed tab |
 | `Tab` | Switch between tabs |
 | `Escape` | Close settings if open, otherwise close popup |
 
@@ -114,9 +117,10 @@ Focusing a PR card that needs attention will dismiss its attention status after 
 Open settings from the gear icon in the header. Settings are organized into searchable sections:
 
 - **General** -- Polling interval, notifications toggle
-- **Display** -- Group by repository (accordions vs flat list), show recently merged toggle, merged time window
+- **Display** -- Group by repository (accordions vs flat list), show recently merged toggle with time window, show recently closed toggle with time window
 - **Workflow** -- Monitor a single GitHub Actions workflow; configure the organization, repository, and workflow filename (e.g. `deploy.yml`). Only terminal states (success / failure) are tracked.
-- **Hidden PRs** -- View and remove PRs from the hide blacklist
+- **Keys** -- Customize keyboard shortcuts for in-app navigation, tab switching, and global toggles/reload
+- **Users** -- Manage followed users and view the PR hide blacklist
 
 ## Development
 
@@ -185,7 +189,7 @@ pronto/
 ## How it works
 
 1. **Startup** -- The app registers as a macOS menu bar accessory (no dock icon), sets up the tray icon, registers global shortcuts, and starts a background polling task.
-2. **GitHub GraphQL API** -- Fetches open PRs and recently merged PRs using `search` queries scoped to `author:@me`. Hidden orgs, repos, and individual PRs are excluded from the query.
+2. **GitHub GraphQL API** -- Fetches open PRs, recently merged PRs, and recently closed PRs (if enabled) using `search` queries scoped to `author:@me`. Hidden orgs, repos, and individual PRs are excluded from the query.
 3. **GitHub REST API** -- If workflow monitoring is enabled, fetches the latest completed runs for the configured workflow and picks the most recent success or failure.
 4. **Attention detection** -- Each PR gets a "fingerprint" (hash of review status, approvals, comments, CI state, merge queue status). When a fingerprint changes between polls, the PR is flagged as needing attention. Workflow status changes also trigger attention.
 5. **Tray badge** -- A red dot is drawn on the tray icon when any PR (or the workflow) needs attention.

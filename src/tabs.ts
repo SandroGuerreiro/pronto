@@ -205,6 +205,20 @@ export function renderActiveTab() {
         setShowAuthorInCards(false);
       }
     }
+
+  } else if (activeTab === "closed") {
+    const mine = currentResult.recently_closed || [];
+    const following = currentResult.followed_recently_closed || [];
+    if (mine.length === 0 && following.length === 0) {
+      html = '<div class="empty">No recently closed PRs</div>';
+    } else {
+      if (mine.length > 0) html += renderCollapsibleSection("section:owned", "Owned", mine);
+      if (following.length > 0) {
+        setShowAuthorInCards(true);
+        html += renderCollapsibleSection("section:following", "Following", following);
+        setShowAuthorInCards(false);
+      }
+    }
   }
 
   if (!html) html = '<div class="empty">No PRs</div>';
@@ -278,8 +292,12 @@ export function updateTabBadges() {
     ...currentResult.recently_merged,
     ...(currentResult.followed_recently_merged || []),
   ].filter((pr) => currentAttentionUrls.includes(pr.url)).length;
+  const closedCount = [
+    ...currentResult.recently_closed,
+    ...(currentResult.followed_recently_closed || []),
+  ].filter((pr) => currentAttentionUrls.includes(pr.url)).length;
 
-  const counts: Record<string, number> = { mine: mineCount, followed: followedCount, merged: mergedCount };
+  const counts: Record<string, number> = { mine: mineCount, followed: followedCount, merged: mergedCount, closed: closedCount };
 
   document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
     const tab = btn.getAttribute("data-tab")!;
@@ -474,6 +492,10 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   if (currentResult) {
     currentResult.open = currentResult.open.filter((pr) => pr.url !== url);
     currentResult.recently_merged = currentResult.recently_merged.filter((pr) => pr.url !== url);
+    currentResult.recently_closed = currentResult.recently_closed.filter((pr) => pr.url !== url);
+    currentResult.followed_open = currentResult.followed_open.filter((pr) => pr.url !== url);
+    currentResult.followed_recently_merged = currentResult.followed_recently_merged.filter((pr) => pr.url !== url);
+    currentResult.followed_recently_closed = currentResult.followed_recently_closed.filter((pr) => pr.url !== url);
   }
   renderActiveTab();
 

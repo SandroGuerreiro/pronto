@@ -79,8 +79,10 @@ export interface PrElementChanges {
 export interface FetchResult {
   open: PullRequest[];
   recently_merged: PullRequest[];
+  recently_closed: PullRequest[];
   followed_open: PullRequest[];
   followed_recently_merged: PullRequest[];
+  followed_recently_closed: PullRequest[];
   attention_urls: string[];
   element_changes: Record<string, PrElementChanges>;
   workflow_status: WorkflowStatus | null;
@@ -104,6 +106,8 @@ export interface Settings {
   notifications_enabled: boolean;
   show_recently_merged: boolean;
   merged_window_hours: number;
+  show_closed: boolean;
+  closed_window_hours: number;
   favorite_orgs: string[];
   favorite_repos: string[];
   collapsed_accordions: string[];
@@ -132,9 +136,10 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   tab_owned: "1",
   tab_followed: "2",
   tab_merged: "3",
+  tab_closed: "4",
   global_toggle: "Super+Ctrl+P",
   global_reload: "Super+Ctrl+R",
 };
 
-export type TabName = "mine" | "followed" | "merged" | "settings";
+export type TabName = "mine" | "followed" | "merged" | "closed" | "settings";
 export type FilterType = "all" | "needs-review" | "changes-requested" | "approved" | "failing" | "attention";

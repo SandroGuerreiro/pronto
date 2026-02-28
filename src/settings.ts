@@ -15,6 +15,7 @@ import {
   keybindings,
   setKeybindings,
   setShowRecentlyMerged,
+  setShowClosed,
 } from "./state";
 
 // Injected callback: called when settings view is closed (wired in main.ts)
@@ -38,6 +39,8 @@ export async function autoSaveSettings() {
   const notifEl = document.getElementById("setting-notifications") as HTMLInputElement | null;
   const mergedEl = document.getElementById("setting-merged") as HTMLInputElement | null;
   const mergedHoursEl = document.getElementById("setting-merged-hours") as HTMLSelectElement | null;
+  const closedEl = document.getElementById("setting-closed") as HTMLInputElement | null;
+  const closedHoursEl = document.getElementById("setting-closed-hours") as HTMLSelectElement | null;
   const groupRepoEl = document.getElementById("setting-group-repo") as HTMLInputElement | null;
   const wfEnabledEl = document.getElementById("setting-workflow-enabled") as HTMLInputElement | null;
   const wfOrgEl = document.getElementById("setting-workflow-org") as HTMLInputElement | null;
@@ -54,6 +57,8 @@ export async function autoSaveSettings() {
     notifications_enabled: notifEl?.checked ?? currentSettings.notifications_enabled,
     show_recently_merged: mergedEl?.checked ?? currentSettings.show_recently_merged,
     merged_window_hours: mergedHoursEl ? parseInt(mergedHoursEl.value) : currentSettings.merged_window_hours,
+    show_closed: closedEl?.checked ?? currentSettings.show_closed,
+    closed_window_hours: closedHoursEl ? parseInt(closedHoursEl.value) : currentSettings.closed_window_hours,
     favorite_orgs: [...favoriteOrgs],
     favorite_repos: [...favoriteRepos],
     collapsed_accordions: [...collapsedAccordions],
@@ -229,6 +234,20 @@ export async function showSettings() {
                 <option value="48"${freshSettings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
               </select>
             </div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <span>Show recently closed</span>
+                <input type="checkbox" id="setting-closed" class="settings-toggle"${freshSettings.show_closed ? " checked" : ""} />
+              </label>
+            </div>
+            <div class="settings-group" id="closed-window-group"${freshSettings.show_closed ? "" : ' style="display:none"'}>
+              <label class="settings-label">Closed time window</label>
+              <select id="setting-closed-hours" class="settings-select">
+                <option value="12"${freshSettings.closed_window_hours === 12 ? " selected" : ""}>12 hours</option>
+                <option value="24"${freshSettings.closed_window_hours === 24 ? " selected" : ""}>24 hours</option>
+                <option value="48"${freshSettings.closed_window_hours === 48 ? " selected" : ""}>48 hours</option>
+              </select>
+            </div>
           </div>
         `;
         setupEventListeners();
@@ -240,6 +259,16 @@ export async function showSettings() {
             mergedBtn.style.display = checked ? "" : "none";
           }
           setShowRecentlyMerged(checked);
+          autoSaveSettings();
+        });
+        document.getElementById("setting-closed")!.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          document.getElementById("closed-window-group")!.style.display = checked ? "" : "none";
+          const closedBtn = document.querySelector('[data-tab="closed"]') as HTMLElement | null;
+          if (closedBtn) {
+            closedBtn.style.display = checked ? "" : "none";
+          }
+          setShowClosed(checked);
           autoSaveSettings();
         });
         break;
@@ -336,6 +365,10 @@ export async function showSettings() {
               <div class="kb-row">
                 <span class="kb-label">Tab: Merged</span>
                 <button class="kb-key" data-action="tab_merged">${formatKeybinding(keybindings.tab_merged)}</button>
+              </div>
+              <div class="kb-row">
+                <span class="kb-label">Tab: Closed</span>
+                <button class="kb-key" data-action="tab_closed">${formatKeybinding(keybindings.tab_closed)}</button>
               </div>
             </div>
           </div>

@@ -36,6 +36,10 @@ pub struct Settings {
     pub show_recently_merged: bool,
     pub merged_window_hours: u64,
     #[serde(default)]
+    pub show_closed: bool,
+    #[serde(default)]
+    pub closed_window_hours: u64,
+    #[serde(default)]
     pub favorite_orgs: Vec<String>,
     #[serde(default)]
     pub favorite_repos: Vec<String>,
@@ -74,6 +78,8 @@ impl Default for Settings {
             notifications_enabled: true,
             show_recently_merged: true,
             merged_window_hours: 24,
+            show_closed: false,
+            closed_window_hours: 24,
             favorite_orgs: vec![],
             favorite_repos: vec![],
             collapsed_accordions: vec![],
@@ -384,6 +390,8 @@ fn process_result(
                 .recently_merged
                 .iter()
                 .chain(result.followed_recently_merged.iter())
+                .chain(result.recently_closed.iter())
+                .chain(result.followed_recently_closed.iter())
             {
                 seen.remove(&pr.url);
             }
@@ -482,10 +490,16 @@ fn filter_hidden_prs(
             .recently_merged
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
         result
+            .recently_closed
+            .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
+        result
             .followed_open
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
         result
             .followed_recently_merged
+            .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
+        result
+            .followed_recently_closed
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
     }
     result
@@ -498,6 +512,8 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
     let (
         merged_hours,
         show_merged,
+        closed_hours,
+        show_closed,
         hidden_orgs,
         hidden_repos,
         hidden_prs,
@@ -508,6 +524,8 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         (
             s.merged_window_hours,
             s.show_recently_merged,
+            s.closed_window_hours,
+            s.show_closed,
             s.hidden_orgs.clone(),
             s.hidden_repos.clone(),
             s.hidden_prs.clone(),
@@ -526,6 +544,8 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         &token,
         merged_hours,
         show_merged,
+        closed_hours,
+        show_closed,
         &hidden_orgs,
         &hidden_repos,
         &followed_users,
@@ -783,6 +803,8 @@ fn update_global_shortcuts(
                     notify,
                     merged_hours,
                     show_merged,
+                    closed_hours,
+                    show_closed,
                     hidden_orgs,
                     hidden_repos,
                     hidden_prs,
@@ -794,6 +816,8 @@ fn update_global_shortcuts(
                         s.notifications_enabled,
                         s.merged_window_hours,
                         s.show_recently_merged,
+                        s.closed_window_hours,
+                        s.show_closed,
                         s.hidden_orgs.clone(),
                         s.hidden_repos.clone(),
                         s.hidden_prs.clone(),
@@ -817,6 +841,8 @@ fn update_global_shortcuts(
                     &token,
                     merged_hours,
                     show_merged,
+                    closed_hours,
+                    show_closed,
                     &hidden_orgs,
                     &hidden_repos,
                     &followed_users,
@@ -872,6 +898,8 @@ async fn poll_prs(app: tauri::AppHandle) {
             notify,
             merged_hours,
             show_merged,
+            closed_hours,
+            show_closed,
             hidden_orgs,
             hidden_repos,
             hidden_prs,
@@ -883,6 +911,8 @@ async fn poll_prs(app: tauri::AppHandle) {
                 s.notifications_enabled,
                 s.merged_window_hours,
                 s.show_recently_merged,
+                s.closed_window_hours,
+                s.show_closed,
                 s.hidden_orgs.clone(),
                 s.hidden_repos.clone(),
                 s.hidden_prs.clone(),
@@ -906,6 +936,8 @@ async fn poll_prs(app: tauri::AppHandle) {
             &token,
             merged_hours,
             show_merged,
+            closed_hours,
+            show_closed,
             &hidden_orgs,
             &hidden_repos,
             &followed_users,
