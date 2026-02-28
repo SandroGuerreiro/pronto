@@ -101,6 +101,15 @@ export interface HiddenPr {
   title: string;
 }
 
+export interface NotificationPreferences {
+  needs_review: boolean;
+  changes_requested: boolean;
+  checks_failed: boolean;
+  new_reviews: boolean;
+  threads_updated: boolean;
+  merge_queue: boolean;
+}
+
 export interface Settings {
   poll_interval_secs: number;
   notifications_enabled: boolean;
@@ -123,6 +132,10 @@ export interface Settings {
   keybindings?: Record<string, string>;
   global_toggle_shortcut?: string;
   global_reload_shortcut?: string;
+  notification_prefs_owned: NotificationPreferences;
+  notification_prefs_followed: NotificationPreferences;
+  notification_prefs_merged: NotificationPreferences;
+  notification_prefs_closed: NotificationPreferences;
 }
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {

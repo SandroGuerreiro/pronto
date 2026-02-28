@@ -4,6 +4,7 @@ use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
 use tauri_plugin_positioner::{Position, WindowExt};
 
 use crate::github::{FetchResult, PrElementChanges, PullRequest};
+use crate::{NotificationPreferences, Settings};
 
 const TRAY_ID: &str = "main-tray";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
@@ -81,31 +82,77 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChang
     }
 }
 
+/// Check if element changes match the notification preferences.
+fn should_notify_for_changes(
+    changes: &PrElementChanges,
+    prefs: &NotificationPreferences,
+) -> bool {
+    (changes.review_decision && (prefs.needs_review || prefs.changes_requested))
+        || (changes.checks && prefs.checks_failed)
+        || (changes.approvals && prefs.new_reviews)
+        || ((changes.comments || changes.resolved) && prefs.threads_updated)
+}
+
 /// Returns URLs of PRs whose state changed since last seen.
 /// PRs not yet in `seen` are treated as new baselines -- no attention on first encounter.
 /// Also flags recently merged PRs that were previously tracked (e.g. left the merge queue).
-pub fn attention_urls(result: &FetchResult, seen: &HashMap<String, String>) -> Vec<String> {
+pub fn attention_urls(
+    result: &FetchResult,
+    seen: &HashMap<String, String>,
+    settings: &Settings,
+) -> Vec<String> {
     let mut urls: Vec<String> = result
         .open
         .iter()
         .chain(result.followed_open.iter())
         .filter(|pr| {
             let fp = attention_fingerprint(pr);
-            match seen.get(&pr.url) {
-                Some(last_fp) => last_fp != &fp,
-                None => false,
+            if let Some(last_fp) = seen.get(&pr.url) {
+                if last_fp != &fp {
+                    let changes = compute_element_changes(pr, last_fp);
+                    // Determine if owned or followed
+                    let is_owned = result.open.iter().any(|p| p.url == pr.url);
+                    let prefs = if is_owned {
+                        &settings.notification_prefs_owned
+                    } else {
+                        &settings.notification_prefs_followed
+                    };
+                    should_notify_for_changes(&changes, prefs)
+                } else {
+                    false
+                }
+            } else {
+                false
             }
         })
         .map(|pr| pr.url.clone())
         .collect();
 
+    // Handle merged PRs (state change from open to merged)
     for pr in result
         .recently_merged
         .iter()
         .chain(result.followed_recently_merged.iter())
     {
         if seen.contains_key(&pr.url) {
-            urls.push(pr.url.clone());
+            let prefs = &settings.notification_prefs_merged;
+            if prefs.needs_review {
+                urls.push(pr.url.clone());
+            }
+        }
+    }
+
+    // Handle closed PRs (state change from open to closed)
+    for pr in result
+        .recently_closed
+        .iter()
+        .chain(result.followed_recently_closed.iter())
+    {
+        if seen.contains_key(&pr.url) {
+            let prefs = &settings.notification_prefs_closed;
+            if prefs.needs_review {
+                urls.push(pr.url.clone());
+            }
         }
     }
 

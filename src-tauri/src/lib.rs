@@ -17,6 +17,29 @@ pub struct HiddenPr {
     pub title: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPreferences {
+    pub needs_review: bool,
+    pub changes_requested: bool,
+    pub checks_failed: bool,
+    pub new_reviews: bool,
+    pub threads_updated: bool,
+    pub merge_queue: bool,
+}
+
+impl Default for NotificationPreferences {
+    fn default() -> Self {
+        Self {
+            needs_review: true,
+            changes_requested: true,
+            checks_failed: true,
+            new_reviews: true,
+            threads_updated: true,
+            merge_queue: true,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -69,6 +92,14 @@ pub struct Settings {
     pub global_toggle_shortcut: String,
     #[serde(default = "default_global_reload")]
     pub global_reload_shortcut: String,
+    #[serde(default)]
+    pub notification_prefs_owned: NotificationPreferences,
+    #[serde(default)]
+    pub notification_prefs_followed: NotificationPreferences,
+    #[serde(default)]
+    pub notification_prefs_merged: NotificationPreferences,
+    #[serde(default)]
+    pub notification_prefs_closed: NotificationPreferences,
 }
 
 impl Default for Settings {
@@ -95,6 +126,10 @@ impl Default for Settings {
             keybindings: HashMap::new(),
             global_toggle_shortcut: default_global_toggle(),
             global_reload_shortcut: default_global_reload(),
+            notification_prefs_owned: NotificationPreferences::default(),
+            notification_prefs_followed: NotificationPreferences::default(),
+            notification_prefs_merged: NotificationPreferences::default(),
+            notification_prefs_closed: NotificationPreferences::default(),
         }
     }
 }
@@ -307,9 +342,10 @@ fn send_attention_notification(
                                 seen.insert(url.clone(), fingerprint.clone());
                                 let has_attention = {
                                     let cache = state.cached_prs.lock().unwrap();
+                                    let settings = state.settings.lock().unwrap().clone();
                                     cache
                                         .as_ref()
-                                        .map(|r| !tray::attention_urls(r, &seen).is_empty())
+                                        .map(|r| !tray::attention_urls(r, &seen, &settings).is_empty())
                                         .unwrap_or(false)
                                 };
                                 drop(seen);
@@ -358,7 +394,8 @@ fn process_result(
 
         {
             let mut seen = state.seen_prs.lock().unwrap();
-            result.attention_urls = tray::attention_urls(&result, &seen);
+            let settings = state.settings.lock().unwrap().clone();
+            result.attention_urls = tray::attention_urls(&result, &seen, &settings);
 
             // Compute per-element changes for every PR in attention_urls
             let all_prs: Vec<&github::PullRequest> = result
@@ -583,7 +620,8 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
     {
         let mut seen = state.seen_prs.lock().unwrap();
         seen.insert(url.clone(), fingerprint);
-        let has_attention = !tray::attention_urls(&result_clone, &seen).is_empty();
+        let settings = state.settings.lock().unwrap().clone();
+        let has_attention = !tray::attention_urls(&result_clone, &seen, &settings).is_empty();
         drop(seen);
         set_tray_attention(&app, has_attention);
     }

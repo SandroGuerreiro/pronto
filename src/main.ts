@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { FetchResult, WorkflowStatus, TabName } from "./types";
+import type { FetchResult, WorkflowStatus, TabName, Settings } from "./types";
 import {
   currentAttentionUrls,
   setCurrentAttentionUrls,
@@ -27,7 +27,7 @@ import {
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
-import { showSettings, hideSettings, initSettings } from "./settings";
+import { showSettings, hideSettings, initSettings, loadNotifPrefsFromSettings } from "./settings";
 import { showLogin, initAuth } from "./auth";
 
 // ── PR loading ────────────────────────────────────────────────────────────────
@@ -195,11 +195,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   await loadUserPrefs();
 
-  // Load keybindings from settings
-  const settings = await invoke<any>("get_settings");
+  // Load keybindings and notification prefs from settings
+  const settings = await invoke<Settings>("get_settings");
   if (settings?.keybindings) {
     setKeybindings(settings.keybindings);
   }
+  loadNotifPrefsFromSettings(settings);
 
   // Toggle merged tab visibility based on settings
   const mergedBtn = document.querySelector('[data-tab="merged"]') as HTMLElement | null;
