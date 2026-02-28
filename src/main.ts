@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { FetchResult, WorkflowStatus } from "./types";
+import type { FetchResult, WorkflowStatus, TabName } from "./types";
 import {
   currentAttentionUrls,
   setCurrentAttentionUrls,
@@ -20,6 +20,8 @@ import {
   currentResult,
   keybindings,
   setKeybindings,
+  showRecentlyMerged,
+  setShowRecentlyMerged,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -197,6 +199,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     setKeybindings(settings.keybindings);
   }
 
+  // Toggle merged tab visibility based on settings
+  const mergedBtn = document.querySelector('[data-tab="merged"]') as HTMLElement | null;
+  if (mergedBtn) {
+    if (settings?.show_recently_merged) {
+      setShowRecentlyMerged(true);
+      mergedBtn.style.display = "";
+    } else {
+      setShowRecentlyMerged(false);
+      mergedBtn.style.display = "none";
+    }
+  }
+
   const isAuthed = await invoke<boolean>("check_auth");
   if (isAuthed) {
     loadPrs();
@@ -268,7 +282,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (settingsOpen || !currentResult) return;
 
     const items = getFocusables();
-    const tabKeys = [keybindings.tab_owned, keybindings.tab_followed, keybindings.tab_merged, "Tab"];
+    const tabKeys = [keybindings.tab_owned, keybindings.tab_followed];
+    if (showRecentlyMerged) tabKeys.push(keybindings.tab_merged);
+    tabKeys.push("Tab");
     if (!items.length && !tabKeys.includes(e.key)) return;
 
     // Navigate down
@@ -344,7 +360,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     // Tab: Merged
-    if (e.key === keybindings.tab_merged) {
+    if (e.key === keybindings.tab_merged && showRecentlyMerged) {
       e.preventDefault();
       setActiveTab("merged");
       return;
@@ -381,10 +397,13 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Cycle tabs with Tab key
     if (e.key === "Tab") {
       e.preventDefault();
-      const cycle = ["mine", "followed", "merged"] as const;
+      const cycle: ("mine" | "followed" | "merged")[] = ["mine", "followed"];
+      if (showRecentlyMerged) {
+        cycle.push("merged");
+      }
       const i = cycle.indexOf(activeTab as "mine" | "followed" | "merged");
-      const next = cycle[(i + (e.shiftKey ? 2 : 1)) % 3];
-      setActiveTab(next);
+      const next = cycle[(i + (e.shiftKey ? 2 : 1)) % cycle.length];
+      setActiveTab(next as TabName);
       return;
     }
   });

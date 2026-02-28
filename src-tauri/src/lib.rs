@@ -21,6 +21,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_global_toggle() -> String {
+    "Super+Ctrl+P".to_string()
+}
+
+fn default_global_reload() -> String {
+    "Super+Ctrl+R".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub poll_interval_secs: u64,
@@ -53,6 +61,10 @@ pub struct Settings {
     pub workflow_name: String,
     #[serde(default)]
     pub keybindings: HashMap<String, String>,
+    #[serde(default = "default_global_toggle")]
+    pub global_toggle_shortcut: String,
+    #[serde(default = "default_global_reload")]
+    pub global_reload_shortcut: String,
 }
 
 impl Default for Settings {
@@ -75,6 +87,8 @@ impl Default for Settings {
             workflow_repo: String::new(),
             workflow_name: String::new(),
             keybindings: HashMap::new(),
+            global_toggle_shortcut: default_global_toggle(),
+            global_reload_shortcut: default_global_reload(),
         }
     }
 }
@@ -439,7 +453,18 @@ fn get_settings(app: tauri::AppHandle) -> Settings {
 fn update_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), String> {
     let state = app.state::<AppState>();
     save_settings(&settings_path(&app), &settings)?;
+
+    // Re-register global shortcuts if they changed
+    let toggle = settings.global_toggle_shortcut.clone();
+    let reload = settings.global_reload_shortcut.clone();
+
     *state.settings.lock().unwrap() = settings;
+
+    // Update global shortcuts with new values (log errors but don't fail the save)
+    if let Err(e) = update_global_shortcuts(app.clone(), toggle, reload) {
+        eprintln!("[pronto] Failed to update global shortcuts: {}", e);
+    }
+
     Ok(())
 }
 
@@ -969,82 +994,16 @@ pub fn run() {
                 poll_prs(handle).await;
             });
 
-            let toggle_shortcut =
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyP);
-            let handle = app.handle().clone();
-            app.global_shortcut()
-                .on_shortcut(toggle_shortcut, move |_app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        tray::toggle_window(&handle);
-                    }
-                })?;
-
-            let reload_shortcut =
-                Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyR);
-            let handle = app.handle().clone();
-            app.global_shortcut()
-                .on_shortcut(reload_shortcut, move |_app, _shortcut, event| {
-                    if event.state != ShortcutState::Pressed {
-                        return;
-                    }
-                    let h = handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let Some(state) = h.try_state::<AppState>() else {
-                            return;
-                        };
-                        let (
-                            notify,
-                            merged_hours,
-                            show_merged,
-                            hidden_orgs,
-                            hidden_repos,
-                            hidden_prs,
-                            followed_users,
-                            settings_clone,
-                        ) = {
-                            let s = state.settings.lock().unwrap();
-                            (
-                                s.notifications_enabled,
-                                s.merged_window_hours,
-                                s.show_recently_merged,
-                                s.hidden_orgs.clone(),
-                                s.hidden_repos.clone(),
-                                s.hidden_prs.clone(),
-                                s.followed_users.clone(),
-                                Settings {
-                                    workflow_monitor_enabled: s.workflow_monitor_enabled,
-                                    workflow_org: s.workflow_org.clone(),
-                                    workflow_repo: s.workflow_repo.clone(),
-                                    workflow_name: s.workflow_name.clone(),
-                                    ..Default::default()
-                                },
-                            )
-                        };
-                        let token = match get_token(&state) {
-                            Ok(t) => t,
-                            Err(_) => return,
-                        };
-                        if let Ok(mut result) = github::fetch_all_prs(
-                            &state.http_client,
-                            &token,
-                            merged_hours,
-                            show_merged,
-                            &hidden_orgs,
-                            &hidden_repos,
-                            &followed_users,
-                        )
-                        .await
-                        {
-                            result = filter_hidden_prs(result, &hidden_prs);
-                            if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await {
-                                check_workflow_attention(&h, &wf, notify);
-                                result.workflow_status = Some(wf);
-                            }
-                            let (pr_result, _) = process_result(&h, result, notify);
-                            let _ = h.emit("prs-updated", pr_result);
-                        }
-                    });
-                })?;
+            // Setup global shortcuts from settings
+            let (toggle, reload) = {
+                let state = app.state::<AppState>();
+                let settings = state.settings.lock().unwrap();
+                (
+                    settings.global_toggle_shortcut.clone(),
+                    settings.global_reload_shortcut.clone(),
+                )
+            };
+            update_global_shortcuts(app.handle().clone(), toggle, reload)?;
 
             Ok(())
         })

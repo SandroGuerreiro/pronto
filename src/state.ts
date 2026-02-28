@@ -10,6 +10,7 @@ export let activeTab: TabName = "mine";
 export let activeFollowFilter: string = "all";
 export let showAuthorInCards: boolean = false;
 export let groupByRepository: boolean = true;
+export let showRecentlyMerged: boolean = false;
 export let focusIndex: number = -1;
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
@@ -41,6 +42,7 @@ export function setActiveTabState(tab: TabName) { activeTab = tab; }
 export function setActiveFollowFilter(f: string) { activeFollowFilter = f; }
 export function setShowAuthorInCards(v: boolean) { showAuthorInCards = v; }
 export function setGroupByRepository(v: boolean) { groupByRepository = v; }
+export function setShowRecentlyMerged(v: boolean) { showRecentlyMerged = v; }
 export function setFocusIndex(i: number) { focusIndex = i; }
 export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbDismissTimer = t; }
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }

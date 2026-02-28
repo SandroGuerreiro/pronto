@@ -117,6 +117,8 @@ export interface Settings {
   workflow_repo: string;
   workflow_name: string;
   keybindings?: Record<string, string>;
+  global_toggle_shortcut?: string;
+  global_reload_shortcut?: string;
 }
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {

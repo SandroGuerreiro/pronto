@@ -93,6 +93,7 @@ function bindSearchEvents(content: HTMLElement) {
 // ── Tab rendering ─────────────────────────────────────────────────────────────
 
 export function renderActiveTab() {
+  if (activeTab === "settings") return; // Don't re-render if settings is open
   if (!currentResult) return;
   setFocusIndex(-1);
   const content = document.getElementById("content")!;

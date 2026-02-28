@@ -14,6 +14,7 @@ import {
   setActiveFollowFilter,
   keybindings,
   setKeybindings,
+  setShowRecentlyMerged,
 } from "./state";
 
 // Injected callback: called when settings view is closed (wired in main.ts)
@@ -30,6 +31,9 @@ export function hideSettings() {
 // ── Auto-save ─────────────────────────────────────────────────────────────
 
 export async function autoSaveSettings() {
+  // Load current settings from Rust to preserve values not on current tab
+  const currentSettings = await invoke<Settings>("get_settings");
+
   const pollEl = document.getElementById("setting-poll") as HTMLSelectElement | null;
   const notifEl = document.getElementById("setting-notifications") as HTMLInputElement | null;
   const mergedEl = document.getElementById("setting-merged") as HTMLInputElement | null;
@@ -39,15 +43,17 @@ export async function autoSaveSettings() {
   const wfOrgEl = document.getElementById("setting-workflow-org") as HTMLInputElement | null;
   const wfRepoEl = document.getElementById("setting-workflow-repo") as HTMLInputElement | null;
   const wfNameEl = document.getElementById("setting-workflow-name") as HTMLInputElement | null;
+  const globalToggleEl = document.querySelector('[data-action="global_toggle"]') as HTMLElement | null;
+  const globalReloadEl = document.querySelector('[data-action="global_reload"]') as HTMLElement | null;
 
   // Collect keybindings from state
   const kbToSave = { ...keybindings };
 
   const updated: Settings = {
-    poll_interval_secs: pollEl ? parseInt(pollEl.value) : 300,
-    notifications_enabled: notifEl?.checked ?? true,
-    show_recently_merged: mergedEl?.checked ?? false,
-    merged_window_hours: mergedHoursEl ? parseInt(mergedHoursEl.value) : 24,
+    poll_interval_secs: pollEl ? parseInt(pollEl.value) : currentSettings.poll_interval_secs,
+    notifications_enabled: notifEl?.checked ?? currentSettings.notifications_enabled,
+    show_recently_merged: mergedEl?.checked ?? currentSettings.show_recently_merged,
+    merged_window_hours: mergedHoursEl ? parseInt(mergedHoursEl.value) : currentSettings.merged_window_hours,
     favorite_orgs: [...favoriteOrgs],
     favorite_repos: [...favoriteRepos],
     collapsed_accordions: [...collapsedAccordions],
@@ -55,12 +61,14 @@ export async function autoSaveSettings() {
     hidden_repos: [...hiddenRepos],
     hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
     followed_users: followedUsers,
-    group_by_repository: groupRepoEl?.checked ?? true,
-    workflow_monitor_enabled: wfEnabledEl?.checked ?? false,
-    workflow_org: wfOrgEl?.value.trim() ?? "",
-    workflow_repo: wfRepoEl?.value.trim() ?? "",
-    workflow_name: wfNameEl?.value.trim() ?? "",
+    group_by_repository: groupRepoEl?.checked ?? currentSettings.group_by_repository,
+    workflow_monitor_enabled: wfEnabledEl?.checked ?? currentSettings.workflow_monitor_enabled,
+    workflow_org: wfOrgEl?.value.trim() ?? currentSettings.workflow_org,
+    workflow_repo: wfRepoEl?.value.trim() ?? currentSettings.workflow_repo,
+    workflow_name: wfNameEl?.value.trim() ?? currentSettings.workflow_name,
     keybindings: kbToSave,
+    global_toggle_shortcut: globalToggleEl?.textContent ?? currentSettings.global_toggle_shortcut,
+    global_reload_shortcut: globalReloadEl?.textContent ?? currentSettings.global_reload_shortcut,
   };
 
   setGroupByRepository(updated.group_by_repository);
@@ -101,11 +109,53 @@ function startKeyCapture(
   document.addEventListener("keydown", handler);
 }
 
+function startGlobalShortcutCapture(
+  element: HTMLElement,
+  onCapture: (shortcut: string) => void
+) {
+  element.classList.add("capturing");
+  element.textContent = "press key with modifiers…";
+
+  const handler = (e: KeyboardEvent) => {
+    // Ignore pure modifier key presses
+    const isModifierOnly = ["Meta", "Control", "Shift", "Alt"].includes(e.key);
+    if (isModifierOnly) {
+      return; // Keep waiting for an actual key
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    document.removeEventListener("keydown", handler);
+    element.classList.remove("capturing");
+
+    // Build shortcut string from modifiers and key
+    const parts: string[] = [];
+
+    // On macOS, Cmd is represented as Meta in KeyboardEvent
+    if (e.metaKey) parts.push("Super");
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.altKey) parts.push("Alt");
+
+    let key = e.key.toUpperCase();
+    // Handle special keys
+    if (key === " ") key = "Space";
+    else if (key === "ENTER") key = "Enter";
+
+    parts.push(key);
+
+    const shortcut = parts.join("+");
+    onCapture(shortcut);
+  };
+
+  document.addEventListener("keydown", handler);
+}
+
 // ── Show settings ─────────────────────────────────────────────────────────
 
 export async function showSettings() {
   const content = document.getElementById("content")!;
-  const settings = await invoke<Settings>("get_settings");
 
   content.innerHTML = `
     <div class="settings-view">
@@ -123,9 +173,13 @@ export async function showSettings() {
   `;
 
   const contentArea = document.querySelector(".settings-content") as HTMLElement;
+  let freshSettings = await invoke<Settings>("get_settings");
 
   // Render tab function
-  function renderTab(tabName: string) {
+  async function renderTab(tabName: string) {
+    // Refresh settings before rendering each tab
+    freshSettings = await invoke<Settings>("get_settings");
+
     switch (tabName) {
       case "general":
         contentArea.innerHTML = `
@@ -134,16 +188,16 @@ export async function showSettings() {
             <div class="settings-group">
               <label class="settings-label">Polling interval</label>
               <select id="setting-poll" class="settings-select">
-                <option value="60"${settings.poll_interval_secs === 60 ? " selected" : ""}>1 minute</option>
-                <option value="120"${settings.poll_interval_secs === 120 ? " selected" : ""}>2 minutes</option>
-                <option value="300"${settings.poll_interval_secs === 300 ? " selected" : ""}>5 minutes</option>
-                <option value="600"${settings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
+                <option value="60"${freshSettings.poll_interval_secs === 60 ? " selected" : ""}>1 minute</option>
+                <option value="120"${freshSettings.poll_interval_secs === 120 ? " selected" : ""}>2 minutes</option>
+                <option value="300"${freshSettings.poll_interval_secs === 300 ? " selected" : ""}>5 minutes</option>
+                <option value="600"${freshSettings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
               </select>
             </div>
             <div class="settings-group">
               <label class="settings-label">
                 <span>Notifications</span>
-                <input type="checkbox" id="setting-notifications" class="settings-toggle"${settings.notifications_enabled ? " checked" : ""} />
+                <input type="checkbox" id="setting-notifications" class="settings-toggle"${freshSettings.notifications_enabled ? " checked" : ""} />
               </label>
             </div>
           </div>
@@ -158,21 +212,21 @@ export async function showSettings() {
             <div class="settings-group">
               <label class="settings-label">
                 <span>Group by repository</span>
-                <input type="checkbox" id="setting-group-repo" class="settings-toggle"${settings.group_by_repository !== false ? " checked" : ""} />
+                <input type="checkbox" id="setting-group-repo" class="settings-toggle"${freshSettings.group_by_repository !== false ? " checked" : ""} />
               </label>
             </div>
             <div class="settings-group">
               <label class="settings-label">
                 <span>Show recently merged</span>
-                <input type="checkbox" id="setting-merged" class="settings-toggle"${settings.show_recently_merged ? " checked" : ""} />
+                <input type="checkbox" id="setting-merged" class="settings-toggle"${freshSettings.show_recently_merged ? " checked" : ""} />
               </label>
             </div>
-            <div class="settings-group" id="merged-window-group"${settings.show_recently_merged ? "" : ' style="display:none"'}>
+            <div class="settings-group" id="merged-window-group"${freshSettings.show_recently_merged ? "" : ' style="display:none"'}>
               <label class="settings-label">Merged time window</label>
               <select id="setting-merged-hours" class="settings-select">
-                <option value="12"${settings.merged_window_hours === 12 ? " selected" : ""}>12 hours</option>
-                <option value="24"${settings.merged_window_hours === 24 ? " selected" : ""}>24 hours</option>
-                <option value="48"${settings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
+                <option value="12"${freshSettings.merged_window_hours === 12 ? " selected" : ""}>12 hours</option>
+                <option value="24"${freshSettings.merged_window_hours === 24 ? " selected" : ""}>24 hours</option>
+                <option value="48"${freshSettings.merged_window_hours === 48 ? " selected" : ""}>48 hours</option>
               </select>
             </div>
           </div>
@@ -181,6 +235,11 @@ export async function showSettings() {
         document.getElementById("setting-merged")!.addEventListener("change", (e) => {
           const checked = (e.target as HTMLInputElement).checked;
           document.getElementById("merged-window-group")!.style.display = checked ? "" : "none";
+          const mergedBtn = document.querySelector('[data-tab="merged"]') as HTMLElement | null;
+          if (mergedBtn) {
+            mergedBtn.style.display = checked ? "" : "none";
+          }
+          setShowRecentlyMerged(checked);
           autoSaveSettings();
         });
         break;
@@ -192,21 +251,21 @@ export async function showSettings() {
             <div class="settings-group">
               <label class="settings-label">
                 <span>Monitor workflow</span>
-                <input type="checkbox" id="setting-workflow-enabled" class="settings-toggle"${settings.workflow_monitor_enabled ? " checked" : ""} />
+                <input type="checkbox" id="setting-workflow-enabled" class="settings-toggle"${freshSettings.workflow_monitor_enabled ? " checked" : ""} />
               </label>
             </div>
-            <div id="workflow-config-group"${settings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
+            <div id="workflow-config-group"${freshSettings.workflow_monitor_enabled ? "" : ' style="display:none"'}>
               <div class="settings-group">
                 <label class="settings-label">Organization</label>
-                <input type="text" id="setting-workflow-org" class="settings-input" value="${settings.workflow_org || ""}" placeholder="e.g. my-org" autocapitalize="off" autocorrect="off" spellcheck="false" />
+                <input type="text" id="setting-workflow-org" class="settings-input" value="${freshSettings.workflow_org || ""}" placeholder="e.g. my-org" autocapitalize="off" autocorrect="off" spellcheck="false" />
               </div>
               <div class="settings-group">
                 <label class="settings-label">Repository</label>
-                <input type="text" id="setting-workflow-repo" class="settings-input" value="${settings.workflow_repo || ""}" placeholder="e.g. recharge-v2" autocapitalize="off" autocorrect="off" spellcheck="false" />
+                <input type="text" id="setting-workflow-repo" class="settings-input" value="${freshSettings.workflow_repo || ""}" placeholder="e.g. recharge-v2" autocapitalize="off" autocorrect="off" spellcheck="false" />
               </div>
               <div class="settings-group">
                 <label class="settings-label">Workflow file</label>
-                <input type="text" id="setting-workflow-name" class="settings-input" value="${settings.workflow_name || ""}" placeholder="e.g. deploy.yml" autocapitalize="off" autocorrect="off" spellcheck="false" />
+                <input type="text" id="setting-workflow-name" class="settings-input" value="${freshSettings.workflow_name || ""}" placeholder="e.g. deploy.yml" autocapitalize="off" autocorrect="off" spellcheck="false" />
               </div>
             </div>
           </div>
@@ -221,6 +280,20 @@ export async function showSettings() {
 
       case "shortcuts":
         contentArea.innerHTML = `
+          <div class="settings-section">
+            <div class="settings-section-title">Global shortcuts</div>
+            <div class="kb-table">
+              <div class="kb-row">
+                <span class="kb-label">Toggle popup</span>
+                <button class="kb-key global-kb-key" data-action="global_toggle">${freshSettings.global_toggle_shortcut || "Super+Ctrl+P"}</button>
+              </div>
+              <div class="kb-row">
+                <span class="kb-label">Reload</span>
+                <button class="kb-key global-kb-key" data-action="global_reload">${freshSettings.global_reload_shortcut || "Super+Ctrl+R"}</button>
+              </div>
+            </div>
+          </div>
+
           <div class="settings-section">
             <div class="settings-section-title">In-app shortcuts</div>
             <div class="kb-table">
@@ -283,12 +356,23 @@ export async function showSettings() {
   }
 
   function setupKeybindingListeners() {
-    contentArea.querySelectorAll(".kb-key").forEach((btn) => {
+    // Setup in-app shortcuts
+    contentArea.querySelectorAll(".kb-key:not(.global-kb-key)").forEach((btn) => {
       btn.addEventListener("click", () => {
         const action = btn.getAttribute("data-action")!;
         startKeyCapture(btn as HTMLElement, (key: string) => {
           setKeybindings({ [action]: key });
           (btn as HTMLElement).textContent = formatKeybinding(key);
+          autoSaveSettings();
+        });
+      });
+    });
+
+    // Setup global shortcuts
+    contentArea.querySelectorAll(".global-kb-key").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        startGlobalShortcutCapture(btn as HTMLElement, (shortcut: string) => {
+          (btn as HTMLElement).textContent = shortcut;
           autoSaveSettings();
         });
       });
@@ -308,10 +392,10 @@ export async function showSettings() {
         </div>
         <div class="hidden-prs-list" id="follow-users-list">
           ${
-            settings.followed_users && settings.followed_users.length > 0
-              ? settings.followed_users
+            freshSettings.followed_users && freshSettings.followed_users.length > 0
+              ? freshSettings.followed_users
                   .map(
-                    (u) => `
+                    (u: string) => `
                 <div class="hidden-pr-row" data-user="${u}">
                   <span class="hidden-pr-title">${u}</span>
                   <button class="hidden-pr-remove follow-user-remove" data-user="${u}" title="Remove user" aria-label="Remove user">✕</button>
@@ -413,14 +497,14 @@ export async function showSettings() {
   // Tab switching
   const tabButtons = content.querySelectorAll(".settings-tab");
   tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       tabButtons.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       const tabName = btn.getAttribute("data-tab")!;
-      renderTab(tabName);
+      await renderTab(tabName);
     });
   });
 
   // Render initial tab
-  renderTab("general");
+  await renderTab("general");
 }
