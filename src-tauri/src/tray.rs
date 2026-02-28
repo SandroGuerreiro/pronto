@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
 use tauri_plugin_positioner::{Position, WindowExt};
@@ -8,6 +9,9 @@ use crate::{NotificationPreferences, Settings};
 
 const TRAY_ID: &str = "main-tray";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+
+// Cache for the badged icon to avoid regenerating it every time
+static BADGED_ICON_CACHE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 fn load_tray_icon() -> Image<'static> {
     let img = image::load_from_memory(TRAY_ICON).expect("failed to decode tray icon");
@@ -160,6 +164,15 @@ pub fn attention_urls(
 }
 
 pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
+    // Check if we have a cached badge already
+    if let Ok(cache) = BADGED_ICON_CACHE.lock() {
+        if let Some(cached_pixels) = cache.as_ref() {
+            let width = base.width();
+            let height = base.height();
+            return Image::new_owned(cached_pixels.clone(), width, height);
+        }
+    }
+
     let width = base.width();
     let height = base.height();
     let rgba = base.rgba();
@@ -182,6 +195,11 @@ pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
                 pixels[idx + 3] = 255; // A
             }
         }
+    }
+
+    // Cache the result
+    if let Ok(mut cache) = BADGED_ICON_CACHE.lock() {
+        *cache = Some(pixels.clone());
     }
 
     Image::new_owned(pixels, width, height)

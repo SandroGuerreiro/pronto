@@ -230,7 +230,32 @@ window.addEventListener("DOMContentLoaded", async () => {
   pollIntervalSecs = settings.poll_interval_secs;
   lastCheckedAt = new Date();
   updatePollStatus();
-  setInterval(updatePollStatus, 5000);
+
+  // Only update poll status when window is visible
+  const window = getCurrentWindow();
+  let pollStatusInterval: ReturnType<typeof setInterval> | null = null;
+
+  const startPollStatusUpdates = () => {
+    if (!pollStatusInterval) {
+      updatePollStatus(); // Update immediately when focused
+      pollStatusInterval = setInterval(updatePollStatus, 5000);
+    }
+  };
+
+  const stopPollStatusUpdates = () => {
+    if (pollStatusInterval) {
+      clearInterval(pollStatusInterval);
+      pollStatusInterval = null;
+    }
+  };
+
+  window.listen('tauri://focus', () => startPollStatusUpdates());
+  window.listen('tauri://blur', () => stopPollStatusUpdates());
+
+  // Start updates if window is currently visible
+  if (await window.isFocused()) {
+    startPollStatusUpdates();
+  }
 
   // Toggle merged tab visibility based on settings
   const mergedBtn = document.querySelector('[data-tab="merged"]') as HTMLElement | null;
