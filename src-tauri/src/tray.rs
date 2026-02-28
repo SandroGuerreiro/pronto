@@ -20,21 +20,6 @@ fn load_tray_icon() -> Image<'static> {
     Image::new_owned(rgba.into_raw(), w, h)
 }
 
-/// Inverts black content to white for use as a non-template icon in dark mode.
-fn load_tray_icon_white() -> Image<'static> {
-    let img = image::load_from_memory(TRAY_ICON).expect("failed to decode tray icon");
-    let mut rgba = img.to_rgba8();
-    for pixel in rgba.pixels_mut() {
-        if pixel[3] > 0 {
-            pixel[0] = 255 - pixel[0];
-            pixel[1] = 255 - pixel[1];
-            pixel[2] = 255 - pixel[2];
-        }
-    }
-    let (w, h) = rgba.dimensions();
-    Image::new_owned(rgba.into_raw(), w, h)
-}
-
 /// Captures the full PR state so we can detect actual changes between polls.
 pub fn attention_fingerprint(pr: &PullRequest) -> String {
     let review = pr.review_decision.as_deref().unwrap_or("");
@@ -247,8 +232,12 @@ pub fn toggle_window(app: &AppHandle) {
 pub fn update_tray_icon(app: &AppHandle, attention: bool) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if attention {
-            let white = load_tray_icon_white();
-            let badged = generate_badge_icon(&white);
+            // Clear cache to ensure fresh badge generation with current base icon
+            if let Ok(mut cache) = BADGED_ICON_CACHE.lock() {
+                *cache = None;
+            }
+            let base = load_tray_icon();
+            let badged = generate_badge_icon(&base);
             let _ = tray.set_icon_as_template(false);
             let _ = tray.set_icon(Some(badged));
         } else {
