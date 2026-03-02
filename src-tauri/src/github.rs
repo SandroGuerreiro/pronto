@@ -1,5 +1,6 @@
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
+use futures::future;
 
 #[derive(Debug, Serialize)]
 pub struct GraphQLQuery {
@@ -342,28 +343,31 @@ pub async fn fetch_all_prs(
     )
     .await?;
 
-    // Fetch PRs authored by followed users.
+    // Fetch PRs authored by followed users (concurrently).
     let mut followed_open: Vec<PullRequest> = Vec::new();
     let mut followed_recently_merged: Vec<PullRequest> = Vec::new();
     let mut followed_recently_closed: Vec<PullRequest> = Vec::new();
 
-    for user in followed_users {
-        if user.trim().is_empty() {
-            continue;
-        }
-        let author = user.trim();
-        if let Ok((open, recent, closed)) = fetch_prs_for_author(
-            &client,
-            token,
-            author,
-            merged_window_hours,
-            show_recently_merged,
-            closed_window_hours,
-            show_recently_closed,
-            &exclusions,
-        )
-        .await
-        {
+    let futures = followed_users
+        .iter()
+        .filter(|u| !u.trim().is_empty())
+        .map(|user| {
+            fetch_prs_for_author(
+                &client,
+                token,
+                user.trim(),
+                merged_window_hours,
+                show_recently_merged,
+                closed_window_hours,
+                show_recently_closed,
+                &exclusions,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let results = future::join_all(futures).await;
+    for result in results {
+        if let Ok((open, recent, closed)) = result {
             followed_open.extend(open);
             followed_recently_merged.extend(recent);
             followed_recently_closed.extend(closed);

@@ -323,7 +323,7 @@ fn send_attention_notification(
         let fingerprint = tray::attention_fingerprint(pr);
         let app_handle = app.clone();
 
-        std::thread::spawn(move || {
+        tauri::async_runtime::spawn_blocking(move || {
             let response = mac_notification_sys::Notification::new()
                 .title(&title)
                 .message(&body)
@@ -413,6 +413,18 @@ fn process_result(
                 })
                 .collect();
 
+            // Drop entries from notified_prs that are no longer in attention so they
+            // can trigger a fresh notification if they re-enter attention later.
+            {
+                let attention_set: HashSet<&str> =
+                    result.attention_urls.iter().map(|s| s.as_str()).collect();
+                state
+                    .notified_prs
+                    .lock()
+                    .unwrap()
+                    .retain(|url| attention_set.contains(url.as_str()));
+            }
+
             if notify {
                 send_attention_notification(app, &result, &seen);
             }
@@ -432,6 +444,16 @@ fn process_result(
             {
                 seen.remove(&pr.url);
             }
+
+            // Remove stale entries for PRs that are no longer open (hidden, org-hidden,
+            // unfollowed users, etc.) to prevent seen_prs from growing unboundedly.
+            let current_open_urls: HashSet<&str> = result
+                .open
+                .iter()
+                .chain(result.followed_open.iter())
+                .map(|p| p.url.as_str())
+                .collect();
+            seen.retain(|url, _| current_open_urls.contains(url.as_str()));
         }
 
         changed = result.attention_urls != prev_attention || result.open.len() != prev_open_len;
@@ -668,7 +690,7 @@ fn check_workflow_attention(
         let url = new_status.html_url.clone();
         let app_handle = app.clone();
 
-        std::thread::spawn(move || {
+        tauri::async_runtime::spawn_blocking(move || {
             let response = mac_notification_sys::Notification::new()
                 .title(&title)
                 .message(&body)

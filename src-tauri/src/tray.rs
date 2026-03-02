@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
@@ -10,14 +10,24 @@ use crate::{NotificationPreferences, Settings};
 const TRAY_ID: &str = "main-tray";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
 
-// Cache for the badged icon to avoid regenerating it every time
+// Caches for the base and badged icons to avoid re-decoding the PNG on every update
+static BASE_ICON_CACHE: Mutex<Option<(Vec<u8>, u32, u32)>> = Mutex::new(None);
 static BADGED_ICON_CACHE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
 fn load_tray_icon() -> Image<'static> {
+    if let Ok(cache) = BASE_ICON_CACHE.lock() {
+        if let Some((pixels, w, h)) = cache.as_ref() {
+            return Image::new_owned(pixels.clone(), *w, *h);
+        }
+    }
     let img = image::load_from_memory(TRAY_ICON).expect("failed to decode tray icon");
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
-    Image::new_owned(rgba.into_raw(), w, h)
+    let pixels = rgba.into_raw();
+    if let Ok(mut cache) = BASE_ICON_CACHE.lock() {
+        *cache = Some((pixels.clone(), w, h));
+    }
+    Image::new_owned(pixels, w, h)
 }
 
 /// Captures the full PR state so we can detect actual changes between polls.
@@ -90,6 +100,8 @@ pub fn attention_urls(
     seen: &HashMap<String, String>,
     settings: &Settings,
 ) -> Vec<String> {
+    let owned_urls: HashSet<&str> = result.open.iter().map(|p| p.url.as_str()).collect();
+
     let mut urls: Vec<String> = result
         .open
         .iter()
@@ -99,8 +111,7 @@ pub fn attention_urls(
             if let Some(last_fp) = seen.get(&pr.url) {
                 if last_fp != &fp {
                     let changes = compute_element_changes(pr, last_fp);
-                    // Determine if owned or followed
-                    let is_owned = result.open.iter().any(|p| p.url == pr.url);
+                    let is_owned = owned_urls.contains(pr.url.as_str());
                     let prefs = if is_owned {
                         &settings.notification_prefs_owned
                     } else {
@@ -232,10 +243,6 @@ pub fn toggle_window(app: &AppHandle) {
 pub fn update_tray_icon(app: &AppHandle, attention: bool) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if attention {
-            // Clear cache to ensure fresh badge generation with current base icon
-            if let Ok(mut cache) = BADGED_ICON_CACHE.lock() {
-                *cache = None;
-            }
             let base = load_tray_icon();
             let badged = generate_badge_icon(&base);
             let _ = tray.set_icon_as_template(false);
