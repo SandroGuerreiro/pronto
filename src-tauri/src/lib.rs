@@ -315,60 +315,33 @@ fn send_attention_notification(
 
     ensure_notification_app(app);
 
-    for pr in &attention_prs {
+    let (title, body) = if attention_prs.len() == 1 {
+        let pr = attention_prs[0];
         let old_fp = seen.get(&pr.url).map(|s| s.as_str());
-        let body = describe_change(pr, old_fp);
-        let title = pr.title.clone();
-        let url = pr.url.clone();
-        let fingerprint = tray::attention_fingerprint(pr);
-        let app_handle = app.clone();
+        (pr.title.clone(), describe_change(pr, old_fp))
+    } else {
+        let count = attention_prs.len();
+        let names: Vec<String> = attention_prs.iter().map(|pr| pr.title.clone()).collect();
+        (
+            format!("{} PRs need attention", count),
+            names.join("\n"),
+        )
+    };
 
-        tauri::async_runtime::spawn_blocking(move || {
-            let response = mac_notification_sys::Notification::new()
-                .title(&title)
-                .message(&body)
-                .main_button(mac_notification_sys::MainButton::SingleAction("Open PR"))
-                .wait_for_click(true)
-                .send();
-
-            if let Ok(response) = response {
-                match response {
-                    mac_notification_sys::NotificationResponse::Click
-                    | mac_notification_sys::NotificationResponse::ActionButton(_) => {
-                        let _ = open::that(&url);
-                        if let Some(state) = app_handle.try_state::<AppState>() {
-                            {
-                                let mut seen = state.seen_prs.lock().unwrap();
-                                seen.insert(url.clone(), fingerprint.clone());
-                                let has_attention = {
-                                    let cache = state.cached_prs.lock().unwrap();
-                                    let settings = state.settings.lock().unwrap().clone();
-                                    cache
-                                        .as_ref()
-                                        .map(|r| !tray::attention_urls(r, &seen, &settings).is_empty())
-                                        .unwrap_or(false)
-                                };
-                                drop(seen);
-                                set_tray_attention(&app_handle, has_attention);
-                            }
-                            {
-                                let mut notified = state.notified_prs.lock().unwrap();
-                                notified.remove(&url);
-                            }
-                            let _ = app_handle.emit("prs-updated", ());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        });
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = mac_notification_sys::Notification::new()
+            .title(&title)
+            .message(&body)
+            .send();
+    });
 }
 
 fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
     if let Some(state) = app.try_state::<AppState>() {
         let mut last = state.last_tray_attention.lock().unwrap();
-        if *last == Some(attention) {
+        // When not in attention mode, skip if nothing changed.
+        // When in attention mode, always update to pick up dark/light mode changes.
+        if !attention && *last == Some(false) {
             return;
         }
         *last = Some(attention);
@@ -687,27 +660,11 @@ fn check_workflow_attention(
         } else {
             format!("Workflow {}", new_status.conclusion)
         };
-        let url = new_status.html_url.clone();
-        let app_handle = app.clone();
-
         tauri::async_runtime::spawn_blocking(move || {
-            let response = mac_notification_sys::Notification::new()
+            let _ = mac_notification_sys::Notification::new()
                 .title(&title)
                 .message(&body)
-                .main_button(mac_notification_sys::MainButton::SingleAction("Open"))
-                .wait_for_click(true)
                 .send();
-
-            if let Ok(response) = response {
-                match response {
-                    mac_notification_sys::NotificationResponse::Click
-                    | mac_notification_sys::NotificationResponse::ActionButton(_) => {
-                        let _ = open::that(&url);
-                        let _ = app_handle.emit("prs-updated", ());
-                    }
-                    _ => {}
-                }
-            }
         });
     }
 

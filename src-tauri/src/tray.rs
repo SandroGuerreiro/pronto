@@ -12,7 +12,16 @@ const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
 
 // Caches for the base and badged icons to avoid re-decoding the PNG on every update
 static BASE_ICON_CACHE: Mutex<Option<(Vec<u8>, u32, u32)>> = Mutex::new(None);
+static INVERTED_ICON_CACHE: Mutex<Option<(Vec<u8>, u32, u32)>> = Mutex::new(None);
 static BADGED_ICON_CACHE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
+
+pub fn is_dark_mode() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "Dark")
+        .unwrap_or(false)
+}
 
 fn load_tray_icon() -> Image<'static> {
     if let Ok(cache) = BASE_ICON_CACHE.lock() {
@@ -25,6 +34,29 @@ fn load_tray_icon() -> Image<'static> {
     let (w, h) = rgba.dimensions();
     let pixels = rgba.into_raw();
     if let Ok(mut cache) = BASE_ICON_CACHE.lock() {
+        *cache = Some((pixels.clone(), w, h));
+    }
+    Image::new_owned(pixels, w, h)
+}
+
+fn load_tray_icon_inverted() -> Image<'static> {
+    if let Ok(cache) = INVERTED_ICON_CACHE.lock() {
+        if let Some((pixels, w, h)) = cache.as_ref() {
+            return Image::new_owned(pixels.clone(), *w, *h);
+        }
+    }
+    let img = image::load_from_memory(TRAY_ICON).expect("failed to decode tray icon");
+    let mut rgba = img.to_rgba8();
+    for pixel in rgba.pixels_mut() {
+        if pixel[3] > 0 {
+            pixel[0] = 255 - pixel[0];
+            pixel[1] = 255 - pixel[1];
+            pixel[2] = 255 - pixel[2];
+        }
+    }
+    let (w, h) = rgba.dimensions();
+    let pixels = rgba.into_raw();
+    if let Ok(mut cache) = INVERTED_ICON_CACHE.lock() {
         *cache = Some((pixels.clone(), w, h));
     }
     Image::new_owned(pixels, w, h)
@@ -243,7 +275,15 @@ pub fn toggle_window(app: &AppHandle) {
 pub fn update_tray_icon(app: &AppHandle, attention: bool) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if attention {
-            let base = load_tray_icon();
+            // Clear badge cache to regenerate with current appearance (dark/light mode)
+            if let Ok(mut cache) = BADGED_ICON_CACHE.lock() {
+                *cache = None;
+            }
+            let base = if is_dark_mode() {
+                load_tray_icon_inverted()
+            } else {
+                load_tray_icon()
+            };
             let badged = generate_badge_icon(&base);
             let _ = tray.set_icon_as_template(false);
             let _ = tray.set_icon(Some(badged));
