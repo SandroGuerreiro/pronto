@@ -73,26 +73,21 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         .map(|r| r.state.as_str())
         .unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
-    let resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
-    let in_queue = pr.merge_queue_entry.is_some();
-    format!(
-        "{}|{}|{}|{}|{}|{}|{}",
-        review,
-        checks,
-        pr.comments.total_count,
-        pr.reviews.total_count,
-        unresolved,
-        resolved,
-        in_queue
-    )
+    format!("{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved)
 }
 
 /// Computes which individual elements changed on a PR by comparing against the old fingerprint.
 pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChanges {
     let parts: Vec<&str> = old_fp.split('|').collect();
-    if parts.len() < 6 {
+    if parts.len() < 4 {
         return PrElementChanges::default();
     }
+    let old_review = parts[0];
+    let old_checks = parts[1];
+    let old_comment_count = parts[2].parse::<i32>().unwrap_or(0);
+    let old_unresolved = parts[3].parse::<usize>().unwrap_or(0);
+
+    let new_review = pr.review_decision.as_deref().unwrap_or("");
     let new_checks = pr
         .commits
         .nodes
@@ -101,15 +96,17 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChang
         .map(|r| r.state.as_str())
         .unwrap_or("");
     let new_unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
-    let new_resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
+
     PrElementChanges {
-        review_decision: parts[0] != pr.review_decision.as_deref().unwrap_or(""),
-        checks: parts[1] != new_checks,
-        approvals: parts[3].parse::<i32>().unwrap_or(0) != pr.reviews.total_count,
-        // comments element shows comments + unresolved combined, so highlight on either change
-        comments: parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count
-            || parts[4].parse::<usize>().unwrap_or(0) != new_unresolved,
-        resolved: parts[5].parse::<usize>().unwrap_or(0) != new_resolved,
+        became_review_required: old_review != "REVIEW_REQUIRED" && new_review == "REVIEW_REQUIRED",
+        became_changes_requested: old_review != "CHANGES_REQUESTED" && new_review == "CHANGES_REQUESTED",
+        became_approved: old_review != "APPROVED" && new_review == "APPROVED",
+        checks_failed: !matches!(old_checks, "FAILURE" | "ERROR")
+            && matches!(new_checks, "FAILURE" | "ERROR"),
+        checks_recovered: matches!(old_checks, "FAILURE" | "ERROR")
+            && new_checks == "SUCCESS",
+        new_comment: pr.comments.total_count > old_comment_count
+            || new_unresolved > old_unresolved,
     }
 }
 
@@ -118,10 +115,12 @@ fn should_notify_for_changes(
     changes: &PrElementChanges,
     prefs: &NotificationPreferences,
 ) -> bool {
-    (changes.review_decision && (prefs.needs_review || prefs.changes_requested))
-        || (changes.checks && prefs.checks_failed)
-        || (changes.approvals && prefs.new_reviews)
-        || ((changes.comments || changes.resolved) && prefs.threads_updated)
+    (changes.became_review_required && prefs.review_required)
+        || (changes.became_changes_requested && prefs.changes_requested)
+        || (changes.became_approved && prefs.approved)
+        || (changes.checks_failed && prefs.checks_failed)
+        || (changes.checks_recovered && prefs.checks_recovered)
+        || (changes.new_comment && prefs.new_comment)
 }
 
 /// Returns URLs of PRs whose state changed since last seen.
@@ -166,11 +165,8 @@ pub fn attention_urls(
         .iter()
         .chain(result.followed_recently_merged.iter())
     {
-        if seen.contains_key(&pr.url) {
-            let prefs = &settings.notification_prefs_merged;
-            if prefs.needs_review {
-                urls.push(pr.url.clone());
-            }
+        if seen.contains_key(&pr.url) && settings.notify_on_merged {
+            urls.push(pr.url.clone());
         }
     }
 
@@ -180,11 +176,8 @@ pub fn attention_urls(
         .iter()
         .chain(result.followed_recently_closed.iter())
     {
-        if seen.contains_key(&pr.url) {
-            let prefs = &settings.notification_prefs_closed;
-            if prefs.needs_review {
-                urls.push(pr.url.clone());
-            }
+        if seen.contains_key(&pr.url) && settings.notify_on_closed {
+            urls.push(pr.url.clone());
         }
     }
 

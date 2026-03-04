@@ -19,23 +19,23 @@ pub struct HiddenPr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationPreferences {
-    pub needs_review: bool,
+    pub review_required: bool,
     pub changes_requested: bool,
+    pub approved: bool,
     pub checks_failed: bool,
-    pub new_reviews: bool,
-    pub threads_updated: bool,
-    pub merge_queue: bool,
+    pub checks_recovered: bool,
+    pub new_comment: bool,
 }
 
 impl Default for NotificationPreferences {
     fn default() -> Self {
         Self {
-            needs_review: true,
-            changes_requested: true,
-            checks_failed: true,
-            new_reviews: true,
-            threads_updated: true,
-            merge_queue: true,
+            review_required: false,
+            changes_requested: false,
+            approved: false,
+            checks_failed: false,
+            checks_recovered: false,
+            new_comment: false,
         }
     }
 }
@@ -98,10 +98,10 @@ pub struct Settings {
     pub notification_prefs_owned: NotificationPreferences,
     #[serde(default)]
     pub notification_prefs_followed: NotificationPreferences,
+    #[serde(default = "default_true")]
+    pub notify_on_merged: bool,
     #[serde(default)]
-    pub notification_prefs_merged: NotificationPreferences,
-    #[serde(default)]
-    pub notification_prefs_closed: NotificationPreferences,
+    pub notify_on_closed: bool,
 }
 
 impl Default for Settings {
@@ -129,10 +129,19 @@ impl Default for Settings {
             keybindings: HashMap::new(),
             global_toggle_shortcut: default_global_toggle(),
             global_reload_shortcut: default_global_reload(),
-            notification_prefs_owned: NotificationPreferences::default(),
-            notification_prefs_followed: NotificationPreferences::default(),
-            notification_prefs_merged: NotificationPreferences::default(),
-            notification_prefs_closed: NotificationPreferences::default(),
+            notification_prefs_owned: NotificationPreferences {
+                changes_requested: true,
+                approved: true,
+                checks_failed: true,
+                checks_recovered: true,
+                ..Default::default()
+            },
+            notification_prefs_followed: NotificationPreferences {
+                review_required: true,
+                ..Default::default()
+            },
+            notify_on_merged: true,
+            notify_on_closed: false,
         }
     }
 }
@@ -197,7 +206,7 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
     };
 
     let parts: Vec<&str> = old.split('|').collect();
-    if parts.len() < 7 {
+    if parts.len() < 4 {
         return "State changed".to_string();
     }
 
@@ -229,42 +238,16 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
         }
     }
 
-    let new_comments: i32 = pr.comments.total_count;
-    if parts[2].parse::<i32>().unwrap_or(0) != new_comments {
-        changes.push("New comments");
-    }
-
-    let new_reviews: i32 = pr.reviews.total_count;
-    if parts[3].parse::<i32>().unwrap_or(0) != new_reviews {
-        changes.push("New reviews");
-    }
-
     let new_unresolved = pr
         .review_threads
         .nodes
         .iter()
         .filter(|t| !t.is_resolved)
         .count();
-    let new_resolved = pr
-        .review_threads
-        .nodes
-        .iter()
-        .filter(|t| t.is_resolved)
-        .count();
-    if parts[4].parse::<usize>().unwrap_or(0) != new_unresolved
-        || parts[5].parse::<usize>().unwrap_or(0) != new_resolved
+    if parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count
+        || parts[3].parse::<usize>().unwrap_or(0) != new_unresolved
     {
-        changes.push("Threads updated");
-    }
-
-    let new_in_queue = pr.merge_queue_entry.is_some();
-    let old_in_queue = parts[6] == "true";
-    if old_in_queue != new_in_queue {
-        if new_in_queue {
-            changes.push("Added to merge queue");
-        } else {
-            changes.push("Removed from merge queue");
-        }
+        changes.push("New comments");
     }
 
     if changes.is_empty() {

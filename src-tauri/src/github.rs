@@ -161,11 +161,12 @@ impl PullRequest {
 /// Only populated for PRs that are in `attention_urls`.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PrElementChanges {
-    pub approvals: bool,
-    pub comments: bool,
-    pub resolved: bool,
-    pub review_decision: bool,
-    pub checks: bool,
+    pub became_review_required: bool,
+    pub became_changes_requested: bool,
+    pub became_approved: bool,
+    pub checks_failed: bool,
+    pub checks_recovered: bool,
+    pub new_comment: bool,
 }
 
 #[derive(Serialize, Clone)]
