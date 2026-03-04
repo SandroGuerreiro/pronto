@@ -393,6 +393,17 @@ export function bindContentEvents(container: HTMLElement) {
     card.addEventListener("click", () => {
       const url = card.getAttribute("data-url");
       if (url) openUrl(url);
+      if (card.classList.contains("attention")) {
+        if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+        card.classList.remove("attention");
+        if (url) {
+          if (currentResult?.element_changes) delete currentResult.element_changes[url];
+          setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
+          invoke("dismiss_pr", { url });
+        }
+        updateTabBadges();
+        updateFollowFilterBadges();
+      }
     });
 
     // Copy button
