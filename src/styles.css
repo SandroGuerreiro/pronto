@@ -315,6 +315,7 @@ body {
 .pr-status-line .approved          { color: #22c55e; }
 .pr-status-line .changes-requested { color: #ef4444; }
 .pr-status-line .needs-reviews     { color: #eab308; }
+.pr-status-line .in-queue-text     { color: #eab308; }
 .pr-status-line .checks-pass       { color: #22c55e; }
 .pr-status-line .checks-fail       { color: #ef4444; }
 .pr-status-line .checks-pending    { color: #eab308; }

@@ -120,6 +120,7 @@ export function renderPrCard(pr: PullRequest): string {
   const commentsClass = changes?.new_comment ? " highlight-attention" : "";
 
   const statusParts: string[] = [];
+  if (pr.mergeQueueEntry) statusParts.push(`<span class="in-queue-text">in queue #${pr.mergeQueueEntry.position}</span>`);
   if (statusText) statusParts.push(`<span class="${statusClass}${reviewChangedClass}">${statusText}</span>`);
   statusParts.push(`<span class="${checks.class}${checksChangedClass}">${checks.text}</span>`);
   statusParts.push(`<span class="status-detail" title="Approvals">${reviewText}</span>`);
