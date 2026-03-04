@@ -1006,6 +1006,56 @@ details[open] > .section-header .accordion-chevron::before {
   padding-top: 0;
 }
 
+.notif-master-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 6px;
+}
+
+.notif-master-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e4e4e7;
+}
+
+.notif-master-hint {
+  font-size: 11px;
+  color: #71717a;
+  margin-top: 2px;
+}
+
+.notif-master-toggle {
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.notif-master-toggle::after {
+  width: 18px;
+  height: 18px;
+}
+
+.notif-master-toggle:checked::after {
+  transform: translateX(18px);
+}
+
+.notif-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  transition: opacity 0.2s;
+}
+
+.notif-details.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .settings-section-title {
   font-size: 11px;
   font-weight: 600;

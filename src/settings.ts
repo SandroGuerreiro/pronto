@@ -36,12 +36,14 @@ const defaultNotifPrefs = (): NotificationPreferences => ({
   new_comment: false,
 });
 
+let _notificationsEnabled: boolean = true;
 let _notifPrefsOwned: NotificationPreferences = defaultNotifPrefs();
 let _notifPrefsFollowed: NotificationPreferences = defaultNotifPrefs();
 let _notifyOnMerged: boolean = true;
 let _notifyOnClosed: boolean = false;
 
 export function loadNotifPrefsFromSettings(s: Settings) {
+  _notificationsEnabled = s.notifications_enabled ?? true;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
   _notifPrefsFollowed = { ...defaultNotifPrefs(), ...s.notification_prefs_followed };
   _notifyOnMerged = s.notify_on_merged ?? true;
@@ -63,7 +65,6 @@ export async function autoSaveSettings() {
   const currentSettings = await invoke<Settings>("get_settings");
 
   const pollEl = document.getElementById("setting-poll") as HTMLSelectElement | null;
-  const notifEl = document.getElementById("setting-notifications") as HTMLInputElement | null;
   const mergedEl = document.getElementById("setting-merged") as HTMLInputElement | null;
   const mergedHoursEl = document.getElementById("setting-merged-hours") as HTMLSelectElement | null;
   const closedEl = document.getElementById("setting-closed") as HTMLInputElement | null;
@@ -81,7 +82,7 @@ export async function autoSaveSettings() {
 
   const updated: Settings = {
     poll_interval_secs: pollEl ? parseInt(pollEl.value) : currentSettings.poll_interval_secs,
-    notifications_enabled: notifEl?.checked ?? currentSettings.notifications_enabled,
+    notifications_enabled: _notificationsEnabled,
     show_recently_merged: mergedEl?.checked ?? currentSettings.show_recently_merged,
     merged_window_hours: mergedHoursEl ? parseInt(mergedHoursEl.value) : currentSettings.merged_window_hours,
     show_closed: closedEl?.checked ?? currentSettings.show_closed,
@@ -233,12 +234,6 @@ export async function showSettings() {
                 <option value="600"${freshSettings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
               </select>
             </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <span>Notifications</span>
-                <input type="checkbox" id="setting-notifications" class="settings-toggle"${freshSettings.notifications_enabled ? " checked" : ""} />
-              </label>
-            </div>
           </div>
         `;
         setupEventListeners();
@@ -309,115 +304,132 @@ export async function showSettings() {
 
       case "notifications":
         contentArea.innerHTML = `
-          <div class="settings-section">
-            <div class="settings-section-title">Owned PRs</div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>Changes requested</span>
-                  <div class="settings-hint">A reviewer asked you to make changes</div>
-                </div>
-                <input type="checkbox" id="notif-owned-changes_requested" class="settings-toggle"${_notifPrefsOwned.changes_requested ? " checked" : ""} />
-              </label>
+          <div class="notif-master-row">
+            <div>
+              <div class="notif-master-label">System notifications</div>
+              <div class="notif-master-hint">Deliver macOS notifications for PR activity</div>
             </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>PR approved</span>
-                  <div class="settings-hint">Your PR received all needed approvals</div>
-                </div>
-                <input type="checkbox" id="notif-owned-approved" class="settings-toggle"${_notifPrefsOwned.approved ? " checked" : ""} />
-              </label>
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>CI failed</span>
-                  <div class="settings-hint">Checks went from passing to failing</div>
-                </div>
-                <input type="checkbox" id="notif-owned-checks_failed" class="settings-toggle"${_notifPrefsOwned.checks_failed ? " checked" : ""} />
-              </label>
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>CI passed</span>
-                  <div class="settings-hint">Checks recovered — your PR may be ready to merge</div>
-                </div>
-                <input type="checkbox" id="notif-owned-checks_recovered" class="settings-toggle"${_notifPrefsOwned.checks_recovered ? " checked" : ""} />
-              </label>
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>Kicked from merge queue</span>
-                  <div class="settings-hint">PR was removed from the queue — needs to be re-added</div>
-                </div>
-                <input type="checkbox" id="notif-owned-kicked_from_queue" class="settings-toggle"${_notifPrefsOwned.kicked_from_queue ? " checked" : ""} />
-              </label>
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>New comment</span>
-                  <div class="settings-hint">Someone added a review comment or thread</div>
-                </div>
-                <input type="checkbox" id="notif-owned-new_comment" class="settings-toggle"${_notifPrefsOwned.new_comment ? " checked" : ""} />
-              </label>
-            </div>
+            <input type="checkbox" id="notif-master" class="settings-toggle notif-master-toggle"${_notificationsEnabled ? " checked" : ""} />
           </div>
 
-          <div class="settings-section">
-            <div class="settings-section-title">Followed PRs</div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>Needs review</span>
-                  <div class="settings-hint">PR is waiting for a review decision</div>
-                </div>
-                <input type="checkbox" id="notif-followed-review_required" class="settings-toggle"${_notifPrefsFollowed.review_required ? " checked" : ""} />
-              </label>
+          <div class="notif-details${_notificationsEnabled ? "" : " disabled"}" id="notif-details">
+            <div class="settings-section">
+              <div class="settings-section-title">Owned PRs</div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>Changes requested</span>
+                    <div class="settings-hint">A reviewer asked you to make changes</div>
+                  </div>
+                  <input type="checkbox" id="notif-owned-changes_requested" class="settings-toggle"${_notifPrefsOwned.changes_requested ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>PR approved</span>
+                    <div class="settings-hint">Your PR received all needed approvals</div>
+                  </div>
+                  <input type="checkbox" id="notif-owned-approved" class="settings-toggle"${_notifPrefsOwned.approved ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>CI failed</span>
+                    <div class="settings-hint">Checks went from passing to failing</div>
+                  </div>
+                  <input type="checkbox" id="notif-owned-checks_failed" class="settings-toggle"${_notifPrefsOwned.checks_failed ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>CI passed</span>
+                    <div class="settings-hint">Checks recovered — your PR may be ready to merge</div>
+                  </div>
+                  <input type="checkbox" id="notif-owned-checks_recovered" class="settings-toggle"${_notifPrefsOwned.checks_recovered ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>Kicked from merge queue</span>
+                    <div class="settings-hint">PR was removed from the queue — needs to be re-added</div>
+                  </div>
+                  <input type="checkbox" id="notif-owned-kicked_from_queue" class="settings-toggle"${_notifPrefsOwned.kicked_from_queue ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>New comment</span>
+                    <div class="settings-hint">Someone added a review comment or thread</div>
+                  </div>
+                  <input type="checkbox" id="notif-owned-new_comment" class="settings-toggle"${_notifPrefsOwned.new_comment ? " checked" : ""} />
+                </label>
+              </div>
             </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>Changes requested</span>
-                  <div class="settings-hint">A reviewer blocked the PR</div>
-                </div>
-                <input type="checkbox" id="notif-followed-changes_requested" class="settings-toggle"${_notifPrefsFollowed.changes_requested ? " checked" : ""} />
-              </label>
-            </div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <div>
-                  <span>PR approved</span>
-                  <div class="settings-hint">PR received all needed approvals</div>
-                </div>
-                <input type="checkbox" id="notif-followed-approved" class="settings-toggle"${_notifPrefsFollowed.approved ? " checked" : ""} />
-              </label>
-            </div>
-          </div>
 
-          <div class="settings-section">
-            <div class="settings-section-title">Recently Merged</div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <span>Notify when merged</span>
-                <input type="checkbox" id="notif-merged" class="settings-toggle"${_notifyOnMerged ? " checked" : ""} />
-              </label>
+            <div class="settings-section">
+              <div class="settings-section-title">Followed PRs</div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>Needs review</span>
+                    <div class="settings-hint">PR is waiting for a review decision</div>
+                  </div>
+                  <input type="checkbox" id="notif-followed-review_required" class="settings-toggle"${_notifPrefsFollowed.review_required ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>Changes requested</span>
+                    <div class="settings-hint">A reviewer blocked the PR</div>
+                  </div>
+                  <input type="checkbox" id="notif-followed-changes_requested" class="settings-toggle"${_notifPrefsFollowed.changes_requested ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>PR approved</span>
+                    <div class="settings-hint">PR received all needed approvals</div>
+                  </div>
+                  <input type="checkbox" id="notif-followed-approved" class="settings-toggle"${_notifPrefsFollowed.approved ? " checked" : ""} />
+                </label>
+              </div>
             </div>
-          </div>
 
-          <div class="settings-section">
-            <div class="settings-section-title">Recently Closed</div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <span>Notify when closed</span>
-                <input type="checkbox" id="notif-closed" class="settings-toggle"${_notifyOnClosed ? " checked" : ""} />
-              </label>
+            <div class="settings-section">
+              <div class="settings-section-title">Events</div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <span>PR merged</span>
+                  <input type="checkbox" id="notif-merged" class="settings-toggle"${_notifyOnMerged ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <span>PR closed</span>
+                  <input type="checkbox" id="notif-closed" class="settings-toggle"${_notifyOnClosed ? " checked" : ""} />
+                </label>
+              </div>
             </div>
           </div>
         `;
+
+        // Wire up master toggle
+        const masterEl = document.getElementById("notif-master") as HTMLInputElement | null;
+        const detailsEl = document.getElementById("notif-details") as HTMLElement | null;
+        if (masterEl && detailsEl) {
+          masterEl.addEventListener("change", () => {
+            _notificationsEnabled = masterEl.checked;
+            detailsEl.classList.toggle("disabled", !masterEl.checked);
+            autoSaveSettings();
+          });
+        }
 
         // Wire up owned/followed checkboxes
         type NotifKey = keyof NotificationPreferences;
