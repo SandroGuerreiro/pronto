@@ -1,6 +1,6 @@
+use futures::future;
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
-use futures::future;
 
 #[derive(Debug, Serialize)]
 pub struct GraphQLQuery {
@@ -39,6 +39,10 @@ pub struct PullRequest {
     pub review_decision: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    #[serde(rename = "mergedAt")]
+    pub merged_at: Option<String>,
+    #[serde(rename = "closedAt")]
+    pub closed_at: Option<String>,
     pub reviews: Reviews,
     pub comments: Comments,
     #[serde(rename = "reviewThreads")]
@@ -175,6 +179,7 @@ pub struct FetchResult {
     pub attention_urls: Vec<String>,
     pub element_changes: std::collections::HashMap<String, PrElementChanges>,
     pub workflow_status: Option<WorkflowStatus>,
+    pub expired_followed_prs: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -209,7 +214,10 @@ async fn fetch_prs_for_author(
     closed_window_hours: u64,
     show_recently_closed: bool,
     exclusions: &str,
-) -> Result<(Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let merged_cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
         .format("%Y-%m-%d")
         .to_string();
@@ -228,6 +236,8 @@ async fn fetch_prs_for_author(
         state
         merged
         createdAt
+        mergedAt
+        closedAt
         repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
         reviewDecision
@@ -247,6 +257,8 @@ async fn fetch_prs_for_author(
         state
         merged
         createdAt
+        mergedAt
+        closedAt
         repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
         reviewDecision
@@ -266,6 +278,8 @@ async fn fetch_prs_for_author(
         state
         merged
         createdAt
+        mergedAt
+        closedAt
         repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
         reviewDecision
@@ -317,6 +331,134 @@ fn build_exclusions(hidden_orgs: &[String], hidden_repos: &[String]) -> String {
     s
 }
 
+fn is_pr_older_than_48h(pr: &PullRequest) -> bool {
+    let now = chrono::Utc::now();
+    let cutoff = now - chrono::Duration::hours(48);
+
+    // Check merged timestamp
+    if let Some(merged_at) = &pr.merged_at {
+        if let Ok(merged_time) = chrono::DateTime::parse_from_rfc3339(merged_at) {
+            if merged_time < cutoff {
+                return true;
+            }
+        }
+    }
+
+    // Check closed timestamp
+    if let Some(closed_at) = &pr.closed_at {
+        if let Ok(closed_time) = chrono::DateTime::parse_from_rfc3339(closed_at) {
+            if closed_time < cutoff {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+async fn fetch_prs_by_url(
+    client: &reqwest::Client,
+    token: &str,
+    pr_urls: &[String],
+) -> Result<
+    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    if pr_urls.is_empty() {
+        return Ok((vec![], vec![], vec![]));
+    }
+
+    // Parse URLs and group by repo: owner/repo -> vec of (owner, repo, pr_number)
+    let mut repos: std::collections::HashMap<String, Vec<(String, String, String)>> =
+        Default::default();
+    for url in pr_urls {
+        let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
+        if parts.len() < 5 || parts[parts.len() - 2] != "pull" {
+            continue; // Skip invalid URLs
+        }
+        let owner = parts[parts.len() - 4].to_string();
+        let repo = parts[parts.len() - 3].to_string();
+        let pr_number = parts[parts.len() - 1].to_string();
+        let repo_key = format!("{}/{}", owner, repo);
+        repos
+            .entry(repo_key)
+            .or_insert_with(Vec::new)
+            .push((owner, repo, pr_number));
+    }
+
+    if repos.is_empty() {
+        return Ok((vec![], vec![], vec![]));
+    }
+
+    // Build a query with aliases for each PR
+    let mut query_parts = String::from("{");
+    let mut alias_index = 0;
+
+    for pr_specs in repos.values() {
+        for (owner, repo, pr_number) in pr_specs {
+            query_parts.push_str(&format!(
+                r#"
+  pr{alias_index}: repository(owner: "{owner}", name: "{repo}") {{
+    pullRequest(number: {pr_number}) {{
+      title
+      url
+      state
+      merged
+      createdAt
+      mergedAt
+      closedAt
+      mergeQueueEntry {{ position }}
+      reviewDecision
+      reviews(states: APPROVED) {{ totalCount }}
+      comments {{ totalCount }}
+      reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+      commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+      author {{ login }}
+      repository {{ name owner {{ login }} }}
+    }}
+  }}"#
+            ));
+            alias_index += 1;
+        }
+    }
+    query_parts.push_str("\n}");
+
+    let query = GraphQLQuery { query: query_parts };
+
+    let response = client
+        .post("https://api.github.com/graphql")
+        .header(AUTHORIZATION, format!("Bearer {}", token))
+        .header(USER_AGENT, "pronto")
+        .json(&query)
+        .send()
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+
+    let mut open_prs = Vec::new();
+    let mut merged_prs = Vec::new();
+    let mut closed_prs = Vec::new();
+
+    if let Some(data) = response.get("data") {
+        for i in 0..alias_index {
+            if let Some(repo_data) = data.get(&format!("pr{}", i)) {
+                if let Some(pr_data) = repo_data.get("pullRequest") {
+                    if let Ok(pr) = serde_json::from_value::<PullRequest>(pr_data.clone()) {
+                        // Categorize PR
+                        match pr.status() {
+                            PrStatus::Open => open_prs.push(pr),
+                            PrStatus::Merged => merged_prs.push(pr),
+                            PrStatus::Closed | PrStatus::InQueue => closed_prs.push(pr),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((open_prs, merged_prs, closed_prs))
+}
+
 pub async fn fetch_all_prs(
     client: &reqwest::Client,
     token: &str,
@@ -327,6 +469,7 @@ pub async fn fetch_all_prs(
     hidden_orgs: &[String],
     hidden_repos: &[String],
     followed_users: &[String],
+    followed_prs: &[String],
 ) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
@@ -374,6 +517,24 @@ pub async fn fetch_all_prs(
         }
     }
 
+    // Fetch specifically followed PRs
+    let (followed_pr_open, followed_pr_merged, followed_pr_closed) =
+        fetch_prs_by_url(&client, token, followed_prs)
+            .await
+            .unwrap_or_default();
+
+    followed_open.extend(followed_pr_open);
+    followed_recently_merged.extend(followed_pr_merged.clone());
+    followed_recently_closed.extend(followed_pr_closed.clone());
+
+    // Identify followed PRs that are older than 48h and should be removed
+    let mut expired_followed_prs = Vec::new();
+    for pr in followed_pr_merged.iter().chain(followed_pr_closed.iter()) {
+        if is_pr_older_than_48h(pr) {
+            expired_followed_prs.push(pr.url.clone());
+        }
+    }
+
     Ok(FetchResult {
         open: my_open,
         recently_merged: my_recently_merged,
@@ -384,6 +545,7 @@ pub async fn fetch_all_prs(
         attention_urls: vec![],
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,
+        expired_followed_prs,
     })
 }
 

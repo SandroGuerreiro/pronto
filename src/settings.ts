@@ -8,6 +8,7 @@ import {
   hiddenRepos,
   hiddenPrs,
   followedUsers,
+  followedPrs,
   setGroupByRepository,
   setFollowedUsers,
   activeFollowFilter,
@@ -91,6 +92,7 @@ export async function autoSaveSettings() {
     hidden_repos: [...hiddenRepos],
     hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
     followed_users: followedUsers,
+    followed_prs: [...followedPrs],
     group_by_repository: groupRepoEl?.checked ?? currentSettings.group_by_repository,
     workflow_monitor_enabled: wfEnabledEl?.checked ?? currentSettings.workflow_monitor_enabled,
     workflow_org: wfOrgEl?.value.trim() ?? currentSettings.workflow_org,
@@ -200,7 +202,7 @@ export async function showSettings() {
         <button class="settings-tab" data-tab="notifications">🔔<span>Notifications</span></button>
         <button class="settings-tab" data-tab="workflow">⚡<span>Workflow</span></button>
         <button class="settings-tab" data-tab="shortcuts">⌨<span>Keys</span></button>
-        <button class="settings-tab" data-tab="users">👥<span>Users</span></button>
+        <button class="settings-tab" data-tab="subscriptions">📌<span>Subscriptions</span></button>
       </div>
       <div class="settings-content">
         <!-- Tab content rendered here -->
@@ -541,8 +543,8 @@ export async function showSettings() {
         setupKeybindingListeners();
         break;
 
-      case "users":
-        renderUsersTab();
+      case "subscriptions":
+        renderSubscriptionsTab();
         break;
     }
   }
@@ -577,7 +579,7 @@ export async function showSettings() {
     });
   }
 
-  function renderUsersTab() {
+  function renderSubscriptionsTab() {
     contentArea.innerHTML = `
       <div class="settings-section">
         <div class="settings-section-title">Followed users</div>
@@ -606,6 +608,37 @@ export async function showSettings() {
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">Followed PRs</div>
+        <div class="settings-group">
+          <label class="settings-label"><span>Add PR URL</span></label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="follow-pr-input" class="settings-input" placeholder="e.g. https://github.com/owner/repo/pull/123" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button id="follow-pr-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
+          </div>
+        </div>
+        <div class="hidden-prs-list" id="follow-prs-list">
+          ${
+            freshSettings.followed_prs && freshSettings.followed_prs.length > 0
+              ? freshSettings.followed_prs
+                  .map(
+                    (url: string) => {
+                      // Extract owner/repo/pr# from URL for shorter display
+                      const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+                      const shortDisplay = match ? `${match[1]}/${match[2]} #${match[3]}` : url;
+                      return `
+                <div class="hidden-pr-row" data-pr-url="${url.replace(/"/g, "&quot;")}">
+                  <span class="hidden-pr-title" title="${url}">${shortDisplay}</span>
+                  <button class="hidden-pr-remove follow-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}" title="Remove PR" aria-label="Remove PR">✕</button>
+                </div>`;
+                    }
+                  )
+                  .join("")
+              : '<div class="hidden-prs-empty">No followed PRs</div>'
+          }
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Hidden PRs</div>
         <div class="hidden-prs-list">
           ${
@@ -625,19 +658,76 @@ export async function showSettings() {
       </div>
     `;
 
-    // Unhide PR buttons
-    contentArea.querySelectorAll<HTMLElement>(".hidden-pr-remove[data-pr-url]").forEach((btn) => {
+    // Unhide PR buttons (hidden PRs only - not follow-pr-remove)
+    contentArea.querySelectorAll<HTMLElement>(".hidden-pr-remove:not(.follow-pr-remove)[data-pr-url]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const url = btn.getAttribute("data-pr-url")!;
         hiddenPrs.delete(url);
         btn.closest(".hidden-pr-row")?.remove();
-        const list = contentArea.querySelector(".hidden-prs-list");
-        if (list && list.querySelectorAll(".hidden-pr-row").length === 0) {
-          list.innerHTML = '<div class="hidden-prs-empty">No hidden PRs</div>';
-        }
+        const lists = contentArea.querySelectorAll(".hidden-prs-list");
+        lists.forEach((list) => {
+          if (list.querySelectorAll(".hidden-pr-row").length === 0) {
+            list.innerHTML = '<div class="hidden-prs-empty">No hidden PRs</div>';
+          }
+        });
         autoSaveSettings();
       });
     });
+
+    // Followed PRs list
+    const followPrList = contentArea.querySelector("#follow-prs-list") as HTMLElement;
+    const followPrInput = contentArea.querySelector("#follow-pr-input") as HTMLInputElement;
+    const followPrAddBtn = contentArea.querySelector("#follow-pr-add") as HTMLButtonElement;
+
+    const refreshFollowPrEmptyState = () => {
+      if (!followPrList.querySelector(".hidden-pr-row")) {
+        followPrList.innerHTML = '<div class="hidden-prs-empty">No followed PRs</div>';
+      }
+    };
+
+    const addFollowPrRemoveListener = (btn: Element) => {
+      btn.addEventListener("click", () => {
+        const url = btn.getAttribute("data-pr-url")!;
+        followedPrs.delete(url);
+        btn.closest(".hidden-pr-row")?.remove();
+        refreshFollowPrEmptyState();
+        autoSaveSettings();
+      });
+    };
+
+    followPrInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") followPrAddBtn.click();
+    });
+
+    followPrAddBtn.addEventListener("click", () => {
+      const url = followPrInput.value.trim();
+      if (!url) return;
+      // Normalize: handle full URLs or short forms
+      const normalizedUrl = url.startsWith("http") ? url : `https://github.com/${url}`;
+      if (followedPrs.has(normalizedUrl)) {
+        followPrInput.value = "";
+        return;
+      }
+      followedPrs.add(normalizedUrl);
+      followPrList.querySelector(".hidden-prs-empty")?.remove();
+      const row = document.createElement("div");
+      row.className = "hidden-pr-row";
+      row.dataset.prUrl = normalizedUrl;
+      // Extract owner/repo/pr# from URL for shorter display
+      const match = normalizedUrl.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+      const shortDisplay = match ? `${match[1]}/${match[2]} #${match[3]}` : normalizedUrl;
+      row.innerHTML = `
+        <span class="hidden-pr-title" title="${normalizedUrl}">${shortDisplay}</span>
+        <button class="hidden-pr-remove follow-pr-remove" data-pr-url="${normalizedUrl.replace(/"/g, "&quot;")}" title="Remove PR" aria-label="Remove PR">✕</button>
+      `;
+      followPrList.appendChild(row);
+      const newBtn = row.querySelector(".follow-pr-remove")!;
+      addFollowPrRemoveListener(newBtn);
+      followPrInput.value = "";
+      autoSaveSettings();
+    });
+
+    followPrList.querySelectorAll(".follow-pr-remove").forEach(addFollowPrRemoveListener);
 
     // Followed users list
     const followList = contentArea.querySelector("#follow-users-list") as HTMLElement;

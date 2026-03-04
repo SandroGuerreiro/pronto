@@ -29,6 +29,7 @@ export let hiddenOrgs = new Set<string>();
 export let hiddenRepos = new Set<string>();
 export let hiddenPrs = new Map<string, string>();
 export let followedUsers: string[] = [];
+export let followedPrs = new Set<string>();
 export let pendingUnhideOrgs = new Set<string>();
 export let pendingUnhideRepos = new Set<string>();
 
@@ -50,6 +51,7 @@ export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbD
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
 export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }
 export function setFollowedUsers(users: string[]) { followedUsers = users; }
+export function setFollowedPrs(prs: Set<string>) { followedPrs = prs; }
 export function setSearchQuery(q: string) { searchQuery = q; }
 export function setActiveFilter(f: FilterType) { activeFilter = f; }
 export function clearPendingUnhide() {

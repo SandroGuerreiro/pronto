@@ -16,6 +16,7 @@ import {
   collapsedAccordions,
   hiddenPrs,
   followedUsers,
+  followedPrs,
   searchQuery,
   setSearchQuery,
   setFocusIndex,
@@ -155,6 +156,7 @@ export function renderActiveTab() {
 
         html += `<div class="follow-filter-bar">
           <button class="follow-filter-btn${activeFollowFilter === "all" ? " active" : ""}" data-filter="all">All${totalAttention ? `<span class="tab-badge">${totalAttention}</span>` : ""}</button>
+          ${followedPrs.size > 0 ? `<button class="follow-filter-btn${activeFollowFilter === "direct" ? " active" : ""}" data-filter="direct">Direct</button>` : ""}
           ${inlineUsers
             .map((u) => {
               const count = attentionByUser[u] || 0;
@@ -177,8 +179,15 @@ export function renderActiveTab() {
         </div>`;
       }
 
-      const byUser = activeFollowFilter === "all" ? allOpen : allOpen.filter((pr) => pr.author.login === activeFollowFilter);
-      const filtered = searchQuery ? filterPrs(byUser, searchQuery, "all") : byUser;
+      // Apply filter (all, direct, or specific user)
+      let byFilter = allOpen;
+      if (activeFollowFilter === "direct") {
+        byFilter = allOpen.filter((pr) => followedPrs.has(pr.url));
+      } else if (activeFollowFilter !== "all") {
+        byFilter = allOpen.filter((pr) => pr.author.login === activeFollowFilter);
+      }
+
+      const filtered = searchQuery ? filterPrs(byFilter, searchQuery, "all") : byFilter;
 
       setShowAuthorInCards(true);
       if (filtered.length === 0 && searchQuery) {
@@ -225,8 +234,8 @@ export function renderActiveTab() {
   content.innerHTML = html;
   bindContentEvents(content);
 
-  // Bind follow filter buttons
-  content.querySelectorAll<HTMLButtonElement>(".follow-filter-btn:not(.follow-filter-more-btn)").forEach((btn) => {
+  // Bind follow filter buttons (all, direct, user filters)
+  content.querySelectorAll<HTMLButtonElement>(".follow-filter-btn[data-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
       setActiveFollowFilter(btn.getAttribute("data-filter") || "all");
       renderActiveTab();

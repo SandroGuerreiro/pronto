@@ -76,6 +76,8 @@ pub struct Settings {
     pub hidden_prs: Vec<HiddenPr>,
     #[serde(default)]
     pub followed_users: Vec<String>,
+    #[serde(default)]
+    pub followed_prs: Vec<String>,
     #[serde(default = "default_true")]
     pub group_by_repository: bool,
     #[serde(default)]
@@ -118,6 +120,7 @@ impl Default for Settings {
             hidden_repos: vec![],
             hidden_prs: vec![],
             followed_users: vec![],
+            followed_prs: vec![],
             group_by_repository: false,
             workflow_monitor_enabled: false,
             workflow_org: String::new(),
@@ -550,6 +553,7 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         hidden_repos,
         hidden_prs,
         followed_users,
+        followed_prs,
         settings_clone,
     ) = {
         let s = state.settings.lock().unwrap();
@@ -562,6 +566,7 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
             s.hidden_repos.clone(),
             s.hidden_prs.clone(),
             s.followed_users.clone(),
+            s.followed_prs.clone(),
             Settings {
                 workflow_monitor_enabled: s.workflow_monitor_enabled,
                 workflow_org: s.workflow_org.clone(),
@@ -581,9 +586,21 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         &hidden_orgs,
         &hidden_repos,
         &followed_users,
+        &followed_prs,
     )
     .await
     .map_err(|e| e.to_string())?;
+
+    // Clean up expired followed PRs (merged/closed > 48h ago)
+    if !result.expired_followed_prs.is_empty() {
+        let mut settings = state.settings.lock().unwrap();
+        settings.followed_prs.retain(|url| !result.expired_followed_prs.contains(url));
+        let settings_to_save = settings.clone();
+        drop(settings);
+        let path = settings_path(&app);
+        let _ = save_settings(&path, &settings_to_save);
+    }
+
     result = filter_hidden_prs(result, &hidden_prs);
 
     if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await {
@@ -827,6 +844,7 @@ fn update_global_shortcuts(
                     hidden_repos,
                     hidden_prs,
                     followed_users,
+                    followed_prs,
                     settings_clone,
                 ) = {
                     let s = state.settings.lock().unwrap();
@@ -840,6 +858,7 @@ fn update_global_shortcuts(
                         s.hidden_repos.clone(),
                         s.hidden_prs.clone(),
                         s.followed_users.clone(),
+                        s.followed_prs.clone(),
                         Settings {
                             workflow_monitor_enabled: s.workflow_monitor_enabled,
                             workflow_org: s.workflow_org.clone(),
@@ -864,9 +883,20 @@ fn update_global_shortcuts(
                     &hidden_orgs,
                     &hidden_repos,
                     &followed_users,
+                    &followed_prs,
                 )
                 .await;
                 if let Ok(result) = pr_fetch {
+                    // Clean up expired followed PRs (merged/closed > 48h ago)
+                    if !result.expired_followed_prs.is_empty() {
+                        let mut settings = state.settings.lock().unwrap();
+                        settings.followed_prs.retain(|url| !result.expired_followed_prs.contains(url));
+                        let settings_to_save = settings.clone();
+                        drop(settings);
+                        let path = settings_path(&h);
+                        let _ = save_settings(&path, &settings_to_save);
+                    }
+
                     let result = filter_hidden_prs(result, &hidden_prs);
 
                     if let Some(wf) =
@@ -912,6 +942,7 @@ async fn poll_prs(app: tauri::AppHandle) {
             hidden_repos,
             hidden_prs,
             followed_users,
+            followed_prs,
             settings_clone,
         ) = {
             let s = state.settings.lock().unwrap();
@@ -925,6 +956,7 @@ async fn poll_prs(app: tauri::AppHandle) {
                 s.hidden_repos.clone(),
                 s.hidden_prs.clone(),
                 s.followed_users.clone(),
+                s.followed_prs.clone(),
                 Settings {
                     workflow_monitor_enabled: s.workflow_monitor_enabled,
                     workflow_org: s.workflow_org.clone(),
@@ -949,10 +981,21 @@ async fn poll_prs(app: tauri::AppHandle) {
             &hidden_orgs,
             &hidden_repos,
             &followed_users,
+            &followed_prs,
         )
         .await;
         match pr_fetch {
             Ok(mut result) => {
+                // Clean up expired followed PRs (merged/closed > 48h ago)
+                if !result.expired_followed_prs.is_empty() {
+                    let mut settings = state.settings.lock().unwrap();
+                    settings.followed_prs.retain(|url| !result.expired_followed_prs.contains(url));
+                    let settings_to_save = settings.clone();
+                    drop(settings);
+                    let path = settings_path(&app);
+                    let _ = save_settings(&path, &settings_to_save);
+                }
+
                 result = filter_hidden_prs(result, &hidden_prs);
 
                 let (changed, pr_result) = if let Some(wf) =
