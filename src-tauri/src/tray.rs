@@ -73,19 +73,21 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         .map(|r| r.state.as_str())
         .unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
-    format!("{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved)
+    let in_queue = pr.merge_queue_entry.is_some();
+    format!("{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue)
 }
 
 /// Computes which individual elements changed on a PR by comparing against the old fingerprint.
 pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChanges {
     let parts: Vec<&str> = old_fp.split('|').collect();
-    if parts.len() < 4 {
+    if parts.len() < 5 {
         return PrElementChanges::default();
     }
     let old_review = parts[0];
     let old_checks = parts[1];
     let old_comment_count = parts[2].parse::<i32>().unwrap_or(0);
     let old_unresolved = parts[3].parse::<usize>().unwrap_or(0);
+    let old_in_queue = parts[4] == "true";
 
     let new_review = pr.review_decision.as_deref().unwrap_or("");
     let new_checks = pr
@@ -96,6 +98,7 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChang
         .map(|r| r.state.as_str())
         .unwrap_or("");
     let new_unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+    let new_in_queue = pr.merge_queue_entry.is_some();
 
     PrElementChanges {
         became_review_required: old_review != "REVIEW_REQUIRED" && new_review == "REVIEW_REQUIRED",
@@ -105,6 +108,7 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChang
             && matches!(new_checks, "FAILURE" | "ERROR"),
         checks_recovered: matches!(old_checks, "FAILURE" | "ERROR")
             && new_checks == "SUCCESS",
+        kicked_from_queue: old_in_queue && !new_in_queue,
         new_comment: pr.comments.total_count > old_comment_count
             || new_unresolved > old_unresolved,
     }
@@ -120,6 +124,7 @@ fn should_notify_for_changes(
         || (changes.became_approved && prefs.approved)
         || (changes.checks_failed && prefs.checks_failed)
         || (changes.checks_recovered && prefs.checks_recovered)
+        || (changes.kicked_from_queue && prefs.kicked_from_queue)
         || (changes.new_comment && prefs.new_comment)
 }
 

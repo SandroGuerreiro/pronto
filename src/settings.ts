@@ -32,6 +32,7 @@ const defaultNotifPrefs = (): NotificationPreferences => ({
   approved: false,
   checks_failed: false,
   checks_recovered: false,
+  kicked_from_queue: false,
   new_comment: false,
 });
 
@@ -349,6 +350,15 @@ export async function showSettings() {
             <div class="settings-group">
               <label class="settings-label">
                 <div>
+                  <span>Kicked from merge queue</span>
+                  <div class="settings-hint">PR was removed from the queue — needs to be re-added</div>
+                </div>
+                <input type="checkbox" id="notif-owned-kicked_from_queue" class="settings-toggle"${_notifPrefsOwned.kicked_from_queue ? " checked" : ""} />
+              </label>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <div>
                   <span>New comment</span>
                   <div class="settings-hint">Someone added a review comment or thread</div>
                 </div>
@@ -414,9 +424,10 @@ export async function showSettings() {
         const notifMap: Array<{ id: string; key: NotifKey; state: NotificationPreferences }> = [
           { id: "notif-owned-changes_requested",  key: "changes_requested", state: _notifPrefsOwned },
           { id: "notif-owned-approved",           key: "approved",          state: _notifPrefsOwned },
-          { id: "notif-owned-checks_failed",      key: "checks_failed",     state: _notifPrefsOwned },
-          { id: "notif-owned-checks_recovered",   key: "checks_recovered",  state: _notifPrefsOwned },
-          { id: "notif-owned-new_comment",        key: "new_comment",       state: _notifPrefsOwned },
+          { id: "notif-owned-checks_failed",        key: "checks_failed",       state: _notifPrefsOwned },
+          { id: "notif-owned-checks_recovered",   key: "checks_recovered",    state: _notifPrefsOwned },
+          { id: "notif-owned-kicked_from_queue",  key: "kicked_from_queue",   state: _notifPrefsOwned },
+          { id: "notif-owned-new_comment",        key: "new_comment",         state: _notifPrefsOwned },
           { id: "notif-followed-review_required", key: "review_required",   state: _notifPrefsFollowed },
           { id: "notif-followed-changes_requested", key: "changes_requested", state: _notifPrefsFollowed },
           { id: "notif-followed-approved",        key: "approved",          state: _notifPrefsFollowed },

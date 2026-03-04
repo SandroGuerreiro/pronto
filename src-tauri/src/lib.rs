@@ -24,6 +24,7 @@ pub struct NotificationPreferences {
     pub approved: bool,
     pub checks_failed: bool,
     pub checks_recovered: bool,
+    pub kicked_from_queue: bool,
     pub new_comment: bool,
 }
 
@@ -35,6 +36,7 @@ impl Default for NotificationPreferences {
             approved: false,
             checks_failed: false,
             checks_recovered: false,
+            kicked_from_queue: false,
             new_comment: false,
         }
     }
@@ -134,6 +136,7 @@ impl Default for Settings {
                 approved: true,
                 checks_failed: true,
                 checks_recovered: true,
+                kicked_from_queue: true,
                 ..Default::default()
             },
             notification_prefs_followed: NotificationPreferences {
@@ -206,7 +209,7 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
     };
 
     let parts: Vec<&str> = old.split('|').collect();
-    if parts.len() < 4 {
+    if parts.len() < 5 {
         return "State changed".to_string();
     }
 
@@ -248,6 +251,12 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
         || parts[3].parse::<usize>().unwrap_or(0) != new_unresolved
     {
         changes.push("New comments");
+    }
+
+    let old_in_queue = parts[4] == "true";
+    let new_in_queue = pr.merge_queue_entry.is_some();
+    if old_in_queue && !new_in_queue {
+        changes.push("Removed from merge queue");
     }
 
     if changes.is_empty() {

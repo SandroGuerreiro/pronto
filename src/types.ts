@@ -74,6 +74,7 @@ export interface PrElementChanges {
   became_approved: boolean;
   checks_failed: boolean;
   checks_recovered: boolean;
+  kicked_from_queue: boolean;
   new_comment: boolean;
 }
 
@@ -108,6 +109,7 @@ export interface NotificationPreferences {
   approved: boolean;
   checks_failed: boolean;
   checks_recovered: boolean;
+  kicked_from_queue: boolean;
   new_comment: boolean;
 }
 

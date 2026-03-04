@@ -166,6 +166,7 @@ pub struct PrElementChanges {
     pub became_approved: bool,
     pub checks_failed: bool,
     pub checks_recovered: bool,
+    pub kicked_from_queue: bool,
     pub new_comment: bool,
 }
 
