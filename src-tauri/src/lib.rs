@@ -19,12 +19,19 @@ pub struct HiddenPr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationPreferences {
+    #[serde(default)]
     pub review_required: bool,
+    #[serde(default)]
     pub changes_requested: bool,
+    #[serde(default)]
     pub approved: bool,
+    #[serde(default)]
     pub checks_failed: bool,
+    #[serde(default)]
     pub checks_recovered: bool,
+    #[serde(default)]
     pub kicked_from_queue: bool,
+    #[serde(default)]
     pub new_comment: bool,
 }
 
@@ -46,6 +53,14 @@ fn default_true() -> bool {
     true
 }
 
+fn default_poll_interval() -> u64 {
+    60
+}
+
+fn default_merged_window() -> u64 {
+    24
+}
+
 fn default_global_toggle() -> String {
     "Super+Ctrl+P".to_string()
 }
@@ -56,9 +71,13 @@ fn default_global_reload() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
+    #[serde(default = "default_poll_interval")]
     pub poll_interval_secs: u64,
+    #[serde(default = "default_true")]
     pub notifications_enabled: bool,
+    #[serde(default = "default_true")]
     pub show_recently_merged: bool,
+    #[serde(default = "default_merged_window")]
     pub merged_window_hours: u64,
     #[serde(default)]
     pub show_closed: bool,
