@@ -184,7 +184,8 @@ export function renderActiveTab() {
       if (activeFollowFilter === "direct") {
         byFilter = allOpen.filter((pr) => followedPrs.has(pr.url));
       } else if (activeFollowFilter !== "all") {
-        byFilter = allOpen.filter((pr) => pr.author.login === activeFollowFilter);
+        const filterLower = activeFollowFilter.toLowerCase();
+        byFilter = allOpen.filter((pr) => pr.author.login.toLowerCase() === filterLower);
       }
 
       const filtered = searchQuery ? filterPrs(byFilter, searchQuery, "all") : byFilter;
