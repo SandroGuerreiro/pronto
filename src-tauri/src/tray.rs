@@ -74,11 +74,12 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         .unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
     let in_queue = pr.merge_queue_entry.is_some();
-    format!("{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue)
+    let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
+    format!("{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter)
 }
 
 /// Computes which individual elements changed on a PR by comparing against the old fingerprint.
-pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChanges {
+pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &str) -> PrElementChanges {
     let parts: Vec<&str> = old_fp.split('|').collect();
     if parts.len() < 5 {
         return PrElementChanges::default();
@@ -100,6 +101,12 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChang
     let new_unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
     let new_in_queue = pr.merge_queue_entry.is_some();
 
+    // Only notify when new non-bot comments exist and the last human commenter is not the viewer.
+    // total_count is already bot-free (adjusted at fetch time), so no bot check needed here.
+    let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
+    let has_new_comment = pr.comments.total_count > old_comment_count
+        && last_human_commenter != viewer_login;
+
     PrElementChanges {
         became_review_required: old_review != "REVIEW_REQUIRED" && new_review == "REVIEW_REQUIRED",
         became_changes_requested: old_review != "CHANGES_REQUESTED" && new_review == "CHANGES_REQUESTED",
@@ -109,8 +116,7 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str) -> PrElementChang
         checks_recovered: matches!(old_checks, "FAILURE" | "ERROR")
             && new_checks == "SUCCESS",
         kicked_from_queue: old_in_queue && !new_in_queue,
-        new_comment: pr.comments.total_count > old_comment_count
-            || new_unresolved > old_unresolved,
+        new_comment: has_new_comment || new_unresolved > old_unresolved,
     }
 }
 
@@ -135,6 +141,7 @@ pub fn attention_urls(
     result: &FetchResult,
     seen: &HashMap<String, String>,
     settings: &Settings,
+    viewer_login: &str,
 ) -> Vec<String> {
     let owned_urls: HashSet<&str> = result.open.iter().map(|p| p.url.as_str()).collect();
 
@@ -146,7 +153,7 @@ pub fn attention_urls(
             let fp = attention_fingerprint(pr);
             if let Some(last_fp) = seen.get(&pr.url) {
                 if last_fp != &fp {
-                    let changes = compute_element_changes(pr, last_fp);
+                    let changes = compute_element_changes(pr, last_fp, viewer_login);
                     let is_owned = owned_urls.contains(pr.url.as_str());
                     let prefs = if is_owned {
                         &settings.notification_prefs_owned
