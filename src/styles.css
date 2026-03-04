@@ -895,6 +895,12 @@ details[open] > .section-header .accordion-chevron::before {
   justify-content: space-between;
 }
 
+.settings-hint {
+  font-size: 11px;
+  color: #71717a;
+  margin-top: 2px;
+}
+
 .settings-select {
   width: 100%;
   padding: 8px 10px;

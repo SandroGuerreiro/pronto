@@ -115,18 +115,16 @@ export function renderPrCard(pr: PullRequest): string {
 
   // Highlight elements whose counts changed since the last poll (backend-tracked)
   const changes = currentResult?.element_changes[pr.url];
-  const reviewChangedClass = changes?.review_decision ? " highlight-changed" : "";
-  const checksChangedClass = changes?.checks ? " highlight-changed" : "";
-  const approvalsClass = changes?.approvals ? " highlight-attention" : "";
-  const commentsClass = changes?.comments ? " highlight-attention" : "";
-  const resolvedClass = changes?.resolved ? " highlight-attention" : "";
+  const reviewChangedClass = (changes?.became_review_required || changes?.became_changes_requested || changes?.became_approved) ? " highlight-changed" : "";
+  const checksChangedClass = changes?.checks_failed ? " highlight-changed" : "";
+  const commentsClass = changes?.new_comment ? " highlight-attention" : "";
 
   const statusParts: string[] = [];
   if (statusText) statusParts.push(`<span class="${statusClass}${reviewChangedClass}">${statusText}</span>`);
   statusParts.push(`<span class="${checks.class}${checksChangedClass}">${checks.text}</span>`);
-  statusParts.push(`<span class="status-detail${approvalsClass}" title="Approvals">${reviewText}</span>`);
+  statusParts.push(`<span class="status-detail" title="Approvals">${reviewText}</span>`);
   statusParts.push(`<span class="status-detail${commentsClass}" title="Comments and unresolved threads"><svg class="comment-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2v2.543L9.06 10.5h4.19a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg> ${commentCount}</span>`);
-  statusParts.push(`<span class="status-detail${resolvedClass}" title="Resolved threads">▣ ${resolvedThreads}</span>`);
+  statusParts.push(`<span class="status-detail" title="Resolved threads">▣ ${resolvedThreads}</span>`);
 
   const isAttention = currentAttentionUrls.includes(pr.url);
 

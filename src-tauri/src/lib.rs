@@ -19,23 +19,25 @@ pub struct HiddenPr {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationPreferences {
-    pub needs_review: bool,
+    pub review_required: bool,
     pub changes_requested: bool,
+    pub approved: bool,
     pub checks_failed: bool,
-    pub new_reviews: bool,
-    pub threads_updated: bool,
-    pub merge_queue: bool,
+    pub checks_recovered: bool,
+    pub kicked_from_queue: bool,
+    pub new_comment: bool,
 }
 
 impl Default for NotificationPreferences {
     fn default() -> Self {
         Self {
-            needs_review: true,
-            changes_requested: true,
-            checks_failed: true,
-            new_reviews: true,
-            threads_updated: true,
-            merge_queue: true,
+            review_required: false,
+            changes_requested: false,
+            approved: false,
+            checks_failed: false,
+            checks_recovered: false,
+            kicked_from_queue: false,
+            new_comment: false,
         }
     }
 }
@@ -98,10 +100,10 @@ pub struct Settings {
     pub notification_prefs_owned: NotificationPreferences,
     #[serde(default)]
     pub notification_prefs_followed: NotificationPreferences,
+    #[serde(default = "default_true")]
+    pub notify_on_merged: bool,
     #[serde(default)]
-    pub notification_prefs_merged: NotificationPreferences,
-    #[serde(default)]
-    pub notification_prefs_closed: NotificationPreferences,
+    pub notify_on_closed: bool,
 }
 
 impl Default for Settings {
@@ -129,10 +131,20 @@ impl Default for Settings {
             keybindings: HashMap::new(),
             global_toggle_shortcut: default_global_toggle(),
             global_reload_shortcut: default_global_reload(),
-            notification_prefs_owned: NotificationPreferences::default(),
-            notification_prefs_followed: NotificationPreferences::default(),
-            notification_prefs_merged: NotificationPreferences::default(),
-            notification_prefs_closed: NotificationPreferences::default(),
+            notification_prefs_owned: NotificationPreferences {
+                changes_requested: true,
+                approved: true,
+                checks_failed: true,
+                checks_recovered: true,
+                kicked_from_queue: true,
+                ..Default::default()
+            },
+            notification_prefs_followed: NotificationPreferences {
+                review_required: true,
+                ..Default::default()
+            },
+            notify_on_merged: true,
+            notify_on_closed: false,
         }
     }
 }
@@ -168,6 +180,7 @@ pub struct AppState {
     pub notified_prs: Mutex<HashSet<String>>,
     pub http_client: reqwest::Client,
     pub last_tray_attention: Mutex<Option<bool>>,
+    pub viewer_login: Mutex<String>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -187,7 +200,7 @@ fn get_token(state: &AppState) -> Result<String, String> {
     }
 }
 
-fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
+fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>, viewer_login: &str) -> String {
     if pr.merged {
         return "PR was merged".to_string();
     }
@@ -197,7 +210,7 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
     };
 
     let parts: Vec<&str> = old.split('|').collect();
-    if parts.len() < 7 {
+    if parts.len() < 5 {
         return "State changed".to_string();
     }
 
@@ -229,42 +242,24 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>) -> String {
         }
     }
 
-    let new_comments: i32 = pr.comments.total_count;
-    if parts[2].parse::<i32>().unwrap_or(0) != new_comments {
-        changes.push("New comments");
-    }
-
-    let new_reviews: i32 = pr.reviews.total_count;
-    if parts[3].parse::<i32>().unwrap_or(0) != new_reviews {
-        changes.push("New reviews");
-    }
-
     let new_unresolved = pr
         .review_threads
         .nodes
         .iter()
         .filter(|t| !t.is_resolved)
         .count();
-    let new_resolved = pr
-        .review_threads
-        .nodes
-        .iter()
-        .filter(|t| t.is_resolved)
-        .count();
-    if parts[4].parse::<usize>().unwrap_or(0) != new_unresolved
-        || parts[5].parse::<usize>().unwrap_or(0) != new_resolved
+    let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
+    let comment_count_changed = parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count;
+    if (comment_count_changed && last_human_commenter != viewer_login)
+        || parts[3].parse::<usize>().unwrap_or(0) != new_unresolved
     {
-        changes.push("Threads updated");
+        changes.push("New comments");
     }
 
+    let old_in_queue = parts[4] == "true";
     let new_in_queue = pr.merge_queue_entry.is_some();
-    let old_in_queue = parts[6] == "true";
-    if old_in_queue != new_in_queue {
-        if new_in_queue {
-            changes.push("Added to merge queue");
-        } else {
-            changes.push("Removed from merge queue");
-        }
+    if old_in_queue && !new_in_queue {
+        changes.push("Removed from merge queue");
     }
 
     if changes.is_empty() {
@@ -321,7 +316,7 @@ fn send_attention_notification(
     let (title, body) = if attention_prs.len() == 1 {
         let pr = attention_prs[0];
         let old_fp = seen.get(&pr.url).map(|s| s.as_str());
-        (pr.title.clone(), describe_change(pr, old_fp))
+        (pr.title.clone(), describe_change(pr, old_fp, &result.viewer_login))
     } else {
         let count = attention_prs.len();
         let names: Vec<String> = attention_prs.iter().map(|pr| pr.title.clone()).collect();
@@ -371,7 +366,14 @@ fn process_result(
         {
             let mut seen = state.seen_prs.lock().unwrap();
             let settings = state.settings.lock().unwrap().clone();
-            result.attention_urls = tray::attention_urls(&result, &seen, &settings);
+
+            // Update viewer_login from the latest fetch result.
+            if !result.viewer_login.is_empty() {
+                *state.viewer_login.lock().unwrap() = result.viewer_login.clone();
+            }
+            let viewer_login = state.viewer_login.lock().unwrap().clone();
+
+            result.attention_urls = tray::attention_urls(&result, &seen, &settings, &viewer_login);
 
             // Compute per-element changes for every PR in attention_urls
             let all_prs: Vec<&github::PullRequest> = result
@@ -385,7 +387,7 @@ fn process_result(
                 .filter_map(|url| {
                     let old_fp = seen.get(url)?;
                     let pr = all_prs.iter().find(|p| &p.url == url)?;
-                    Some((url.clone(), tray::compute_element_changes(pr, old_fp)))
+                    Some((url.clone(), tray::compute_element_changes(pr, old_fp, &viewer_login)))
                 })
                 .collect();
 
@@ -633,7 +635,8 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
         let mut seen = state.seen_prs.lock().unwrap();
         seen.insert(url.clone(), fingerprint);
         let settings = state.settings.lock().unwrap().clone();
-        let has_attention = !tray::attention_urls(&result_clone, &seen, &settings).is_empty();
+        let viewer_login = state.viewer_login.lock().unwrap().clone();
+        let has_attention = !tray::attention_urls(&result_clone, &seen, &settings, &viewer_login).is_empty();
         drop(seen);
         set_tray_attention(&app, has_attention);
     }
@@ -1058,6 +1061,7 @@ pub fn run() {
                 notified_prs: Mutex::new(HashSet::new()),
                 http_client: reqwest::Client::new(),
                 last_tray_attention: Mutex::new(None),
+                viewer_login: Mutex::new(String::new()),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

@@ -13,7 +13,13 @@ pub struct GraphQLResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct Viewer {
+    pub login: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Data {
+    pub viewer: Viewer,
     pub open: SearchResult,
     #[serde(rename = "recentlyMerged")]
     pub recently_merged: SearchResult,
@@ -74,9 +80,41 @@ pub struct Reviews {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommentAuthor {
+    pub login: String,
+    #[serde(rename = "__typename")]
+    pub type_name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommentNode {
+    pub author: CommentAuthor,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Comments {
     #[serde(rename = "totalCount")]
     pub total_count: i32,
+    #[serde(skip_serializing)]
+    pub nodes: Vec<CommentNode>,
+}
+
+impl Comments {
+    /// Adjusts `total_count` to exclude bot comments, using the fetched nodes as a sample.
+    /// Accurate when all comments fit within the fetch window (last 100); conservative otherwise.
+    pub fn subtract_bots(&mut self) {
+        let bot_count = self.nodes.iter().filter(|n| n.author.type_name == "Bot").count() as i32;
+        self.total_count = (self.total_count - bot_count).max(0);
+    }
+
+    /// Returns the most recent comment author who is not a bot, if any.
+    pub fn last_human_commenter(&self) -> Option<&str> {
+        self.nodes
+            .iter()
+            .rev()
+            .find(|n| n.author.type_name != "Bot")
+            .map(|n| n.author.login.as_str())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -161,11 +199,13 @@ impl PullRequest {
 /// Only populated for PRs that are in `attention_urls`.
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PrElementChanges {
-    pub approvals: bool,
-    pub comments: bool,
-    pub resolved: bool,
-    pub review_decision: bool,
-    pub checks: bool,
+    pub became_review_required: bool,
+    pub became_changes_requested: bool,
+    pub became_approved: bool,
+    pub checks_failed: bool,
+    pub checks_recovered: bool,
+    pub kicked_from_queue: bool,
+    pub new_comment: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -180,6 +220,7 @@ pub struct FetchResult {
     pub element_changes: std::collections::HashMap<String, PrElementChanges>,
     pub workflow_status: Option<WorkflowStatus>,
     pub expired_followed_prs: Vec<String>,
+    pub viewer_login: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -215,7 +256,7 @@ async fn fetch_prs_for_author(
     show_recently_closed: bool,
     exclusions: &str,
 ) -> Result<
-    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>),
+    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>, String),
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let merged_cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
@@ -228,6 +269,7 @@ async fn fetch_prs_for_author(
     let query = GraphQLQuery {
         query: format!(
             r#"{{
+  viewer {{ login }}
   open: search(query: "author:{author} type:pr state:open{exclusions}", type: ISSUE, first: 20) {{
     nodes {{
       ... on PullRequest {{
@@ -242,7 +284,7 @@ async fn fetch_prs_for_author(
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
-        comments {{ totalCount }}
+        comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
@@ -263,7 +305,7 @@ async fn fetch_prs_for_author(
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
-        comments {{ totalCount }}
+        comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
@@ -284,7 +326,7 @@ async fn fetch_prs_for_author(
         mergeQueueEntry {{ position }}
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
-        comments {{ totalCount }}
+        comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
         commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
@@ -305,19 +347,24 @@ async fn fetch_prs_for_author(
         .json::<GraphQLResponse>()
         .await?;
 
-    let open = response.data.open.nodes;
-    let recently_merged = if show_recently_merged {
+    let viewer_login = response.data.viewer.login.clone();
+    let mut open = response.data.open.nodes;
+    let mut recently_merged = if show_recently_merged {
         response.data.recently_merged.nodes
     } else {
         vec![]
     };
-    let recently_closed = if show_recently_closed {
+    let mut recently_closed = if show_recently_closed {
         response.data.recently_closed.nodes
     } else {
         vec![]
     };
 
-    Ok((open, recently_merged, recently_closed))
+    for pr in open.iter_mut().chain(recently_merged.iter_mut()).chain(recently_closed.iter_mut()) {
+        pr.comments.subtract_bots();
+    }
+
+    Ok((open, recently_merged, recently_closed, viewer_login))
 }
 
 fn build_exclusions(hidden_orgs: &[String], hidden_repos: &[String]) -> String {
@@ -410,7 +457,7 @@ async fn fetch_prs_by_url(
       mergeQueueEntry {{ position }}
       reviewDecision
       reviews(states: APPROVED) {{ totalCount }}
-      comments {{ totalCount }}
+      comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
       reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
       commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
       author {{ login }}
@@ -445,6 +492,8 @@ async fn fetch_prs_by_url(
                 if let Some(pr_data) = repo_data.get("pullRequest") {
                     if let Ok(pr) = serde_json::from_value::<PullRequest>(pr_data.clone()) {
                         // Categorize PR
+                        let mut pr = pr;
+                        pr.comments.subtract_bots();
                         match pr.status() {
                             PrStatus::Open => open_prs.push(pr),
                             PrStatus::Merged => merged_prs.push(pr),
@@ -473,8 +522,8 @@ pub async fn fetch_all_prs(
 ) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
-    // Fetch PRs authored by the current user.
-    let (my_open, my_recently_merged, my_recently_closed) = fetch_prs_for_author(
+    // Fetch PRs authored by the current user (also retrieves viewer login).
+    let (my_open, my_recently_merged, my_recently_closed, viewer_login) = fetch_prs_for_author(
         &client,
         token,
         "@me",
@@ -510,7 +559,7 @@ pub async fn fetch_all_prs(
 
     let results = future::join_all(futures).await;
     for result in results {
-        if let Ok((open, recent, closed)) = result {
+        if let Ok((open, recent, closed, _)) = result {
             followed_open.extend(open);
             followed_recently_merged.extend(recent);
             followed_recently_closed.extend(closed);
@@ -546,6 +595,7 @@ pub async fn fetch_all_prs(
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,
         expired_followed_prs,
+        viewer_login,
     })
 }
 

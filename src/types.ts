@@ -69,11 +69,13 @@ export interface WorkflowStatus {
 }
 
 export interface PrElementChanges {
-  approvals: boolean;
-  comments: boolean;
-  resolved: boolean;
-  review_decision: boolean;
-  checks: boolean;
+  became_review_required: boolean;
+  became_changes_requested: boolean;
+  became_approved: boolean;
+  checks_failed: boolean;
+  checks_recovered: boolean;
+  kicked_from_queue: boolean;
+  new_comment: boolean;
 }
 
 export interface FetchResult {
@@ -102,12 +104,13 @@ export interface HiddenPr {
 }
 
 export interface NotificationPreferences {
-  needs_review: boolean;
+  review_required: boolean;
   changes_requested: boolean;
+  approved: boolean;
   checks_failed: boolean;
-  new_reviews: boolean;
-  threads_updated: boolean;
-  merge_queue: boolean;
+  checks_recovered: boolean;
+  kicked_from_queue: boolean;
+  new_comment: boolean;
 }
 
 export interface Settings {
@@ -135,8 +138,8 @@ export interface Settings {
   global_reload_shortcut?: string;
   notification_prefs_owned: NotificationPreferences;
   notification_prefs_followed: NotificationPreferences;
-  notification_prefs_merged: NotificationPreferences;
-  notification_prefs_closed: NotificationPreferences;
+  notify_on_merged: boolean;
+  notify_on_closed: boolean;
 }
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {
