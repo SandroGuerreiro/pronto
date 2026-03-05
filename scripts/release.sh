@@ -236,7 +236,7 @@ main() {
             log_info "Step 2/8: Version already committed, skipping..."
         else
             log_info "Step 2/8: Committing version bump..."
-            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
             git commit -m "Bump version to $new_version"
             log_success "Version bump committed"
         fi
