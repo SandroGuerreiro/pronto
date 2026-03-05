@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-hide",
+    "core:window:allow-close",
     "opener:default",
     "positioner:default",
     "notification:default",

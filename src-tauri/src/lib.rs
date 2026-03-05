@@ -69,6 +69,10 @@ fn default_global_reload() -> String {
     "Super+Ctrl+R".to_string()
 }
 
+fn default_global_follow() -> String {
+    "Super+Ctrl+L".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_poll_interval")]
@@ -115,6 +119,8 @@ pub struct Settings {
     pub global_toggle_shortcut: String,
     #[serde(default = "default_global_reload")]
     pub global_reload_shortcut: String,
+    #[serde(default = "default_global_follow")]
+    pub global_follow_shortcut: String,
     #[serde(default)]
     pub notification_prefs_owned: NotificationPreferences,
     #[serde(default)]
@@ -150,6 +156,7 @@ impl Default for Settings {
             keybindings: HashMap::new(),
             global_toggle_shortcut: default_global_toggle(),
             global_reload_shortcut: default_global_reload(),
+            global_follow_shortcut: default_global_follow(),
             notification_prefs_owned: NotificationPreferences {
                 changes_requested: true,
                 approved: true,
@@ -190,6 +197,13 @@ fn settings_path(app: &tauri::AppHandle) -> PathBuf {
         .join("settings.json")
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotifyData {
+    pub kind: String,
+    pub title: String,
+    pub message: String,
+}
+
 pub struct AppState {
     pub cached_prs: Mutex<Option<github::FetchResult>>,
     pub seen_prs: Mutex<HashMap<String, String>>,
@@ -200,6 +214,7 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     pub last_tray_attention: Mutex<Option<bool>>,
     pub viewer_login: Mutex<String>,
+    pub pending_notification: Mutex<Option<NotifyData>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -518,14 +533,13 @@ fn update_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), Stri
     let state = app.state::<AppState>();
     save_settings(&settings_path(&app), &settings)?;
 
-    // Re-register global shortcuts if they changed
     let toggle = settings.global_toggle_shortcut.clone();
     let reload = settings.global_reload_shortcut.clone();
+    let follow = settings.global_follow_shortcut.clone();
 
     *state.settings.lock().unwrap() = settings;
 
-    // Update global shortcuts with new values (log errors but don't fail the save)
-    if let Err(e) = update_global_shortcuts(app.clone(), toggle, reload) {
+    if let Err(e) = update_global_shortcuts(app.clone(), toggle, reload, follow) {
         eprintln!("[pronto] Failed to update global shortcuts: {}", e);
     }
 
@@ -801,6 +815,203 @@ fn parse_shortcut_string(s: &str) -> Result<Shortcut, String> {
     Ok(Shortcut::new(Some(modifiers), code))
 }
 
+fn normalize_github_pr_url(url: &str) -> Option<String> {
+    let url = url.trim();
+    let after_domain = url.strip_prefix("https://github.com/")?;
+    let parts: Vec<&str> = after_domain.splitn(4, '/').collect();
+    if parts.len() < 4 || parts[2] != "pull" {
+        return None;
+    }
+    // Strip sub-paths, query strings, fragments from the PR number segment
+    let pr_num_str = parts[3].split(&['/', '?', '#'][..]).next()?;
+    pr_num_str.parse::<u64>().ok()?; // validate it's a number
+    Some(format!(
+        "https://github.com/{}/{}/pull/{}",
+        parts[0], parts[1], pr_num_str
+    ))
+}
+
+fn is_accessibility_trusted() -> bool {
+    use std::ffi::c_void;
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> u8;
+    }
+    unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) != 0 }
+}
+
+fn simulate_cmd_c() {
+    use std::ffi::c_void;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventSourceCreate(state_id: i32) -> *mut c_void;
+        fn CGEventCreateKeyboardEvent(source: *mut c_void, virtual_key: u16, key_down: bool) -> *mut c_void;
+        fn CGEventSetFlags(event: *mut c_void, flags: u64);
+        fn CGEventPost(tap: i32, event: *mut c_void);
+        fn CFRelease(cf: *mut c_void);
+    }
+
+    const HID_SYSTEM_STATE: i32 = 1;
+    const HID_EVENT_TAP: i32 = 0;
+    const CMD_FLAG: u64 = 0x00100000;
+    const KEY_C: u16 = 8;
+
+    unsafe {
+        let source = CGEventSourceCreate(HID_SYSTEM_STATE);
+        if source.is_null() { return; }
+
+        let down = CGEventCreateKeyboardEvent(source, KEY_C, true);
+        CGEventSetFlags(down, CMD_FLAG);
+        CGEventPost(HID_EVENT_TAP, down);
+        CFRelease(down);
+
+        let up = CGEventCreateKeyboardEvent(source, KEY_C, false);
+        CGEventSetFlags(up, CMD_FLAG);
+        CGEventPost(HID_EVENT_TAP, up);
+        CFRelease(up);
+
+        CFRelease(source);
+    }
+}
+
+/// Try to get a GitHub PR URL — first via selected text (if Accessibility is granted),
+/// otherwise fall back to whatever is currently on the clipboard.
+fn get_text_for_follow() -> Option<String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    if is_accessibility_trusted() {
+        // Save current clipboard
+        let original = Command::new("pbpaste").output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok());
+
+        // Clear clipboard so we can detect if nothing was selected
+        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = stdin.write_all(b"");
+            }
+            let _ = child.wait();
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+        simulate_cmd_c();
+        std::thread::sleep(Duration::from_millis(150));
+
+        let selected = Command::new("pbpaste").output().ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default();
+
+        // Restore original clipboard
+        let restore_text = original.unwrap_or_default();
+        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = stdin.write_all(restore_text.as_bytes());
+            }
+            let _ = child.wait();
+        }
+
+        if !selected.is_empty() {
+            return Some(selected);
+        }
+    }
+
+    // Fallback: just read current clipboard contents
+    Command::new("pbpaste").output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .filter(|s| !s.is_empty())
+}
+
+fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, message: &str) {
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.pending_notification.lock().unwrap() = Some(NotifyData {
+            kind: kind.to_string(),
+            title: title.to_string(),
+            message: message.to_string(),
+        });
+    }
+
+    if let Some(win) = app.get_webview_window("notify") {
+        let _ = win.close();
+    }
+
+    #[cfg(debug_assertions)]
+    let url = tauri::WebviewUrl::External("http://localhost:1420/".parse().unwrap());
+    #[cfg(not(debug_assertions))]
+    let url = tauri::WebviewUrl::App("index.html".into());
+
+    // Capture the frontmost app before creating the notification window,
+    // so we can restore focus if our window steals it.
+    #[cfg(target_os = "macos")]
+    let prev_app = {
+        use objc2_app_kit::NSWorkspace;
+        NSWorkspace::sharedWorkspace().frontmostApplication()
+    };
+
+    let win = tauri::WebviewWindowBuilder::new(app, "notify", url)
+        .title("")
+        .inner_size(340.0, 80.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .focused(false)
+        .build();
+
+    if let Ok(win) = win {
+        use tauri_plugin_positioner::{Position, WindowExt};
+        // move_window can panic if tray position is not set (e.g. from background thread)
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = win.move_window(Position::TrayBottomCenter);
+        }));
+
+        // Restore focus to the previously active app
+        #[cfg(target_os = "macos")]
+        if let Some(prev) = prev_app {
+            use objc2_app_kit::NSApplicationActivationOptions;
+            prev.activateWithOptions(NSApplicationActivationOptions::empty());
+        }
+    }
+}
+
+#[tauri::command]
+fn get_notification_data(app: tauri::AppHandle) -> Option<NotifyData> {
+    app.try_state::<AppState>()
+        .and_then(|s| s.pending_notification.lock().unwrap().take())
+}
+
+fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let path = settings_path(app);
+
+    let added = {
+        let mut settings = state.settings.lock().unwrap();
+        if settings.followed_prs.contains(&pr_url) {
+            settings.followed_prs.retain(|u| u != &pr_url);
+            let _ = save_settings(&path, &settings);
+            false
+        } else {
+            settings.followed_prs.push(pr_url.clone());
+            let _ = save_settings(&path, &settings);
+            true
+        }
+    };
+
+    let _ = app.emit("pr-follow-toggled", serde_json::json!({ "url": pr_url, "added": added }));
+    let short = pr_url.strip_prefix("https://github.com/").unwrap_or(&pr_url).to_string();
+    let (title, kind) = if added { ("Following PR", "success") } else { ("Unfollowed PR", "removed") };
+
+    // Only show tray notification if the main window is not visible
+    let main_visible = app.get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if !main_visible {
+        show_tray_notification(app, kind, title, &short);
+    }
+}
+
 #[tauri::command]
 fn dismiss_workflow(app: tauri::AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
@@ -827,6 +1038,7 @@ fn update_global_shortcuts(
     app: tauri::AppHandle,
     toggle: String,
     reload: String,
+    follow: String,
 ) -> Result<(), String> {
     // Unregister all existing shortcuts
     app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
@@ -935,6 +1147,41 @@ fn update_global_shortcuts(
                     }
                 }
                 let _ = h.emit("polling-complete", ());
+            });
+        })
+        .map_err(|e| e.to_string())?;
+
+    // Parse and register follow-PR shortcut
+    let follow_shortcut = parse_shortcut_string(&follow)?;
+    let handle = app.clone();
+    app.global_shortcut()
+        .on_shortcut(follow_shortcut, move |_app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            let h = handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let clipboard_text = get_text_for_follow();
+                let h2 = h.clone();
+                let _ = h.run_on_main_thread(move || {
+                    match clipboard_text {
+                        Some(text) => {
+                            match normalize_github_pr_url(text.trim()) {
+                                Some(pr_url) => toggle_followed_pr(&h2, pr_url),
+                                None => show_tray_notification(
+                                    &h2, "error",
+                                    "Not a PR URL",
+                                    "Copy a GitHub PR URL and try again",
+                                ),
+                            }
+                        }
+                        None => show_tray_notification(
+                            &h2, "error",
+                            "No URL Found",
+                            "Copy a GitHub PR URL first",
+                        ),
+                    }
+                });
             });
         })
         .map_err(|e| e.to_string())?;
@@ -1068,6 +1315,7 @@ pub fn run() {
             get_settings,
             update_settings,
             update_global_shortcuts,
+            get_notification_data,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));
@@ -1081,6 +1329,7 @@ pub fn run() {
                 http_client: reqwest::Client::new(),
                 last_tray_attention: Mutex::new(None),
                 viewer_login: Mutex::new(String::new()),
+                pending_notification: Mutex::new(None),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -1102,15 +1351,16 @@ pub fn run() {
             });
 
             // Setup global shortcuts from settings
-            let (toggle, reload) = {
+            let (toggle, reload, follow) = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock().unwrap();
                 (
                     settings.global_toggle_shortcut.clone(),
                     settings.global_reload_shortcut.clone(),
+                    settings.global_follow_shortcut.clone(),
                 )
             };
-            update_global_shortcuts(app.handle().clone(), toggle, reload)?;
+            update_global_shortcuts(app.handle().clone(), toggle, reload, follow)?;
 
             Ok(())
         })

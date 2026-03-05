@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { FetchResult, WorkflowStatus, TabName, Settings } from "./types";
+import type { FetchResult, WorkflowStatus, TabName, Settings, NotifyData } from "./types";
 import {
   currentAttentionUrls,
   setCurrentAttentionUrls,
@@ -200,9 +200,48 @@ function addConfirmedClickHandler(btn: HTMLElement, action: () => Promise<void>)
   });
 }
 
+// ── Notification window ───────────────────────────────────────────────────────
+
+async function initNotificationView() {
+  const data = await invoke<NotifyData | null>("get_notification_data");
+  if (!data) { setTimeout(() => getCurrentWindow().close(), 100); return; }
+
+  const isError = data.kind === "error";
+
+  document.body.innerHTML = `
+    <div class="notify-popup notify-${data.kind}">
+      <div class="notify-content">
+        <div class="notify-title">${data.title}</div>
+        <div class="notify-message">${data.message}</div>
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => getCurrentWindow().close(), isError ? 7000 : 3000);
+}
+
+// ── Follow toast ──────────────────────────────────────────────────────────────
+
+function showFollowToast(prUrl: string, added: boolean) {
+  document.getElementById("follow-toast")?.remove();
+  const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  const label = match ? `${match[1]}/${match[2]} #${match[3]}` : prUrl;
+  const toast = document.createElement("div");
+  toast.id = "follow-toast";
+  toast.className = "follow-toast" + (added ? "" : " follow-toast-removed");
+  toast.textContent = added ? `Following ${label}` : `Unfollowed ${label}`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 window.addEventListener("DOMContentLoaded", async () => {
+  if (getCurrentWindow().label === "notify") {
+    await initNotificationView();
+    return;
+  }
+
   // Wire up inter-module callbacks
   initPrefs(
     () => renderActiveTab(),
@@ -287,6 +326,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   } else {
     showLogin();
   }
+
+  await listen<{ url: string; added: boolean }>("pr-follow-toggled", async (event) => {
+    await loadUserPrefs();
+    loadPrs();
+    showFollowToast(event.payload.url, event.payload.added);
+  });
 
   await listen<FetchResult>("prs-updated", (event) => {
     if (event.payload) {

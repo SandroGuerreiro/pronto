@@ -3376,13 +3376,14 @@ dependencies = [
 
 [[package]]
 name = "pronto"
-version = "0.6.3"
+version = "0.6.7"
 dependencies = [
  "chrono",
  "futures",
  "image",
  "keyring",
  "mac-notification-sys",
+ "objc2-app-kit",
  "open",
  "reqwest",
  "serde",

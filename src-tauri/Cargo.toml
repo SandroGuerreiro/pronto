@@ -34,4 +34,5 @@ tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-notification = "2.3.3"
 mac-notification-sys = "0.6"
 keyring = { version = "3.6.3", features = ["apple-native"] }
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSApplication", "NSRunningApplication", "NSWorkspace"] }
 

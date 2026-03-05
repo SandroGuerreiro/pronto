@@ -76,6 +76,7 @@ export async function autoSaveSettings() {
   const wfNameEl = document.getElementById("setting-workflow-name") as HTMLInputElement | null;
   const globalToggleEl = document.querySelector('[data-action="global_toggle"]') as HTMLElement | null;
   const globalReloadEl = document.querySelector('[data-action="global_reload"]') as HTMLElement | null;
+  const globalFollowEl = document.querySelector('[data-action="global_follow"]') as HTMLElement | null;
 
   // Collect keybindings from state
   const kbToSave = { ...keybindings };
@@ -103,6 +104,7 @@ export async function autoSaveSettings() {
     keybindings: kbToSave,
     global_toggle_shortcut: globalToggleEl?.textContent ?? currentSettings.global_toggle_shortcut,
     global_reload_shortcut: globalReloadEl?.textContent ?? currentSettings.global_reload_shortcut,
+    global_follow_shortcut: globalFollowEl?.textContent ?? currentSettings.global_follow_shortcut,
     // Use module-level state — always current regardless of which tab is rendered
     notification_prefs_owned: { ..._notifPrefsOwned },
     notification_prefs_followed: { ..._notifPrefsFollowed },
@@ -518,6 +520,10 @@ export async function showSettings() {
               <div class="kb-row">
                 <span class="kb-label">Reload</span>
                 <button class="kb-key global-kb-key" data-action="global_reload">${freshSettings.global_reload_shortcut || "Super+Ctrl+R"}</button>
+              </div>
+              <div class="kb-row">
+                <span class="kb-label">Follow selected PR</span>
+                <button class="kb-key global-kb-key" data-action="global_follow">${freshSettings.global_follow_shortcut || "Super+Ctrl+L"}</button>
               </div>
             </div>
           </div>

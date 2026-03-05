@@ -1478,6 +1478,76 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 /* ============================================================
+   NOTIFICATION WINDOW (tray popup for follow actions)
+   ============================================================ */
+
+.notify-popup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 80px;
+  background: #1c1c1e;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  border-left: 3px solid #3b82f6;
+}
+
+.notify-popup.notify-success { border-left-color: #22c55e; }
+.notify-popup.notify-removed { border-left-color: #71717a; }
+.notify-popup.notify-error   { border-left-color: #ef4444; }
+
+.notify-content { flex: 1; min-width: 0; }
+
+.notify-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin-bottom: 2px;
+}
+
+.notify-message {
+  font-size: 12px;
+  color: #a1a1aa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================
+   FOLLOW TOAST
+   ============================================================ */
+
+.follow-toast {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  background: #3b82f6;
+  color: #fff;
+  padding: 5px 14px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 1000;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: follow-toast-anim 3s ease forwards;
+}
+
+.follow-toast-removed {
+  background: #52525b;
+}
+
+@keyframes follow-toast-anim {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  12%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  80%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+}
+
+/* ============================================================
    UTILITIES — scrollbars
    ============================================================ */
 

@@ -1,3 +1,9 @@
+export interface NotifyData {
+  kind: string;
+  title: string;
+  message: string;
+}
+
 export interface Reviews {
   totalCount: number;
 }
@@ -136,6 +142,7 @@ export interface Settings {
   keybindings?: Record<string, string>;
   global_toggle_shortcut?: string;
   global_reload_shortcut?: string;
+  global_follow_shortcut?: string;
   notification_prefs_owned: NotificationPreferences;
   notification_prefs_followed: NotificationPreferences;
   notify_on_merged: boolean;
