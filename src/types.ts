@@ -4,6 +4,14 @@ export interface NotifyData {
   message: string;
 }
 
+export interface HomebrewStatus {
+  available: boolean;
+  update_available: boolean;
+  installed_version: string;
+  latest_version: string;
+  checked_at: string;
+}
+
 export interface Reviews {
   totalCount: number;
 }
@@ -147,6 +155,8 @@ export interface Settings {
   notification_prefs_followed: NotificationPreferences;
   notify_on_merged: boolean;
   notify_on_closed: boolean;
+  homebrew_check_enabled: boolean;
+  homebrew_check_interval_secs: number;
 }
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {

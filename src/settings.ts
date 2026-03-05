@@ -42,12 +42,18 @@ let _notifPrefsFollowed: NotificationPreferences = defaultNotifPrefs();
 let _notifyOnMerged: boolean = true;
 let _notifyOnClosed: boolean = false;
 
+// ── Homebrew check preferences ────────────────────────────────────────────
+let _brewCheckEnabled: boolean = false;
+let _brewCheckIntervalSecs: number = 14400;
+
 export function loadNotifPrefsFromSettings(s: Settings) {
   _notificationsEnabled = s.notifications_enabled ?? true;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
   _notifPrefsFollowed = { ...defaultNotifPrefs(), ...s.notification_prefs_followed };
   _notifyOnMerged = s.notify_on_merged ?? true;
   _notifyOnClosed = s.notify_on_closed ?? false;
+  _brewCheckEnabled = s.homebrew_check_enabled ?? false;
+  _brewCheckIntervalSecs = s.homebrew_check_interval_secs ?? 14400;
 }
 
 export function initSettings(onClosed: () => void) {
@@ -110,6 +116,8 @@ export async function autoSaveSettings() {
     notification_prefs_followed: { ..._notifPrefsFollowed },
     notify_on_merged: _notifyOnMerged,
     notify_on_closed: _notifyOnClosed,
+    homebrew_check_enabled: _brewCheckEnabled,
+    homebrew_check_interval_secs: _brewCheckIntervalSecs,
   };
 
   setGroupByRepository(updated.group_by_repository);
@@ -206,6 +214,7 @@ export async function showSettings() {
         <button class="settings-tab" data-tab="notifications">🔔<span>Notifications</span></button>
         <button class="settings-tab" data-tab="workflow">⚡<span>Workflow</span></button>
         <button class="settings-tab" data-tab="shortcuts">⌨<span>Keys</span></button>
+        <button class="settings-tab" data-tab="updates">↑<span>Updates</span></button>
         <button class="settings-tab" data-tab="subscriptions">📌<span>Subscriptions</span></button>
       </div>
       <div class="settings-content">
@@ -579,6 +588,47 @@ export async function showSettings() {
           </div>
         `;
         setupKeybindingListeners();
+        break;
+
+      case "updates":
+        contentArea.innerHTML = `
+          <div class="settings-section">
+            <div class="settings-section-title">Homebrew Updates</div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <div>
+                  <span>Check for Pronto updates</span>
+                  <div class="settings-hint">Check Homebrew Cask for newer versions of Pronto</div>
+                </div>
+                <input type="checkbox" id="setting-brew-enabled" class="settings-toggle"${_brewCheckEnabled ? " checked" : ""} />
+              </label>
+            </div>
+            <div class="settings-group" id="brew-interval-group"${_brewCheckEnabled ? "" : ' style="display:none"'}>
+              <label class="settings-label">Check interval</label>
+              <select id="setting-brew-interval" class="settings-select">
+                <option value="3600"${_brewCheckIntervalSecs === 3600 ? " selected" : ""}>1 hour</option>
+                <option value="14400"${_brewCheckIntervalSecs === 14400 ? " selected" : ""}>4 hours</option>
+                <option value="43200"${_brewCheckIntervalSecs === 43200 ? " selected" : ""}>12 hours</option>
+                <option value="86400"${_brewCheckIntervalSecs === 86400 ? " selected" : ""}>24 hours</option>
+              </select>
+            </div>
+            <div class="settings-group" id="brew-note" style="margin-top: 12px; padding: 8px; background: rgba(107, 114, 128, 0.1); border-radius: 4px; font-size: 12px; color: #888;">
+              <div>Requires Homebrew installation. Updates appear in the footer.</div>
+            </div>
+          </div>
+        `;
+        setupEventListeners();
+        document.getElementById("setting-brew-enabled")!.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          _brewCheckEnabled = checked;
+          document.getElementById("brew-interval-group")!.style.display = checked ? "" : "none";
+          autoSaveSettings();
+        });
+        document.getElementById("setting-brew-interval")!.addEventListener("change", (e) => {
+          const value = parseInt((e.target as HTMLSelectElement).value);
+          _brewCheckIntervalSecs = value;
+          autoSaveSettings();
+        });
         break;
 
       case "subscriptions":

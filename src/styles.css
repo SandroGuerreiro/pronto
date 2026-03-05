@@ -1437,6 +1437,19 @@ details[open] > .section-header .accordion-chevron::before {
   font-weight: 400;
 }
 
+.brew-indicator {
+  font-size: 11px;
+  color: #f59e0b;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.brew-indicator:hover {
+  background: rgba(245, 158, 11, 0.12);
+}
+
 .spinner {
   width: 10px;
   height: 10px;

@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod github;
 pub mod tray;
+pub mod homebrew;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -73,6 +74,10 @@ fn default_global_follow() -> String {
     "Super+Ctrl+L".to_string()
 }
 
+fn default_homebrew_check_interval() -> u64 {
+    14400  // 4 hours
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_poll_interval")]
@@ -129,6 +134,10 @@ pub struct Settings {
     pub notify_on_merged: bool,
     #[serde(default)]
     pub notify_on_closed: bool,
+    #[serde(default)]
+    pub homebrew_check_enabled: bool,
+    #[serde(default = "default_homebrew_check_interval")]
+    pub homebrew_check_interval_secs: u64,
 }
 
 impl Default for Settings {
@@ -171,6 +180,8 @@ impl Default for Settings {
             },
             notify_on_merged: true,
             notify_on_closed: false,
+            homebrew_check_enabled: false,
+            homebrew_check_interval_secs: 14400,
         }
     }
 }
@@ -216,6 +227,8 @@ pub struct AppState {
     pub viewer_login: Mutex<String>,
     pub pending_notifications: Mutex<Vec<NotifyData>>,
     pub notify_close_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    pub last_brew_status: Mutex<Option<homebrew::HomebrewStatus>>,
+    pub last_notified_brew_update: Mutex<bool>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -1043,6 +1056,17 @@ fn get_notification_data(app: tauri::AppHandle) -> Vec<NotifyData> {
 }
 
 #[tauri::command]
+fn get_brew_status(app: tauri::AppHandle) -> Option<homebrew::HomebrewStatus> {
+    app.try_state::<AppState>()
+        .and_then(|state| {
+            state.last_brew_status.lock()
+                .ok()
+                .map(|guard| guard.clone())
+                .flatten()
+        })
+}
+
+#[tauri::command]
 fn dismiss_notification(app: tauri::AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         if let Some(tx) = state.notify_close_tx.lock().unwrap().take() {
@@ -1367,6 +1391,84 @@ async fn poll_prs(app: tauri::AppHandle) {
     }
 }
 
+async fn poll_brew(app: tauri::AppHandle) {
+    use std::time::Instant;
+
+    // Exit early if brew binary not found
+    if homebrew::find_brew_binary().is_none() {
+        return;
+    }
+
+    let mut last_checked = Instant::now() - Duration::from_secs(14400); // check on first pass
+
+    loop {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+
+        let (enabled, interval) = {
+            let state = app.try_state::<AppState>();
+            let s = state.map(|st| {
+                let settings = st.settings.lock().unwrap();
+                (settings.homebrew_check_enabled, settings.homebrew_check_interval_secs)
+            });
+            match s {
+                Some((e, i)) => (e, i),
+                None => continue,
+            }
+        };
+
+        if !enabled || last_checked.elapsed() < Duration::from_secs(interval) {
+            continue;
+        }
+
+        let status = tokio::task::spawn_blocking(homebrew::check_pronto_update_sync)
+            .await
+            .unwrap_or_else(|_| homebrew::HomebrewStatus {
+                available: false,
+                update_available: false,
+                installed_version: String::new(),
+                latest_version: String::new(),
+                checked_at: chrono::Utc::now().to_rfc3339(),
+            });
+
+        let Some(state) = app.try_state::<AppState>() else {
+            continue;
+        };
+
+        // Check if we should notify
+        let should_notify = {
+            let prev_status = state.last_brew_status.lock().unwrap();
+            let prev_update_available = prev_status.as_ref().map(|s| s.update_available).unwrap_or(false);
+            let prev_notified = *state.last_notified_brew_update.lock().unwrap();
+
+            // Notify if transitioning from up-to-date to update-available
+            !prev_notified && status.update_available && !prev_update_available
+        };
+
+        if should_notify {
+            show_tray_notification(
+                &app,
+                "brew_update",
+                "Homebrew Update Available",
+                &format!("Pronto {} is available", status.latest_version),
+            );
+            *state.last_notified_brew_update.lock().unwrap() = true;
+        }
+
+        // Reset notification flag if update no longer available
+        if !status.update_available {
+            *state.last_notified_brew_update.lock().unwrap() = false;
+        }
+
+        // Store the status and emit update event
+        {
+            let mut last_status = state.last_brew_status.lock().unwrap();
+            *last_status = Some(status.clone());
+        }
+        let _ = app.emit("brew-updated", status);
+        last_checked = Instant::now();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1390,6 +1492,7 @@ pub fn run() {
             update_global_shortcuts,
             get_notification_data,
             dismiss_notification,
+            get_brew_status,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));
@@ -1405,6 +1508,8 @@ pub fn run() {
                 viewer_login: Mutex::new(String::new()),
                 pending_notifications: Mutex::new(Vec::new()),
                 notify_close_tx: Mutex::new(None),
+                last_brew_status: Mutex::new(None),
+                last_notified_brew_update: Mutex::new(false),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -1423,6 +1528,11 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 poll_prs(handle).await;
+            });
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                poll_brew(handle).await;
             });
 
             // Setup global shortcuts from settings

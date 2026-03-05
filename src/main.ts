@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { FetchResult, WorkflowStatus, TabName, Settings, NotifyData } from "./types";
+import type { FetchResult, WorkflowStatus, TabName, Settings, NotifyData, HomebrewStatus } from "./types";
 import {
   currentAttentionUrls,
   setCurrentAttentionUrls,
@@ -24,6 +24,7 @@ import {
   setShowRecentlyMerged,
   showClosed,
   setShowClosed,
+  setHomebrewStatus,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -110,6 +111,28 @@ function updatePollStatus() {
     const mins = Math.floor(Math.abs(remaining) / 60);
     el.textContent = mins > 0 ? `Last checked ${mins}m ago` : `Last checked just now`;
   }
+}
+
+// ── Homebrew update indicator ─────────────────────────────────────────────────
+
+function updateBrewIndicator(status: HomebrewStatus | null) {
+  const indicator = document.getElementById("brew-indicator")!;
+  if (!status || !status.update_available) {
+    indicator.style.display = "none";
+    return;
+  }
+
+  indicator.innerHTML = `↑ v${status.latest_version}`;
+  indicator.style.display = "";
+  indicator.title = `Update available: ${status.installed_version} → ${status.latest_version}`;
+
+  indicator.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText("brew update && brew upgrade --cask pronto").catch(() => {
+      console.error("Failed to copy to clipboard");
+    });
+  };
 }
 
 // ── Keyboard focus ────────────────────────────────────────────────────────────
@@ -365,6 +388,19 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("spinner")!.style.display = "none";
     lastCheckedAt = new Date();
     updatePollStatus();
+  });
+
+  // Homebrew update indicator
+  invoke<HomebrewStatus | null>("get_brew_status").then((status) => {
+    setHomebrewStatus(status);
+    updateBrewIndicator(status);
+  }).catch(() => {
+    // Silently fail if brew status can't be fetched
+  });
+
+  await listen<HomebrewStatus>("brew-updated", (event) => {
+    setHomebrewStatus(event.payload);
+    updateBrewIndicator(event.payload);
   });
 
   // Nav tab buttons
