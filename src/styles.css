@@ -1460,7 +1460,7 @@ details[open] > .section-header .accordion-chevron::before {
 .spinner {
   width: 10px;
   height: 10px;
-  margin-right: 6px;
+  margin-left: 6px;
   border: 1.5px solid rgba(255, 255, 255, 0.1);
   border-top-color: #71717a;
   border-radius: 50%;
