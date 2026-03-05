@@ -20,7 +20,8 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 - **Hide individual PRs** -- press `i` on a focused PR to hide it; unhide from the settings blacklist
 - **Workflow monitor** -- track the status of a GitHub Actions workflow in the header; triggers attention when the status changes between success and failure
 - **Configurable polling** -- 1 / 2 / 5 / 10 minute intervals
-- **Global shortcuts** -- toggle the popup or manually reload from anywhere on your Mac
+- **Follow PRs from anywhere** -- copy a PR URL, press the global follow shortcut, and it's added to your followed list without leaving your current app
+- **Global shortcuts** -- toggle the popup, reload, or follow a PR from anywhere on your Mac
 - **Full keyboard navigation** -- browse PRs, expand/collapse accordions, switch tabs, and dismiss attention without touching the mouse
 - **Settings search** -- quickly filter settings with a search bar
 - **Two auth methods** -- GitHub OAuth (Device Flow) or Personal Access Token
@@ -92,6 +93,7 @@ This uses the OAuth Device Flow with the `repo` scope.
 | --- | --- |
 | `Cmd+Ctrl+P` | Toggle the popup open / closed |
 | `Cmd+Ctrl+R` | Manually reload PR data |
+| `Super+Ctrl+L` | Follow/unfollow PR from clipboard URL |
 
 ### Inside the popup
 
@@ -120,7 +122,7 @@ Open settings from the gear icon in the header. Settings are organized into sear
 - **Display** -- Group by repository (accordions vs flat list), show recently merged toggle with time window, show recently closed toggle with time window
 - **Workflow** -- Monitor a single GitHub Actions workflow; configure the organization, repository, and workflow filename (e.g. `deploy.yml`). Only terminal states (success / failure) are tracked.
 - **Keys** -- Customize keyboard shortcuts for in-app navigation, tab switching, and global toggles/reload
-- **Users** -- Manage followed users and view the PR hide blacklist
+- **Users** -- Manage followed users, followed PRs, and view the PR hide blacklist
 
 ## Development
 
