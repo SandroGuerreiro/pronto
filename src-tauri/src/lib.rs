@@ -167,12 +167,13 @@ impl Default for Settings {
             global_reload_shortcut: default_global_reload(),
             global_follow_shortcut: default_global_follow(),
             notification_prefs_owned: NotificationPreferences {
+                review_required: true,
                 changes_requested: true,
                 approved: true,
                 checks_failed: true,
                 checks_recovered: true,
                 kicked_from_queue: true,
-                ..Default::default()
+                new_comment: true,
             },
             notification_prefs_followed: NotificationPreferences {
                 review_required: true,
@@ -180,7 +181,7 @@ impl Default for Settings {
             },
             notify_on_merged: true,
             notify_on_closed: false,
-            homebrew_check_enabled: false,
+            homebrew_check_enabled: true,
             homebrew_check_interval_secs: 14400,
         }
     }
@@ -1067,6 +1068,27 @@ fn get_brew_status(app: tauri::AppHandle) -> Option<homebrew::HomebrewStatus> {
 }
 
 #[tauri::command]
+async fn update_brew(app: tauri::AppHandle) -> Result<(), String> {
+    use std::process::Command;
+
+    Command::new("brew")
+        .args(&["update"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    Command::new("brew")
+        .args(&["upgrade", "--cask", "pronto"])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    // Restart the app
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    app.restart();
+
+    Ok(())
+}
+
+#[tauri::command]
 fn dismiss_notification(app: tauri::AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
         if let Some(tx) = state.notify_close_tx.lock().unwrap().take() {
@@ -1402,8 +1424,6 @@ async fn poll_brew(app: tauri::AppHandle) {
     let mut last_checked = Instant::now() - Duration::from_secs(14400); // check on first pass
 
     loop {
-        tokio::time::sleep(Duration::from_secs(60)).await;
-
         let (enabled, interval) = {
             let state = app.try_state::<AppState>();
             let s = state.map(|st| {
@@ -1412,60 +1432,67 @@ async fn poll_brew(app: tauri::AppHandle) {
             });
             match s {
                 Some((e, i)) => (e, i),
-                None => continue,
+                None => {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    continue;
+                }
             }
         };
 
-        if !enabled || last_checked.elapsed() < Duration::from_secs(interval) {
-            continue;
+        if enabled && last_checked.elapsed() >= Duration::from_secs(interval) {
+            let status = tokio::task::spawn_blocking(homebrew::check_pronto_update_sync)
+                .await
+                .unwrap_or_else(|_| homebrew::HomebrewStatus {
+                    available: false,
+                    update_available: false,
+                    installed_version: String::new(),
+                    latest_version: String::new(),
+                    checked_at: chrono::Utc::now().to_rfc3339(),
+                });
+
+            eprintln!("[brew-check] available: {}, update_available: {}, {} → {}",
+                status.available, status.update_available, status.installed_version, status.latest_version);
+
+            let Some(state) = app.try_state::<AppState>() else {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                continue;
+            };
+
+            // Check if we should notify
+            let should_notify = {
+                let prev_status = state.last_brew_status.lock().unwrap();
+                let prev_update_available = prev_status.as_ref().map(|s| s.update_available).unwrap_or(false);
+                let prev_notified = *state.last_notified_brew_update.lock().unwrap();
+
+                // Notify if transitioning from up-to-date to update-available
+                !prev_notified && status.update_available && !prev_update_available
+            };
+
+            if should_notify {
+                show_tray_notification(
+                    &app,
+                    "brew_update",
+                    "Homebrew Update Available",
+                    &format!("Pronto {} is available", status.latest_version),
+                );
+                *state.last_notified_brew_update.lock().unwrap() = true;
+            }
+
+            // Reset notification flag if update no longer available
+            if !status.update_available {
+                *state.last_notified_brew_update.lock().unwrap() = false;
+            }
+
+            // Store the status and emit update event
+            {
+                let mut last_status = state.last_brew_status.lock().unwrap();
+                *last_status = Some(status.clone());
+            }
+            let _ = app.emit("brew-updated", status);
+            last_checked = Instant::now();
         }
 
-        let status = tokio::task::spawn_blocking(homebrew::check_pronto_update_sync)
-            .await
-            .unwrap_or_else(|_| homebrew::HomebrewStatus {
-                available: false,
-                update_available: false,
-                installed_version: String::new(),
-                latest_version: String::new(),
-                checked_at: chrono::Utc::now().to_rfc3339(),
-            });
-
-        let Some(state) = app.try_state::<AppState>() else {
-            continue;
-        };
-
-        // Check if we should notify
-        let should_notify = {
-            let prev_status = state.last_brew_status.lock().unwrap();
-            let prev_update_available = prev_status.as_ref().map(|s| s.update_available).unwrap_or(false);
-            let prev_notified = *state.last_notified_brew_update.lock().unwrap();
-
-            // Notify if transitioning from up-to-date to update-available
-            !prev_notified && status.update_available && !prev_update_available
-        };
-
-        if should_notify {
-            show_tray_notification(
-                &app,
-                "brew_update",
-                "Homebrew Update Available",
-                &format!("Pronto {} is available", status.latest_version),
-            );
-            *state.last_notified_brew_update.lock().unwrap() = true;
-        }
-
-        // Reset notification flag if update no longer available
-        if !status.update_available {
-            *state.last_notified_brew_update.lock().unwrap() = false;
-        }
-
-        // Store the status and emit update event
-        {
-            let mut last_status = state.last_brew_status.lock().unwrap();
-            *last_status = Some(status.clone());
-        }
-        let _ = app.emit("brew-updated", status);
-        last_checked = Instant::now();
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
 
@@ -1493,6 +1520,7 @@ pub fn run() {
             get_notification_data,
             dismiss_notification,
             get_brew_status,
+            update_brew,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));

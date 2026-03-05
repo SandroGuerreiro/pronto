@@ -58,16 +58,7 @@ pub fn check_pronto_update_sync() -> HomebrewStatus {
 
     match output {
         Ok(out) => {
-            if !out.status.success() {
-                return HomebrewStatus {
-                    available: true,
-                    update_available: false,
-                    installed_version: String::new(),
-                    latest_version: String::new(),
-                    checked_at: chrono::Utc::now().to_rfc3339(),
-                };
-            }
-
+            // Try to parse JSON regardless of exit code (brew may return non-zero but valid JSON)
             match serde_json::from_slice::<BrewOutdatedResponse>(&out.stdout) {
                 Ok(resp) => {
                     if let Some(cask) = resp.casks.iter().find(|c| c.name == "pronto") {

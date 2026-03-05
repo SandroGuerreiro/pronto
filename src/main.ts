@@ -117,6 +117,7 @@ function updatePollStatus() {
 
 function updateBrewIndicator(status: HomebrewStatus | null) {
   const indicator = document.getElementById("brew-indicator")!;
+  console.log("[brew] updateBrewIndicator called:", status);
   if (!status || !status.update_available) {
     indicator.style.display = "none";
     return;
@@ -129,8 +130,14 @@ function updateBrewIndicator(status: HomebrewStatus | null) {
   indicator.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    navigator.clipboard.writeText("brew update && brew upgrade --cask pronto").catch(() => {
-      console.error("Failed to copy to clipboard");
+    invoke("update_brew").then(() => {
+      console.log("Brew update completed");
+    }).catch((err) => {
+      console.error("Brew update failed:", err);
+      // Fallback to clipboard
+      navigator.clipboard.writeText("brew update && brew upgrade --cask pronto").catch(() => {
+        console.error("Failed to copy to clipboard");
+      });
     });
   };
 }
