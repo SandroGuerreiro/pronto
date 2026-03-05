@@ -1453,6 +1453,10 @@ details[open] > .section-header .accordion-chevron::before {
   background: rgba(245, 158, 11, 0.12);
 }
 
+.brew-indicator.updating {
+  opacity: 0.8;
+}
+
 .spinner {
   width: 10px;
   height: 10px;

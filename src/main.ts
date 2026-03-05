@@ -117,7 +117,6 @@ function updatePollStatus() {
 
 function updateBrewIndicator(status: HomebrewStatus | null) {
   const indicator = document.getElementById("brew-indicator")!;
-  console.log("[brew] updateBrewIndicator called:", status);
   if (!status || !status.update_available) {
     indicator.style.display = "none";
     return;
@@ -125,15 +124,30 @@ function updateBrewIndicator(status: HomebrewStatus | null) {
 
   indicator.innerHTML = `↑ v${status.latest_version}`;
   indicator.style.display = "";
-  indicator.title = `Update available: ${status.installed_version} → ${status.latest_version}`;
+  const installedVer = status.installed_version.replace(/\.?upgrading/i, "");
+  indicator.title = `Update available: ${installedVer} → ${status.latest_version}`;
 
   indicator.onclick = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    const originalHtml = indicator.innerHTML;
+    indicator.classList.add("updating");
+    indicator.style.pointerEvents = "none";
+
+    let dotCount = 0;
+    const dotInterval = setInterval(() => {
+      dotCount = (dotCount % 3) + 1;
+      indicator.innerHTML = "⟳ Updating" + ".".repeat(dotCount);
+    }, 400);
+
     invoke("update_brew").then(() => {
-      console.log("Brew update completed");
+      // Update will trigger app restart
     }).catch((err) => {
       console.error("Brew update failed:", err);
+      clearInterval(dotInterval);
+      indicator.classList.remove("updating");
+      indicator.innerHTML = originalHtml;
+      indicator.style.pointerEvents = "auto";
       // Fallback to clipboard
       navigator.clipboard.writeText("brew update && brew upgrade --cask pronto").catch(() => {
         console.error("Failed to copy to clipboard");

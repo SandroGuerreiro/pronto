@@ -975,9 +975,18 @@ fn create_notify_window(app: &tauri::AppHandle) {
 
     if let Ok(win) = win {
         use tauri_plugin_positioner::{Position, WindowExt};
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = win.move_window(Position::TrayBottomCenter);
+        // Try to position at tray; if tray not ready, fall back to top-right
+        let old_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {})); // Suppress panic output
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            win.move_window(Position::TrayBottomCenter)
         }));
+        std::panic::set_hook(old_hook); // Restore original hook
+
+        if result.is_err() {
+            // Tray position not available (e.g., after restart), use top-right fallback
+            let _ = win.move_window(Position::TopRight);
+        }
 
         #[cfg(target_os = "macos")]
         if let Some(prev) = prev_app {
@@ -1030,7 +1039,11 @@ fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, messa
         message: message.to_string(),
     };
 
-    let timeout_ms: u64 = if kind == "error" { 7000 } else { 3000 };
+    let timeout_ms: u64 = match kind {
+        "error" => 7000,
+        "brew_update" => 8000,
+        _ => 3000,
+    };
 
     // If the window already exists, just update its content in place
     if let Some(win) = app.get_webview_window("notify") {
@@ -1083,9 +1096,7 @@ async fn update_brew(app: tauri::AppHandle) -> Result<(), String> {
 
     // Restart the app
     tokio::time::sleep(Duration::from_millis(500)).await;
-    app.restart();
-
-    Ok(())
+    app.restart()
 }
 
 #[tauri::command]
@@ -1449,9 +1460,6 @@ async fn poll_brew(app: tauri::AppHandle) {
                     latest_version: String::new(),
                     checked_at: chrono::Utc::now().to_rfc3339(),
                 });
-
-            eprintln!("[brew-check] available: {}, update_available: {}, {} → {}",
-                status.available, status.update_available, status.installed_version, status.latest_version);
 
             let Some(state) = app.try_state::<AppState>() else {
                 tokio::time::sleep(Duration::from_secs(60)).await;
