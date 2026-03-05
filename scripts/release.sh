@@ -246,6 +246,8 @@ main() {
             log_info "Step 3/8: App already built, skipping..."
         else
             log_info "Step 3/8: Building Tauri app..."
+            # Clean dist folder to ensure fresh frontend build
+            rm -rf "$PROJECT_ROOT/dist"
             if ! pnpm tauri build --bundles app; then
                 log_error "Build failed. Resume with: $0 $new_version '$release_notes' --force-from-step 3"
                 exit 1
