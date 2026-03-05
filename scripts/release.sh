@@ -105,8 +105,9 @@ check_completion_status() {
         status="${status}2"
     fi
 
-    # Check if build artifacts exist
-    if [ -d "$PROJECT_ROOT/src-tauri/target/release/bundle/macos/Pronto.app" ]; then
+    # Check if build artifacts exist with correct version
+    local app_plist="$PROJECT_ROOT/src-tauri/target/release/bundle/macos/Pronto.app/Contents/Info.plist"
+    if [ -f "$app_plist" ] && defaults read "$app_plist" CFBundleShortVersionString 2>/dev/null | grep -q "^${new_version}$"; then
         status="${status}3"
     fi
 
