@@ -244,6 +244,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
+  // Load and display app version
+  invoke<string>("get_app_version").then((version) => {
+    const versionEl = document.getElementById("version-text");
+    if (versionEl) {
+      versionEl.textContent = `v${version}`;
+    }
+  }).catch(() => {
+    // Silently fail if version can't be loaded
+  });
+
   // Wire up inter-module callbacks
   initPrefs(
     () => renderActiveTab(),

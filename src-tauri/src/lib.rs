@@ -490,6 +490,11 @@ async fn check_auth(app: tauri::AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn get_app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
 async fn start_login() -> Result<auth::DeviceCodeResponse, String> {
     auth::start_device_flow().await
 }
@@ -1375,6 +1380,7 @@ pub fn run() {
             dismiss_pr,
             dismiss_workflow,
             check_auth,
+            get_app_version,
             start_login,
             poll_login,
             login_with_pat,

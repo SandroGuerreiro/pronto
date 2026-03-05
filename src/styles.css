@@ -1421,8 +1421,14 @@ details[open] > .section-header .accordion-chevron::before {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-shrink: 0;
+}
+
+.version-text {
+  font-size: 10px;
+  color: #52525b;
+  font-weight: 500;
 }
 
 .poll-status {
