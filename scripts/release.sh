@@ -272,6 +272,10 @@ main() {
             # Remove old DMG if exists to avoid hdiutil issues
             rm -f "$dmg_path"
 
+            # Ad-hoc sign the app so macOS doesn't flag it as damaged
+            codesign --force --deep -s - "$app_path"
+            log_success "Ad-hoc signed app"
+
             # Create a staging directory so the .app appears at the DMG root
             local staging_dir=$(mktemp -d)
             cp -R "$app_path" "$staging_dir/Pronto.app"
@@ -372,6 +376,12 @@ cask "${CASK_NAME}" do
   homepage "https://github.com/sandroguerreiro/pronto"
 
   app "Pronto.app"
+
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-d", "com.apple.quarantine", "#{appdir}/Pronto.app"],
+                   sudo: false
+  end
 
   zap trash: [
     "~/Library/Application Support/com.pronto.desktop",
