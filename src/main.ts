@@ -203,10 +203,10 @@ function addConfirmedClickHandler(btn: HTMLElement, action: () => Promise<void>)
 // ── Notification window ───────────────────────────────────────────────────────
 
 async function initNotificationView() {
-  const data = await invoke<NotifyData | null>("get_notification_data");
-  if (!data) { setTimeout(() => getCurrentWindow().close(), 100); return; }
+  const items = await invoke<NotifyData[]>("get_notification_data");
+  if (!items || items.length === 0) return;
 
-  const isError = data.kind === "error";
+  const data = items[items.length - 1];
 
   document.body.innerHTML = `
     <div class="notify-popup notify-${data.kind}">
@@ -214,10 +214,12 @@ async function initNotificationView() {
         <div class="notify-title">${data.title}</div>
         <div class="notify-message">${data.message}</div>
       </div>
+      <button class="notify-dismiss" id="notify-dismiss-btn">✕</button>
     </div>
   `;
-
-  setTimeout(() => getCurrentWindow().close(), isError ? 7000 : 3000);
+  document.getElementById("notify-dismiss-btn")!.addEventListener("click", () => {
+    invoke("dismiss_notification");
+  });
 }
 
 // ── Follow toast ──────────────────────────────────────────────────────────────

@@ -268,6 +268,10 @@ pub fn toggle_window(app: &AppHandle) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
+            // Dismiss any notification banner when opening the popup
+            if let Some(notify) = app.get_webview_window("notify") {
+                let _ = notify.destroy();
+            }
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _ = window.move_window(Position::TrayCenter);
             }));
