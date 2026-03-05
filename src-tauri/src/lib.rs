@@ -214,7 +214,8 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     pub last_tray_attention: Mutex<Option<bool>>,
     pub viewer_login: Mutex<String>,
-    pub pending_notification: Mutex<Option<NotifyData>>,
+    pub pending_notifications: Mutex<Vec<NotifyData>>,
+    pub notify_close_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -922,19 +923,7 @@ fn get_text_for_follow() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, message: &str) {
-    if let Some(state) = app.try_state::<AppState>() {
-        *state.pending_notification.lock().unwrap() = Some(NotifyData {
-            kind: kind.to_string(),
-            title: title.to_string(),
-            message: message.to_string(),
-        });
-    }
-
-    if let Some(win) = app.get_webview_window("notify") {
-        let _ = win.close();
-    }
-
+fn create_notify_window(app: &tauri::AppHandle) {
     #[cfg(debug_assertions)]
     let url = tauri::WebviewUrl::External("http://localhost:1420/".parse().unwrap());
     #[cfg(not(debug_assertions))]
@@ -962,12 +951,10 @@ fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, messa
 
     if let Ok(win) = win {
         use tauri_plugin_positioner::{Position, WindowExt};
-        // move_window can panic if tray position is not set (e.g. from background thread)
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = win.move_window(Position::TrayBottomCenter);
         }));
 
-        // Restore focus to the previously active app
         #[cfg(target_os = "macos")]
         if let Some(prev) = prev_app {
             use objc2_app_kit::NSApplicationActivationOptions;
@@ -976,10 +963,85 @@ fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, messa
     }
 }
 
+fn schedule_notify_close(app: &tauri::AppHandle, timeout_ms: u64) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+
+    // Cancel any previous timer
+    if let Some(tx) = state.notify_close_tx.lock().unwrap().take() {
+        let _ = tx.send(());
+    }
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    *state.notify_close_tx.lock().unwrap() = Some(tx);
+
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout_ms)) => {
+                let h = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    if let Some(win) = h.get_webview_window("notify") {
+                        let _ = win.destroy();
+                    }
+                });
+            }
+            _ = rx => {}
+        }
+    });
+}
+
+fn render_notify_js(data: &NotifyData) -> String {
+    let kind = data.kind.replace('\'', "\\'");
+    let title = data.title.replace('\'', "\\'");
+    let message = data.message.replace('\'', "\\'");
+    format!(
+        "document.body.innerHTML = '<div class=\"notify-popup notify-{kind}\"><div class=\"notify-content\"><div class=\"notify-title\">{title}</div><div class=\"notify-message\">{message}</div></div><button class=\"notify-dismiss\" onclick=\"window.__TAURI__.core.invoke(\\x27dismiss_notification\\x27)\">✕</button></div>';"
+    )
+}
+
+fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, message: &str) {
+    let data = NotifyData {
+        kind: kind.to_string(),
+        title: title.to_string(),
+        message: message.to_string(),
+    };
+
+    let timeout_ms: u64 = if kind == "error" { 7000 } else { 3000 };
+
+    // If the window already exists, just update its content in place
+    if let Some(win) = app.get_webview_window("notify") {
+        let _ = win.eval(&render_notify_js(&data));
+        schedule_notify_close(app, timeout_ms);
+        return;
+    }
+
+    // Store data for the new window to read on init
+    if let Some(state) = app.try_state::<AppState>() {
+        state.pending_notifications.lock().unwrap().clear();
+        state.pending_notifications.lock().unwrap().push(data);
+    }
+
+    create_notify_window(app);
+    schedule_notify_close(app, timeout_ms);
+}
+
 #[tauri::command]
-fn get_notification_data(app: tauri::AppHandle) -> Option<NotifyData> {
+fn get_notification_data(app: tauri::AppHandle) -> Vec<NotifyData> {
     app.try_state::<AppState>()
-        .and_then(|s| s.pending_notification.lock().unwrap().take())
+        .map(|s| std::mem::take(&mut *s.pending_notifications.lock().unwrap()))
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn dismiss_notification(app: tauri::AppHandle) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Some(tx) = state.notify_close_tx.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
+    }
+    if let Some(win) = app.get_webview_window("notify") {
+        let _ = win.destroy();
+    }
 }
 
 fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
@@ -1316,6 +1378,7 @@ pub fn run() {
             update_settings,
             update_global_shortcuts,
             get_notification_data,
+            dismiss_notification,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));
@@ -1329,7 +1392,8 @@ pub fn run() {
                 http_client: reqwest::Client::new(),
                 last_tray_attention: Mutex::new(None),
                 viewer_login: Mutex::new(String::new()),
-                pending_notification: Mutex::new(None),
+                pending_notifications: Mutex::new(Vec::new()),
+                notify_close_tx: Mutex::new(None),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
