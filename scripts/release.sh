@@ -272,11 +272,18 @@ main() {
             # Remove old DMG if exists to avoid hdiutil issues
             rm -f "$dmg_path"
 
-            if ! hdiutil create -volname "Pronto" -srcfolder "$app_path" -ov -format UDZO "$dmg_path"; then
+            # Create a staging directory so the .app appears at the DMG root
+            local staging_dir=$(mktemp -d)
+            cp -R "$app_path" "$staging_dir/Pronto.app"
+            ln -s /Applications "$staging_dir/Applications"
+
+            if ! hdiutil create -volname "Pronto" -srcfolder "$staging_dir" -ov -format UDZO "$dmg_path"; then
+                rm -rf "$staging_dir"
                 log_error "Failed to create DMG"
                 log_error "Resume with: $0 $new_version '$release_notes' --force-from-step 4"
                 exit 1
             fi
+            rm -rf "$staging_dir"
             log_success "Created DMG: $dmg_filename"
 
             # Copy DMG to project root
