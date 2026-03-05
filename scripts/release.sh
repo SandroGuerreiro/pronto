@@ -224,6 +224,8 @@ main() {
             bump_version_in_file "$PROJECT_ROOT/package.json" "$current_version" "$new_version"
             bump_version_in_file "$PROJECT_ROOT/src-tauri/tauri.conf.json" "$current_version" "$new_version"
             bump_version_in_file "$PROJECT_ROOT/src-tauri/Cargo.toml" "$current_version" "$new_version"
+            # Regenerate Cargo.lock with the new version
+            (cd "$PROJECT_ROOT/src-tauri" && cargo update --workspace)
             log_success "Versions bumped"
         fi
     fi
