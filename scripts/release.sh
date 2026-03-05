@@ -276,6 +276,10 @@ main() {
                 exit 1
             fi
             log_success "Created DMG: $dmg_filename"
+
+            # Copy DMG to project root
+            cp "$dmg_path" "$PROJECT_ROOT/$dmg_filename"
+            log_success "Copied DMG to project root: $PROJECT_ROOT/$dmg_filename"
         fi
     fi
 
