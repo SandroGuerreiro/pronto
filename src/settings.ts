@@ -339,7 +339,7 @@ export async function showSettings() {
                 <label class="settings-label">
                   <div>
                     <span>CI failed</span>
-                    <div class="settings-hint">Checks went from passing to failing</div>
+                    <div class="settings-hint">Checks are failing (including re-runs and new commits)</div>
                   </div>
                   <input type="checkbox" id="notif-owned-checks_failed" class="settings-toggle"${_notifPrefsOwned.checks_failed ? " checked" : ""} />
                 </label>
@@ -348,7 +348,7 @@ export async function showSettings() {
                 <label class="settings-label">
                   <div>
                     <span>CI passed</span>
-                    <div class="settings-hint">Checks recovered — your PR may be ready to merge</div>
+                    <div class="settings-hint">Checks are passing (including after new commits)</div>
                   </div>
                   <input type="checkbox" id="notif-owned-checks_recovered" class="settings-toggle"${_notifPrefsOwned.checks_recovered ? " checked" : ""} />
                 </label>

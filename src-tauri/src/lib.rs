@@ -442,8 +442,13 @@ fn process_result(
                 send_attention_notification(app, &result, &seen);
             }
 
+            let attention_set: HashSet<&str> =
+                result.attention_urls.iter().map(|s| s.as_str()).collect();
             for pr in result.open.iter().chain(result.followed_open.iter()) {
-                if !seen.contains_key(&pr.url) {
+                // Update fingerprint for PRs not in attention, so we track
+                // intermediate states (e.g. PENDING) for future change detection.
+                // Attention PRs keep their old fingerprint until dismissed.
+                if !attention_set.contains(pr.url.as_str()) {
                     seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
                 }
             }

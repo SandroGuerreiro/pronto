@@ -63,20 +63,21 @@ fn load_tray_icon_inverted() -> Image<'static> {
 }
 
 /// Captures the full PR state so we can detect actual changes between polls.
+/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid
 pub fn attention_fingerprint(pr: &PullRequest) -> String {
     let review = pr.review_decision.as_deref().unwrap_or("");
-    let checks = pr
-        .commits
-        .nodes
-        .first()
+    let head = pr.commits.nodes.first();
+    let checks = head
         .and_then(|n| n.commit.status_check_rollup.as_ref())
         .map(|r| r.state.as_str())
         .unwrap_or("");
+    let oid = head.map(|n| n.commit.oid.as_str()).unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
     let in_queue = pr.merge_queue_entry.is_some();
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    format!("{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter)
+    format!("{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid)
 }
+
 
 /// Computes which individual elements changed on a PR by comparing against the old fingerprint.
 pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &str) -> PrElementChanges {
@@ -85,7 +86,6 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         return PrElementChanges::default();
     }
     let old_review = parts[0];
-    let old_checks = parts[1];
     let old_comment_count = parts[2].parse::<i32>().unwrap_or(0);
     let old_unresolved = parts[3].parse::<usize>().unwrap_or(0);
     let old_in_queue = parts[4] == "true";
@@ -111,10 +111,8 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         became_review_required: old_review != "REVIEW_REQUIRED" && new_review == "REVIEW_REQUIRED",
         became_changes_requested: old_review != "CHANGES_REQUESTED" && new_review == "CHANGES_REQUESTED",
         became_approved: old_review != "APPROVED" && new_review == "APPROVED",
-        checks_failed: !matches!(old_checks, "FAILURE" | "ERROR")
-            && matches!(new_checks, "FAILURE" | "ERROR"),
-        checks_recovered: matches!(old_checks, "FAILURE" | "ERROR")
-            && new_checks == "SUCCESS",
+        checks_failed: matches!(new_checks, "FAILURE" | "ERROR"),
+        checks_recovered: new_checks == "SUCCESS",
         kicked_from_queue: old_in_queue && !new_in_queue,
         new_comment: has_new_comment || new_unresolved > old_unresolved,
     }

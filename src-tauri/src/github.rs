@@ -140,6 +140,7 @@ pub struct CommitNode {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Commit {
+    pub oid: String,
     #[serde(rename = "statusCheckRollup")]
     pub status_check_rollup: Option<StatusCheckRollup>,
 }
@@ -286,7 +287,7 @@ async fn fetch_prs_for_author(
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
-        commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -307,7 +308,7 @@ async fn fetch_prs_for_author(
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
-        commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -328,7 +329,7 @@ async fn fetch_prs_for_author(
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
-        commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -459,7 +460,7 @@ async fn fetch_prs_by_url(
       reviews(states: APPROVED) {{ totalCount }}
       comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
       reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
-      commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+      commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
       author {{ login }}
       repository {{ name owner {{ login }} }}
     }}
