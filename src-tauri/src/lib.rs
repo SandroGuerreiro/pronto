@@ -134,7 +134,7 @@ pub struct Settings {
     pub notify_on_merged: bool,
     #[serde(default)]
     pub notify_on_closed: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub homebrew_check_enabled: bool,
     #[serde(default = "default_homebrew_check_interval")]
     pub homebrew_check_interval_secs: u64,
@@ -900,54 +900,125 @@ fn simulate_cmd_c() {
     }
 }
 
-/// Try to extract a GitHub PR URL from the clipboard HTML content.
-/// When a user selects a link in the browser and copies, the plain text is the
-/// link label (e.g. PR title), but the HTML clipboard contains the actual href URL.
-fn extract_pr_url_from_clipboard_html() -> Option<String> {
-    use std::process::Command;
+/// Read the selected text from the focused UI element using the macOS Accessibility API.
+/// This reads `kAXSelectedTextAttribute` directly — no clipboard manipulation needed.
+/// Requires Accessibility permission (same as the existing Cmd+C simulation).
+fn get_selected_text_ax() -> Option<String> {
+    use std::ffi::c_void;
+    use std::ptr;
 
-    // Use JXA (JavaScript for Automation) to read the HTML pasteboard type
-    let output = Command::new("osascript")
-        .arg("-l")
-        .arg("JavaScript")
-        .arg("-e")
-        .arg(r#"ObjC.import("AppKit");var pb=$.NSPasteboard.generalPasteboard;var h=pb.stringForType($.NSPasteboardTypeHTML);h?h.js:"";"#)
-        .output()
-        .ok()?;
-    let html = String::from_utf8(output.stdout).ok()?;
-    if html.trim().is_empty() {
-        return None;
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXUIElementCreateSystemWide() -> *mut c_void;
+        fn AXUIElementCopyAttributeValue(
+            element: *mut c_void,
+            attribute: *const c_void,
+            value: *mut *mut c_void,
+        ) -> i32;
     }
 
-    // Look for href attributes containing GitHub PR URLs
-    for cap in html.split("href=\"").skip(1) {
-        if let Some(end) = cap.find('"') {
-            let href = &cap[..end];
-            if let Some(normalized) = normalize_github_pr_url(href) {
-                return Some(normalized);
-            }
-        }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: *mut c_void);
+        fn CFStringGetLength(s: *const c_void) -> isize;
+        fn CFStringGetCString(
+            s: *const c_void,
+            buffer: *mut u8,
+            buffer_size: isize,
+            encoding: u32,
+        ) -> u8;
     }
-    // Also try href='...' (single quotes)
-    for cap in html.split("href='").skip(1) {
-        if let Some(end) = cap.find('\'') {
-            let href = &cap[..end];
-            if let Some(normalized) = normalize_github_pr_url(href) {
-                return Some(normalized);
-            }
-        }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFStringCreateWithCString(
+            alloc: *const c_void,
+            c_str: *const u8,
+            encoding: u32,
+        ) -> *mut c_void;
     }
-    None
+
+    unsafe {
+        let system = AXUIElementCreateSystemWide();
+        if system.is_null() {
+            return None;
+        }
+
+        // Create the attribute name CFStrings
+        let ax_focused = CFStringCreateWithCString(
+            ptr::null(),
+            b"AXFocusedUIElement\0".as_ptr(),
+            0x08000100, // kCFStringEncodingUTF8
+        );
+        let ax_selected_text = CFStringCreateWithCString(
+            ptr::null(),
+            b"AXSelectedText\0".as_ptr(),
+            0x08000100,
+        );
+        if ax_focused.is_null() || ax_selected_text.is_null() {
+            if !ax_focused.is_null() { CFRelease(ax_focused); }
+            if !ax_selected_text.is_null() { CFRelease(ax_selected_text); }
+            CFRelease(system);
+            return None;
+        }
+
+        // Get the focused UI element
+        let mut focused: *mut c_void = ptr::null_mut();
+        let err = AXUIElementCopyAttributeValue(system, ax_focused as *const _, &mut focused);
+        CFRelease(ax_focused);
+        CFRelease(system);
+        if err != 0 || focused.is_null() {
+            return None;
+        }
+
+        // Get the selected text from the focused element
+        let mut selected_text: *mut c_void = ptr::null_mut();
+        let err = AXUIElementCopyAttributeValue(focused, ax_selected_text as *const _, &mut selected_text);
+        CFRelease(ax_selected_text);
+        CFRelease(focused);
+        if err != 0 || selected_text.is_null() {
+            return None;
+        }
+
+        // Convert CFString to Rust String
+        let text_ptr = selected_text as *const c_void;
+        let len = CFStringGetLength(text_ptr);
+        if len <= 0 {
+            CFRelease(selected_text);
+            return None;
+        }
+        let buf_size = (len * 4 + 1) as usize; // UTF-8 worst case
+        let mut buf = vec![0u8; buf_size];
+        let ok = CFStringGetCString(
+            text_ptr,
+            buf.as_mut_ptr(),
+            buf_size as isize,
+            0x08000100, // kCFStringEncodingUTF8
+        );
+        CFRelease(selected_text);
+        if ok == 0 {
+            return None;
+        }
+
+        let cstr = std::ffi::CStr::from_ptr(buf.as_ptr() as *const _);
+        cstr.to_str().ok().map(|s| s.to_string()).filter(|s| !s.is_empty())
+    }
 }
 
-/// Try to get a GitHub PR URL — first via selected text (if Accessibility is granted),
-/// otherwise fall back to whatever is currently on the clipboard.
+/// Try to get a GitHub PR URL — first from the selected text (Accessibility API),
+/// then via Cmd+C simulation, and finally fall back to the clipboard contents.
 fn get_text_for_follow() -> Option<String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
 
+    // First, try reading the selected text directly via the Accessibility API.
+    // This doesn't touch the clipboard at all.
     if is_accessibility_trusted() {
-        // Save current clipboard
+        if let Some(selected) = get_selected_text_ax() {
+            return Some(selected);
+        }
+
+        // Fallback: simulate Cmd+C for apps that don't expose selected text via AX
         let original = Command::new("pbpaste").output().ok()
             .and_then(|o| String::from_utf8(o.stdout).ok());
 
@@ -967,35 +1038,6 @@ fn get_text_for_follow() -> Option<String> {
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .unwrap_or_default();
 
-        // Check if the plain text is already a valid PR URL
-        if !selected.is_empty() {
-            if normalize_github_pr_url(selected.trim()).is_some() {
-                // Restore original clipboard
-                let restore_text = original.unwrap_or_default();
-                if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-                    if let Some(stdin) = child.stdin.as_mut() {
-                        let _ = stdin.write_all(restore_text.as_bytes());
-                    }
-                    let _ = child.wait();
-                }
-                return Some(selected);
-            }
-
-            // Plain text isn't a PR URL (e.g. user selected a link, got the link text).
-            // Try extracting the actual URL from the HTML clipboard representation.
-            if let Some(pr_url) = extract_pr_url_from_clipboard_html() {
-                // Restore original clipboard
-                let restore_text = original.unwrap_or_default();
-                if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-                    if let Some(stdin) = child.stdin.as_mut() {
-                        let _ = stdin.write_all(restore_text.as_bytes());
-                    }
-                    let _ = child.wait();
-                }
-                return Some(pr_url);
-            }
-        }
-
         // Restore original clipboard
         let restore_text = original.unwrap_or_default();
         if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
@@ -1011,22 +1053,9 @@ fn get_text_for_follow() -> Option<String> {
     }
 
     // Fallback: just read current clipboard contents
-    let clipboard_text = Command::new("pbpaste").output().ok()
+    Command::new("pbpaste").output().ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .filter(|s| !s.is_empty());
-
-    // If clipboard text isn't a PR URL, also try the HTML clipboard
-    if let Some(ref text) = clipboard_text {
-        if normalize_github_pr_url(text.trim()).is_some() {
-            return clipboard_text;
-        }
-        // Try HTML clipboard for the actual link href
-        if let Some(pr_url) = extract_pr_url_from_clipboard_html() {
-            return Some(pr_url);
-        }
-    }
-
-    clipboard_text
+        .filter(|s| !s.is_empty())
 }
 
 fn create_notify_window(app: &tauri::AppHandle) {
@@ -1385,14 +1414,14 @@ fn update_global_shortcuts(
                                 None => show_tray_notification(
                                     &h2, "error",
                                     "Not a PR URL",
-                                    "Select or copy a GitHub PR URL and try again",
+                                    "Open a GitHub PR in your browser or copy the URL",
                                 ),
                             }
                         }
                         None => show_tray_notification(
                             &h2, "error",
                             "No URL Found",
-                            "Select or copy a GitHub PR URL first",
+                            "Open a GitHub PR in your browser or copy the URL",
                         ),
                     }
                 });
