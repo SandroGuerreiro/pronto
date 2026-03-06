@@ -126,6 +126,19 @@ pub struct ReviewThreads {
 pub struct ReviewThread {
     #[serde(rename = "isResolved")]
     pub is_resolved: bool,
+    pub comments: ReviewThreadComments,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReviewThreadComments {
+    #[serde(rename = "totalCount")]
+    pub total_count: i32,
+    pub nodes: Vec<ReviewThreadComment>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReviewThreadComment {
+    pub author: Option<Owner>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -286,7 +299,7 @@ async fn fetch_prs_for_author(
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+        reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
@@ -307,7 +320,7 @@ async fn fetch_prs_for_author(
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+        reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
@@ -328,7 +341,7 @@ async fn fetch_prs_for_author(
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+        reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
@@ -459,7 +472,7 @@ async fn fetch_prs_by_url(
       reviewDecision
       reviews(states: APPROVED) {{ totalCount }}
       comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-      reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
+      reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
       commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
       author {{ login }}
       repository {{ name owner {{ login }} }}

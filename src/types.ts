@@ -51,6 +51,7 @@ export interface CommitConnection {
 
 export interface ReviewThread {
   isResolved: boolean;
+  comments: { totalCount: number };
 }
 
 export interface ReviewThreads {

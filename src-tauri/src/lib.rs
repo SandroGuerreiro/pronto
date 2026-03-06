@@ -291,16 +291,19 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>, viewer_login:
         }
     }
 
-    let new_unresolved = pr
-        .review_threads
-        .nodes
-        .iter()
-        .filter(|t| !t.is_resolved)
-        .count();
+    let old_thread_comments = parts.get(7).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let new_thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
+    let has_new_thread_comment_by_other = new_thread_comments > old_thread_comments
+        && pr.review_threads.nodes.iter().any(|t| {
+            t.comments.nodes.last()
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login != viewer_login)
+                .unwrap_or(true)
+        });
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
     let comment_count_changed = parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count;
     if (comment_count_changed && last_human_commenter != viewer_login)
-        || parts[3].parse::<usize>().unwrap_or(0) != new_unresolved
+        || has_new_thread_comment_by_other
     {
         changes.push("New comments");
     }

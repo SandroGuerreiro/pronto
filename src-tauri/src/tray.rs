@@ -63,7 +63,7 @@ fn load_tray_icon_inverted() -> Image<'static> {
 }
 
 /// Captures the full PR state so we can detect actual changes between polls.
-/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid
+/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments
 pub fn attention_fingerprint(pr: &PullRequest) -> String {
     let review = pr.review_decision.as_deref().unwrap_or("");
     let head = pr.commits.nodes.first();
@@ -73,9 +73,10 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
         .unwrap_or("");
     let oid = head.map(|n| n.commit.oid.as_str()).unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+    let thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
     let in_queue = pr.merge_queue_entry.is_some();
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    format!("{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid)
+    format!("{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments)
 }
 
 
@@ -86,9 +87,10 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         return PrElementChanges::default();
     }
     let old_review = parts[0];
+    let old_checks = parts[1];
     let old_comment_count = parts[2].parse::<i32>().unwrap_or(0);
-    let old_unresolved = parts[3].parse::<usize>().unwrap_or(0);
     let old_in_queue = parts[4] == "true";
+    let old_thread_comments = parts.get(7).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
 
     let new_review = pr.review_decision.as_deref().unwrap_or("");
     let new_checks = pr
@@ -98,8 +100,18 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         .and_then(|n| n.commit.status_check_rollup.as_ref())
         .map(|r| r.state.as_str())
         .unwrap_or("");
-    let new_unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+    let new_thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
     let new_in_queue = pr.merge_queue_entry.is_some();
+
+    // Check if there are new thread comments by someone other than the viewer.
+    // We look at threads where the last commenter is not the viewer.
+    let has_new_thread_comment_by_other = new_thread_comments > old_thread_comments
+        && pr.review_threads.nodes.iter().any(|t| {
+            t.comments.nodes.last()
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login != viewer_login)
+                .unwrap_or(true)
+        });
 
     // Only notify when new non-bot comments exist and the last human commenter is not the viewer.
     // total_count is already bot-free (adjusted at fetch time), so no bot check needed here.
@@ -111,10 +123,10 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         became_review_required: old_review != "REVIEW_REQUIRED" && new_review == "REVIEW_REQUIRED",
         became_changes_requested: old_review != "CHANGES_REQUESTED" && new_review == "CHANGES_REQUESTED",
         became_approved: old_review != "APPROVED" && new_review == "APPROVED",
-        checks_failed: matches!(new_checks, "FAILURE" | "ERROR"),
-        checks_recovered: new_checks == "SUCCESS",
+        checks_failed: !matches!(old_checks, "FAILURE" | "ERROR") && matches!(new_checks, "FAILURE" | "ERROR"),
+        checks_recovered: old_checks != "SUCCESS" && new_checks == "SUCCESS",
         kicked_from_queue: old_in_queue && !new_in_queue,
-        new_comment: has_new_comment || new_unresolved > old_unresolved,
+        new_comment: has_new_comment || has_new_thread_comment_by_other,
     }
 }
 
