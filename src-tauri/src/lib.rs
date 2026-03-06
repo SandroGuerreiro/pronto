@@ -842,7 +842,10 @@ fn parse_shortcut_string(s: &str) -> Result<Shortcut, String> {
 
 fn normalize_github_pr_url(url: &str) -> Option<String> {
     let url = url.trim();
-    let after_domain = url.strip_prefix("https://github.com/")?;
+    // Support URLs with or without scheme — Chromium browsers hide "https://" in the address bar
+    let after_domain = url.strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+        .or_else(|| url.strip_prefix("github.com/"))?;
     let parts: Vec<&str> = after_domain.splitn(4, '/').collect();
     if parts.len() < 4 || parts[2] != "pull" {
         return None;
@@ -856,203 +859,9 @@ fn normalize_github_pr_url(url: &str) -> Option<String> {
     ))
 }
 
-fn is_accessibility_trusted() -> bool {
-    use std::ffi::c_void;
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> u8;
-    }
-    unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) != 0 }
-}
-
-fn simulate_cmd_c() {
-    use std::ffi::c_void;
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGEventSourceCreate(state_id: i32) -> *mut c_void;
-        fn CGEventCreateKeyboardEvent(source: *mut c_void, virtual_key: u16, key_down: bool) -> *mut c_void;
-        fn CGEventSetFlags(event: *mut c_void, flags: u64);
-        fn CGEventPost(tap: i32, event: *mut c_void);
-        fn CFRelease(cf: *mut c_void);
-    }
-
-    const HID_SYSTEM_STATE: i32 = 1;
-    const HID_EVENT_TAP: i32 = 0;
-    const CMD_FLAG: u64 = 0x00100000;
-    const KEY_C: u16 = 8;
-
-    unsafe {
-        let source = CGEventSourceCreate(HID_SYSTEM_STATE);
-        if source.is_null() { return; }
-
-        let down = CGEventCreateKeyboardEvent(source, KEY_C, true);
-        CGEventSetFlags(down, CMD_FLAG);
-        CGEventPost(HID_EVENT_TAP, down);
-        CFRelease(down);
-
-        let up = CGEventCreateKeyboardEvent(source, KEY_C, false);
-        CGEventSetFlags(up, CMD_FLAG);
-        CGEventPost(HID_EVENT_TAP, up);
-        CFRelease(up);
-
-        CFRelease(source);
-    }
-}
-
-/// Read the selected text from the focused UI element using the macOS Accessibility API.
-/// This reads `kAXSelectedTextAttribute` directly — no clipboard manipulation needed.
-/// Requires Accessibility permission (same as the existing Cmd+C simulation).
-fn get_selected_text_ax() -> Option<String> {
-    use std::ffi::c_void;
-    use std::ptr;
-
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn AXUIElementCreateSystemWide() -> *mut c_void;
-        fn AXUIElementCopyAttributeValue(
-            element: *mut c_void,
-            attribute: *const c_void,
-            value: *mut *mut c_void,
-        ) -> i32;
-    }
-
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFRelease(cf: *mut c_void);
-        fn CFStringGetLength(s: *const c_void) -> isize;
-        fn CFStringGetCString(
-            s: *const c_void,
-            buffer: *mut u8,
-            buffer_size: isize,
-            encoding: u32,
-        ) -> u8;
-    }
-
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFStringCreateWithCString(
-            alloc: *const c_void,
-            c_str: *const u8,
-            encoding: u32,
-        ) -> *mut c_void;
-    }
-
-    unsafe {
-        let system = AXUIElementCreateSystemWide();
-        if system.is_null() {
-            return None;
-        }
-
-        // Create the attribute name CFStrings
-        let ax_focused = CFStringCreateWithCString(
-            ptr::null(),
-            b"AXFocusedUIElement\0".as_ptr(),
-            0x08000100, // kCFStringEncodingUTF8
-        );
-        let ax_selected_text = CFStringCreateWithCString(
-            ptr::null(),
-            b"AXSelectedText\0".as_ptr(),
-            0x08000100,
-        );
-        if ax_focused.is_null() || ax_selected_text.is_null() {
-            if !ax_focused.is_null() { CFRelease(ax_focused); }
-            if !ax_selected_text.is_null() { CFRelease(ax_selected_text); }
-            CFRelease(system);
-            return None;
-        }
-
-        // Get the focused UI element
-        let mut focused: *mut c_void = ptr::null_mut();
-        let err = AXUIElementCopyAttributeValue(system, ax_focused as *const _, &mut focused);
-        CFRelease(ax_focused);
-        CFRelease(system);
-        if err != 0 || focused.is_null() {
-            return None;
-        }
-
-        // Get the selected text from the focused element
-        let mut selected_text: *mut c_void = ptr::null_mut();
-        let err = AXUIElementCopyAttributeValue(focused, ax_selected_text as *const _, &mut selected_text);
-        CFRelease(ax_selected_text);
-        CFRelease(focused);
-        if err != 0 || selected_text.is_null() {
-            return None;
-        }
-
-        // Convert CFString to Rust String
-        let text_ptr = selected_text as *const c_void;
-        let len = CFStringGetLength(text_ptr);
-        if len <= 0 {
-            CFRelease(selected_text);
-            return None;
-        }
-        let buf_size = (len * 4 + 1) as usize; // UTF-8 worst case
-        let mut buf = vec![0u8; buf_size];
-        let ok = CFStringGetCString(
-            text_ptr,
-            buf.as_mut_ptr(),
-            buf_size as isize,
-            0x08000100, // kCFStringEncodingUTF8
-        );
-        CFRelease(selected_text);
-        if ok == 0 {
-            return None;
-        }
-
-        let cstr = std::ffi::CStr::from_ptr(buf.as_ptr() as *const _);
-        cstr.to_str().ok().map(|s| s.to_string()).filter(|s| !s.is_empty())
-    }
-}
-
-/// Try to get a GitHub PR URL — first from the selected text (Accessibility API),
-/// then via Cmd+C simulation, and finally fall back to the clipboard contents.
+/// Read the clipboard contents. No permissions required.
 fn get_text_for_follow() -> Option<String> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    // First, try reading the selected text directly via the Accessibility API.
-    // This doesn't touch the clipboard at all.
-    if is_accessibility_trusted() {
-        if let Some(selected) = get_selected_text_ax() {
-            return Some(selected);
-        }
-
-        // Fallback: simulate Cmd+C for apps that don't expose selected text via AX
-        let original = Command::new("pbpaste").output().ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok());
-
-        // Clear clipboard so we can detect if nothing was selected
-        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-            if let Some(stdin) = child.stdin.as_mut() {
-                let _ = stdin.write_all(b"");
-            }
-            let _ = child.wait();
-        }
-
-        std::thread::sleep(Duration::from_millis(50));
-        simulate_cmd_c();
-        std::thread::sleep(Duration::from_millis(150));
-
-        let selected = Command::new("pbpaste").output().ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .unwrap_or_default();
-
-        // Restore original clipboard
-        let restore_text = original.unwrap_or_default();
-        if let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn() {
-            if let Some(stdin) = child.stdin.as_mut() {
-                let _ = stdin.write_all(restore_text.as_bytes());
-            }
-            let _ = child.wait();
-        }
-
-        if !selected.is_empty() {
-            return Some(selected);
-        }
-    }
-
-    // Fallback: just read current clipboard contents
+    use std::process::Command;
     Command::new("pbpaste").output().ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .filter(|s| !s.is_empty())
@@ -1409,19 +1218,20 @@ fn update_global_shortcuts(
                 let _ = h.run_on_main_thread(move || {
                     match clipboard_text {
                         Some(text) => {
-                            match normalize_github_pr_url(text.trim()) {
+                            let trimmed = text.trim();
+                            match normalize_github_pr_url(trimmed) {
                                 Some(pr_url) => toggle_followed_pr(&h2, pr_url),
                                 None => show_tray_notification(
                                     &h2, "error",
                                     "Not a PR URL",
-                                    "Open a GitHub PR in your browser or copy the URL",
+                                    "Copy a GitHub PR URL and try again",
                                 ),
                             }
                         }
                         None => show_tray_notification(
                             &h2, "error",
                             "No URL Found",
-                            "Open a GitHub PR in your browser or copy the URL",
+                            "Copy a GitHub PR URL first",
                         ),
                     }
                 });
