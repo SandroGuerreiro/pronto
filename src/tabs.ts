@@ -122,8 +122,8 @@ export function renderActiveTab() {
     }
 
   } else if (activeTab === "followed") {
-    if (followedUsers.length === 0) {
-      html = '<div class="empty">No followed developers. Add some in Settings.</div>';
+    if (followedUsers.length === 0 && followedPrs.size === 0) {
+      html = '<div class="empty">No followed developers or PRs. Add some in Settings.</div>';
     } else {
       const allOpen = currentResult.followed_open || [];
 
