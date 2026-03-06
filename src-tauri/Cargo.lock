@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "pronto"
-version = "0.6.93"
+version = "0.6.94"
 dependencies = [
  "chrono",
  "futures",
