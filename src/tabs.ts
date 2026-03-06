@@ -130,7 +130,7 @@ export function renderActiveTab() {
       html += renderSearchBar();
 
       // Per-user filter bar (moved below search bar)
-      if (followedUsers.length > 1) {
+      if (followedUsers.length > 1 || followedPrs.size > 0) {
         const attentionByUser: Record<string, number> = {};
         for (const pr of allOpen) {
           if (currentAttentionUrls.includes(pr.url)) {
