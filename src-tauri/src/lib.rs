@@ -1084,12 +1084,15 @@ fn get_brew_status(app: tauri::AppHandle) -> Option<homebrew::HomebrewStatus> {
 async fn update_brew(app: tauri::AppHandle) -> Result<(), String> {
     use std::process::Command;
 
-    Command::new("brew")
+    let brew_path = homebrew::find_brew_binary()
+        .ok_or_else(|| "Homebrew not found".to_string())?;
+
+    Command::new(&brew_path)
         .args(&["update"])
         .output()
         .map_err(|e| e.to_string())?;
 
-    Command::new("brew")
+    Command::new(&brew_path)
         .args(&["upgrade", "--cask", "pronto"])
         .output()
         .map_err(|e| e.to_string())?;
