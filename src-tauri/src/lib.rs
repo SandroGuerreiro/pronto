@@ -291,15 +291,15 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>, viewer_login:
         }
     }
 
-    let old_thread_comments = parts.get(7).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-    let new_thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
-    let has_new_thread_comment_by_other = new_thread_comments > old_thread_comments
-        && pr.review_threads.nodes.iter().any(|t| {
-            t.comments.nodes.last()
-                .and_then(|c| c.author.as_ref())
-                .map(|a| a.login != viewer_login)
-                .unwrap_or(true)
-        });
+    let old_thread_comments_by_others = parts.get(8).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let new_thread_comments_by_others: i32 = pr.review_threads.nodes.iter()
+        .filter(|t| t.comments.nodes.last()
+            .and_then(|c| c.author.as_ref())
+            .map(|a| a.login != viewer_login)
+            .unwrap_or(true))
+        .map(|t| t.comments.total_count)
+        .sum();
+    let has_new_thread_comment_by_other = new_thread_comments_by_others > old_thread_comments_by_others;
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
     let comment_count_changed = parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count;
     if (comment_count_changed && last_human_commenter != viewer_login)
@@ -466,7 +466,7 @@ fn process_result(
                 // intermediate states (e.g. PENDING) for future change detection.
                 // Attention PRs keep their old fingerprint until dismissed.
                 if !attention_set.contains(pr.url.as_str()) {
-                    seen.insert(pr.url.clone(), tray::attention_fingerprint(pr));
+                    seen.insert(pr.url.clone(), tray::attention_fingerprint(pr, &viewer_login));
                 }
             }
 
@@ -680,7 +680,7 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
         return;
     };
 
-    let (fingerprint, result_clone) = {
+    let (fingerprint, result_clone, viewer_login) = {
         let cache = state.cached_prs.lock().unwrap();
         let Some(result) = cache.as_ref() else { return };
         let pr_opt = result
@@ -689,14 +689,14 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
             .chain(result.followed_open.iter())
             .find(|p| p.url == url);
         let Some(pr) = pr_opt else { return };
-        (tray::attention_fingerprint(pr), result.clone())
+        let viewer_login = state.viewer_login.lock().unwrap().clone();
+        (tray::attention_fingerprint(pr, &viewer_login), result.clone(), viewer_login)
     };
 
     {
         let mut seen = state.seen_prs.lock().unwrap();
         seen.insert(url.clone(), fingerprint);
         let settings = state.settings.lock().unwrap().clone();
-        let viewer_login = state.viewer_login.lock().unwrap().clone();
         let has_attention = !tray::attention_urls(&result_clone, &seen, &settings, &viewer_login).is_empty();
         drop(seen);
         set_tray_attention(&app, has_attention);

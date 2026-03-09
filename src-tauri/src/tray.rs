@@ -63,8 +63,8 @@ fn load_tray_icon_inverted() -> Image<'static> {
 }
 
 /// Captures the full PR state so we can detect actual changes between polls.
-/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments
-pub fn attention_fingerprint(pr: &PullRequest) -> String {
+/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments|thread_comments_by_others
+pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
     let review = pr.review_decision.as_deref().unwrap_or("");
     let head = pr.commits.nodes.first();
     let checks = head
@@ -74,9 +74,16 @@ pub fn attention_fingerprint(pr: &PullRequest) -> String {
     let oid = head.map(|n| n.commit.oid.as_str()).unwrap_or("");
     let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
     let thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
+    let thread_comments_by_others: i32 = pr.review_threads.nodes.iter()
+        .filter(|t| t.comments.nodes.last()
+            .and_then(|c| c.author.as_ref())
+            .map(|a| a.login != viewer_login)
+            .unwrap_or(true))
+        .map(|t| t.comments.total_count)
+        .sum();
     let in_queue = pr.merge_queue_entry.is_some();
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    format!("{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments)
+    format!("{}|{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments, thread_comments_by_others)
 }
 
 
@@ -90,7 +97,7 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
     let old_checks = parts[1];
     let old_comment_count = parts[2].parse::<i32>().unwrap_or(0);
     let old_in_queue = parts[4] == "true";
-    let old_thread_comments = parts.get(7).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let old_thread_comments_by_others = parts.get(8).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
 
     let new_review = pr.review_decision.as_deref().unwrap_or("");
     let new_checks = pr
@@ -100,18 +107,17 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         .and_then(|n| n.commit.status_check_rollup.as_ref())
         .map(|r| r.state.as_str())
         .unwrap_or("");
-    let new_thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
     let new_in_queue = pr.merge_queue_entry.is_some();
 
-    // Check if there are new thread comments by someone other than the viewer.
-    // We look at threads where the last commenter is not the viewer.
-    let has_new_thread_comment_by_other = new_thread_comments > old_thread_comments
-        && pr.review_threads.nodes.iter().any(|t| {
-            t.comments.nodes.last()
-                .and_then(|c| c.author.as_ref())
-                .map(|a| a.login != viewer_login)
-                .unwrap_or(true)
-        });
+    // Sum comment counts only from threads where the last commenter is NOT the viewer.
+    let new_thread_comments_by_others: i32 = pr.review_threads.nodes.iter()
+        .filter(|t| t.comments.nodes.last()
+            .and_then(|c| c.author.as_ref())
+            .map(|a| a.login != viewer_login)
+            .unwrap_or(true))
+        .map(|t| t.comments.total_count)
+        .sum();
+    let has_new_thread_comment_by_other = new_thread_comments_by_others > old_thread_comments_by_others;
 
     // Only notify when new non-bot comments exist and the last human commenter is not the viewer.
     // total_count is already bot-free (adjusted at fetch time), so no bot check needed here.
@@ -160,7 +166,7 @@ pub fn attention_urls(
         .iter()
         .chain(result.followed_open.iter())
         .filter(|pr| {
-            let fp = attention_fingerprint(pr);
+            let fp = attention_fingerprint(pr, viewer_login);
             if let Some(last_fp) = seen.get(&pr.url) {
                 if last_fp != &fp {
                     let changes = compute_element_changes(pr, last_fp, viewer_login);
