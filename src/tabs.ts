@@ -509,7 +509,15 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   const title = el.getAttribute("data-title") || "";
   if (!url) return false;
 
-  hiddenPrs.set(url, title);
+  // If it's a directly followed PR, unfollow instead of blacklisting
+  const isDirectFollow = followedPrs.has(url);
+
+  if (isDirectFollow) {
+    followedPrs.delete(url);
+  } else {
+    hiddenPrs.set(url, title);
+  }
+
   if (currentResult) {
     currentResult.open = currentResult.open.filter((pr) => pr.url !== url);
     currentResult.recently_merged = currentResult.recently_merged.filter((pr) => pr.url !== url);
@@ -521,7 +529,11 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   renderActiveTab();
 
   const current = await invoke<import("./types").Settings>("get_settings");
-  current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
+  if (isDirectFollow) {
+    current.followed_prs = [...followedPrs];
+  } else {
+    current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
+  }
   await invoke("update_settings", { settings: current });
 
   return true;
