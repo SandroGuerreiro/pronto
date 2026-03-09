@@ -10,7 +10,7 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 - **Open PRs at a glance** -- see title, repo, review status, comments, and CI checks
 - **Recently merged** -- shows PRs merged in a configurable time window (12h / 24h / 48h), in a separate tab
 - **Recently closed** -- shows unmerged closed PRs in a configurable time window (12h / 24h / 48h), disabled by default
-- **Needs attention notifications** -- tray icon badge + native macOS notification when a PR's status changes (reviews, comments, CI, merge queue transitions)
+- **Needs attention notifications** -- tray icon badge + native macOS notification when a PR's status changes (reviews, comments, CI, merge queue transitions); per-category notification preferences configurable per event type
 - **Notification actions** -- notification title is the PR name, body describes what changed; clicking the notification opens the PR and clears its attention status
 - **Dismiss on hover** -- hovering over a highlighted PR card for ~800ms acknowledges it; once all are dismissed, the tray badge clears
 - **Tab attention badges** -- the Open and Recently Merged tabs show a count of PRs needing attention
@@ -118,7 +118,8 @@ Focusing a PR card that needs attention will dismiss its attention status after 
 
 Open settings from the gear icon in the header. Settings are organized into searchable sections:
 
-- **General** -- Polling interval, notifications toggle
+- **General** -- Polling interval
+- **Notifications** -- Per-category notification preferences (Owned, Followed, Merged, Closed). Per-category event toggles: needs review, changes requested, checks failed, new reviews, threads updated, merge queue
 - **Display** -- Group by repository (accordions vs flat list), show recently merged toggle with time window, show recently closed toggle with time window
 - **Workflow** -- Monitor a single GitHub Actions workflow; configure the organization, repository, and workflow filename (e.g. `deploy.yml`). Only terminal states (success / failure) are tracked.
 - **Keys** -- Customize keyboard shortcuts for in-app navigation, tab switching, and global toggles/reload
