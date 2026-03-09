@@ -39,7 +39,7 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 ### Homebrew (recommended)
 
 ```bash
-brew install --cask --no-quarantine SandroGuerreiro/tap/pronto
+brew install --cask SandroGuerreiro/tap/pronto
 ```
 
 To update:
