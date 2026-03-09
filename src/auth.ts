@@ -152,6 +152,7 @@ export async function startLogin() {
           Open <a id="verify-link" href="#" class="login-link">${resp.verification_uri}</a> and paste the code above.
         </div>
         <div class="login-status">Waiting for authorization...</div>
+        <button id="oauth-back-btn" class="login-btn login-btn-secondary">Back</button>
       </div>
     `;
 
@@ -192,6 +193,11 @@ export async function startLogin() {
         polling = false;
       }
     }, interval);
+
+    document.getElementById("oauth-back-btn")!.addEventListener("click", () => {
+      clearInterval(poll);
+      showLogin();
+    });
   } catch {
     content.innerHTML = `
       <div class="login-view">
