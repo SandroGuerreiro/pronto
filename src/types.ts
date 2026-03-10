@@ -66,6 +66,7 @@ export interface PullRequest {
   createdAt: string;
   repository: Repository;
   mergeQueueEntry: MergeQueueEntry | null;
+  mergeStateStatus: string | null;
   reviewDecision: string | null;
   reviews: Reviews;
   comments: Comments;

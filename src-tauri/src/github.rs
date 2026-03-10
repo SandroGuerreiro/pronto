@@ -1,4 +1,3 @@
-use futures::future;
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +8,13 @@ pub struct GraphQLQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct GraphQLResponse {
-    pub data: Data,
+    pub data: Option<Data>,
+    pub errors: Option<Vec<GraphQLError>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GraphQLError {
+    pub message: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +54,8 @@ pub struct PullRequest {
     pub merged_at: Option<String>,
     #[serde(rename = "closedAt")]
     pub closed_at: Option<String>,
+    #[serde(rename = "mergeStateStatus")]
+    pub merge_state_status: Option<String>,
     pub reviews: Reviews,
     pub comments: Comments,
     #[serde(rename = "reviewThreads")]
@@ -161,60 +168,6 @@ pub struct Commit {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StatusCheckRollup {
     pub state: String,
-    #[serde(skip_serializing)]
-    contexts: Option<serde_json::Value>,
-}
-
-impl StatusCheckRollup {
-    /// Overwrites `state` by examining individual check run contexts.
-    /// GitHub's rollup can report SUCCESS before all workflow stages register their checks.
-    pub fn normalize(&mut self) {
-        let nodes = self.contexts.as_ref()
-            .and_then(|c| c.get("nodes"))
-            .and_then(|n| n.as_array());
-        let nodes = match nodes {
-            Some(n) => n,
-            None => return,
-        };
-        let mut has_failure = false;
-        let mut has_pending = false;
-        for node in nodes {
-            let typename = node.get("__typename").and_then(|v| v.as_str());
-            match typename {
-                Some("CheckRun") => {
-                    let status = node.get("status").and_then(|v| v.as_str());
-                    match status {
-                        Some("COMPLETED") => {
-                            let conclusion = node.get("conclusion").and_then(|v| v.as_str());
-                            if matches!(conclusion, Some("FAILURE" | "TIMED_OUT" | "STARTUP_FAILURE" | "ACTION_REQUIRED")) {
-                                has_failure = true;
-                            }
-                        }
-                        Some("QUEUED" | "IN_PROGRESS" | "WAITING" | "PENDING" | "REQUESTED") => {
-                            has_pending = true;
-                        }
-                        _ => {}
-                    }
-                }
-                Some("StatusContext") => {
-                    let state = node.get("state").and_then(|v| v.as_str());
-                    match state {
-                        Some("PENDING" | "EXPECTED") => has_pending = true,
-                        Some("FAILURE" | "ERROR") => has_failure = true,
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
-        }
-        // Only override rollup when contexts reveal a worse state than reported.
-        // We may not see all contexts (pagination), so never downgrade the rollup.
-        if has_failure && self.state != "FAILURE" && self.state != "ERROR" {
-            self.state = "FAILURE".into();
-        } else if has_pending && self.state == "SUCCESS" {
-            self.state = "PENDING".into();
-        }
-    }
 }
 
 pub enum PrStatus {
@@ -350,11 +303,12 @@ async fn fetch_prs_for_author(
         closedAt
         repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
+        mergeStateStatus
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
+        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -371,11 +325,12 @@ async fn fetch_prs_for_author(
         closedAt
         repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
+        mergeStateStatus
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
+        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -392,11 +347,12 @@ async fn fetch_prs_for_author(
         closedAt
         repository {{ name owner {{ login }} }}
         mergeQueueEntry {{ position }}
+        mergeStateStatus
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
+        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -405,161 +361,235 @@ async fn fetch_prs_for_author(
         ),
     };
 
-    let response = client
+    let http_response = client
         .post("https://api.github.com/graphql")
         .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(USER_AGENT, "pronto")
         .json(&query)
         .send()
-        .await?
-        .json::<GraphQLResponse>()
         .await?;
 
-    let viewer_login = response.data.viewer.login.clone();
-    let mut open = response.data.open.nodes;
+    let status = http_response.status();
+    let raw = http_response.text().await?;
+
+    if !status.is_success() {
+        let msg = format!("GitHub API returned {status}: {raw}");
+        eprintln!("[pronto] {msg}");
+        return Err(msg.into());
+    }
+
+    let response: GraphQLResponse = serde_json::from_str(&raw).map_err(|e| {
+        eprintln!("[pronto] GraphQL parse error: {e}\n[pronto] Response body: {raw}");
+        e
+    })?;
+
+    if let Some(errors) = &response.errors {
+        let msgs: Vec<&str> = errors.iter().map(|e| e.message.as_str()).collect();
+        eprintln!("[pronto] GraphQL errors: {}", msgs.join("; "));
+    }
+
+    let data = response.data.ok_or_else(|| {
+        format!("GitHub GraphQL returned no data: {raw}")
+    })?;
+
+    let viewer_login = data.viewer.login.clone();
+    let mut open = data.open.nodes;
     let mut recently_merged = if show_recently_merged {
-        response.data.recently_merged.nodes
+        data.recently_merged.nodes
     } else {
         vec![]
     };
     let mut recently_closed = if show_recently_closed {
-        response.data.recently_closed.nodes
+        data.recently_closed.nodes
     } else {
         vec![]
     };
 
     for pr in open.iter_mut().chain(recently_merged.iter_mut()).chain(recently_closed.iter_mut()) {
         pr.comments.subtract_bots();
-        normalize_checks(pr);
+        apply_merge_state(pr);
     }
-
-    fix_premature_success(client, token, &mut open).await;
 
     Ok((open, recently_merged, recently_closed, viewer_login))
 }
 
-fn normalize_checks(pr: &mut PullRequest) {
-    if let Some(node) = pr.commits.nodes.first_mut() {
-        if let Some(rollup) = &mut node.commit.status_check_rollup {
-            rollup.normalize();
-        }
-    }
-}
+const PR_FIELDS: &str = r#"title
+      url
+      state
+      merged
+      createdAt
+      mergedAt
+      closedAt
+      repository { name owner { login } }
+      mergeQueueEntry { position }
+      mergeStateStatus
+      reviewDecision
+      reviews(states: APPROVED) { totalCount }
+      comments(last: 5) { totalCount nodes { author { login __typename } } }
+      reviewThreads(first: 20) { nodes { isResolved comments(last: 1) { totalCount nodes { author { login } } } } }
+      commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }
+      author { login }"#;
 
-/// For open PRs whose rollup says SUCCESS, check the Actions API for pending
-/// workflow runs that haven't registered check runs yet.
-/// GitHub's statusCheckRollup can report SUCCESS while workflows are still queued.
-///
-/// Groups PRs by repo so we make only one API call per unique repo (status=pending),
-/// then matches the returned SHAs against our PRs.
-async fn fix_premature_success(
+/// Fetch PRs for multiple followed users in a single GraphQL request using aliases.
+async fn fetch_followed_users_prs(
     client: &reqwest::Client,
     token: &str,
-    prs: &mut [PullRequest],
-) {
-    // Collect (index, sha) for open PRs with SUCCESS rollup, grouped by "owner/repo"
-    let mut repo_groups: std::collections::HashMap<String, Vec<(usize, String)>> =
-        std::collections::HashMap::new();
-    for (idx, pr) in prs.iter().enumerate() {
-        let rollup_state = pr.state == "OPEN"
-            && pr
-                .commits
-                .nodes
-                .first()
-                .and_then(|n| n.commit.status_check_rollup.as_ref())
-                .map_or(false, |r| r.state == "SUCCESS" || r.state == "FAILURE" || r.state == "ERROR");
-        if rollup_state {
-            let key = format!("{}/{}", pr.repository.owner.login, pr.repository.name);
-            let sha = pr.commits.nodes[0].commit.oid.clone();
-            repo_groups.entry(key).or_default().push((idx, sha));
+    users: &[String],
+    merged_window_hours: u64,
+    show_recently_merged: bool,
+    closed_window_hours: u64,
+    show_recently_closed: bool,
+    exclusions: &str,
+) -> Result<
+    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    let users: Vec<&str> = users.iter().map(|u| u.trim()).filter(|u| !u.is_empty()).collect();
+    if users.is_empty() {
+        return Ok((vec![], vec![], vec![]));
+    }
+
+    let merged_cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
+        .format("%Y-%m-%d")
+        .to_string();
+    let closed_cutoff = (chrono::Utc::now() - chrono::Duration::hours(closed_window_hours as i64))
+        .format("%Y-%m-%d")
+        .to_string();
+
+    // Use {{ and }} for literal braces in format strings, { and } for interpolation
+    let pr_fragment = PR_FIELDS
+        .replace('{', "{{")
+        .replace('}', "}}");
+
+    let mut query_parts = String::from("{");
+    for (i, user) in users.iter().enumerate() {
+        query_parts.push_str(&format!(
+            r#"
+  u{i}_open: search(query: "author:{user} type:pr state:open{exclusions}", type: ISSUE, first: 20) {{
+    nodes {{ ... on PullRequest {{ {pr_fragment} }} }}
+  }}"#
+        ));
+        if show_recently_merged {
+            query_parts.push_str(&format!(
+                r#"
+  u{i}_merged: search(query: "author:{user} type:pr is:merged merged:>{merged_cutoff}{exclusions}", type: ISSUE, first: 10) {{
+    nodes {{ ... on PullRequest {{ {pr_fragment} }} }}
+  }}"#
+            ));
+        }
+        if show_recently_closed {
+            query_parts.push_str(&format!(
+                r#"
+  u{i}_closed: search(query: "author:{user} type:pr is:unmerged is:closed closed:>{closed_cutoff}{exclusions}", type: ISSUE, first: 10) {{
+    nodes {{ ... on PullRequest {{ {pr_fragment} }} }}
+  }}"#
+            ));
         }
     }
+    query_parts.push_str("\n}");
 
-    if repo_groups.is_empty() {
-        return;
-    }
+    let query = GraphQLQuery { query: query_parts };
 
-    // One API call per unique repo, fetched concurrently
-    let futures: Vec<_> = repo_groups
-        .into_iter()
-        .map(|(repo_full, pr_entries)| {
-            let client = client.clone();
-            let token = token.to_string();
-            async move {
-                let pending_shas = fetch_pending_run_shas(&client, &token, &repo_full)
-                    .await
-                    .unwrap_or_default();
-                let mut results = Vec::new();
-                for (idx, sha) in pr_entries {
-                    if pending_shas.contains(&sha) {
-                        results.push(idx);
-                    }
-                }
-                results
-            }
-        })
-        .collect();
-
-    let all_results = future::join_all(futures).await;
-    for indices in all_results {
-        for idx in indices {
-            if let Some(node) = prs[idx].commits.nodes.first_mut() {
-                if let Some(rollup) = &mut node.commit.status_check_rollup {
-                    rollup.state = "PENDING".into();
-                }
-            }
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct ActionsRunsResponse {
-    workflow_runs: Vec<ActionsRun>,
-}
-
-#[derive(Deserialize)]
-struct ActionsRun {
-    head_sha: String,
-    status: String,
-}
-
-/// Fetches workflow runs that are not yet completed for a repo and returns their head SHAs.
-async fn fetch_pending_run_shas(
-    client: &reqwest::Client,
-    token: &str,
-    repo_full: &str,
-) -> Result<std::collections::HashSet<String>, Box<dyn std::error::Error + Send + Sync>> {
-    // The Actions API only accepts a single status filter, but we can use
-    // "queued" and "in_progress" in separate calls — or just omit the filter
-    // and check client-side. Using no filter with a small per_page is cheapest
-    // since recent runs are returned first and most repos won't have many.
-    let url = format!(
-        "https://api.github.com/repos/{}/actions/runs?per_page=30",
-        repo_full
-    );
-    let response = client
-        .get(&url)
+    let http_response = client
+        .post("https://api.github.com/graphql")
         .header(AUTHORIZATION, format!("Bearer {}", token))
         .header(USER_AGENT, "pronto")
+        .json(&query)
         .send()
         .await?;
 
-    if !response.status().is_success() {
-        return Ok(Default::default());
+    let status = http_response.status();
+    let raw = http_response.text().await?;
+
+    if !status.is_success() {
+        eprintln!("[pronto] GitHub API returned {status} for followed users: {raw}");
+        return Ok((vec![], vec![], vec![]));
     }
 
-    let runs: ActionsRunsResponse = response.json().await?;
-    Ok(runs
-        .workflow_runs
-        .into_iter()
-        .filter(|r| {
-            matches!(
-                r.status.as_str(),
-                "queued" | "in_progress" | "waiting" | "pending" | "requested"
-            )
-        })
-        .map(|r| r.head_sha)
-        .collect())
+    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+        eprintln!("[pronto] Followed users parse error: {e}\n[pronto] Response body: {raw}");
+        e
+    })?;
+
+    if let Some(errors) = parsed.get("errors") {
+        eprintln!("[pronto] Followed users GraphQL errors: {errors}");
+    }
+
+    let mut all_open = Vec::new();
+    let mut all_merged = Vec::new();
+    let mut all_closed = Vec::new();
+
+    if let Some(data) = parsed.get("data") {
+        for i in 0..users.len() {
+            for (prefix, target) in [
+                (format!("u{i}_open"), &mut all_open),
+                (format!("u{i}_merged"), &mut all_merged),
+                (format!("u{i}_closed"), &mut all_closed),
+            ] {
+                if let Some(search) = data.get(&prefix) {
+                    if let Some(nodes) = search.get("nodes") {
+                        if let Ok(prs) = serde_json::from_value::<Vec<PullRequest>>(nodes.clone()) {
+                            target.extend(prs);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for pr in all_open.iter_mut().chain(all_merged.iter_mut()).chain(all_closed.iter_mut()) {
+        pr.comments.subtract_bots();
+        apply_merge_state(pr);
+    }
+
+    Ok((all_open, all_merged, all_closed))
+}
+
+/// Uses `mergeStateStatus` to correct the checks rollup state.
+/// GitHub's `statusCheckRollup` can be misleading (e.g. reporting FAILURE for
+/// non-required checks, or SUCCESS before checks register). `mergeStateStatus`
+/// reflects the actual merge readiness as shown in GitHub's UI.
+fn apply_merge_state(pr: &mut PullRequest) {
+    let Some(merge_state) = pr.merge_state_status.as_deref() else {
+        return;
+    };
+    let Some(node) = pr.commits.nodes.first_mut() else {
+        return;
+    };
+    match merge_state {
+        // CLEAN / HAS_HOOKS = all required checks pass → force SUCCESS
+        "CLEAN" | "HAS_HOOKS" => {
+            if let Some(rollup) = &mut node.commit.status_check_rollup {
+                if rollup.state != "SUCCESS" {
+                    rollup.state = "SUCCESS".into();
+                }
+            }
+        }
+        // UNSTABLE = non-required checks failing, but mergeable → still SUCCESS
+        "UNSTABLE" => {
+            if let Some(rollup) = &mut node.commit.status_check_rollup {
+                if rollup.state == "FAILURE" || rollup.state == "ERROR" {
+                    rollup.state = "SUCCESS".into();
+                }
+            }
+        }
+        // BLOCKED + rollup SUCCESS = checks haven't registered yet → PENDING
+        "BLOCKED" => {
+            if let Some(rollup) = &mut node.commit.status_check_rollup {
+                if rollup.state == "SUCCESS" {
+                    // Could be blocked by reviews (not checks), so check reviewDecision
+                    let blocked_by_reviews = matches!(
+                        pr.review_decision.as_deref(),
+                        Some("REVIEW_REQUIRED") | Some("CHANGES_REQUESTED")
+                    );
+                    if !blocked_by_reviews {
+                        rollup.state = "PENDING".into();
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn build_exclusions(hidden_orgs: &[String], hidden_repos: &[String]) -> String {
@@ -650,11 +680,12 @@ async fn fetch_prs_by_url(
       mergedAt
       closedAt
       mergeQueueEntry {{ position }}
+      mergeStateStatus
       reviewDecision
       reviews(states: APPROVED) {{ totalCount }}
       comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-      reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-      commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
+      reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+      commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
       author {{ login }}
       repository {{ name owner {{ login }} }}
     }}
@@ -689,7 +720,7 @@ async fn fetch_prs_by_url(
                         // Categorize PR
                         let mut pr = pr;
                         pr.comments.subtract_bots();
-                        normalize_checks(&mut pr);
+                        apply_merge_state(&mut pr);
                         match pr.status() {
                             PrStatus::Open => open_prs.push(pr),
                             PrStatus::Merged => merged_prs.push(pr),
@@ -700,8 +731,6 @@ async fn fetch_prs_by_url(
             }
         }
     }
-
-    fix_premature_success(client, token, &mut open_prs).await;
 
     Ok((open_prs, merged_prs, closed_prs))
 }
@@ -733,36 +762,20 @@ pub async fn fetch_all_prs(
     )
     .await?;
 
-    // Fetch PRs authored by followed users (concurrently).
-    let mut followed_open: Vec<PullRequest> = Vec::new();
-    let mut followed_recently_merged: Vec<PullRequest> = Vec::new();
-    let mut followed_recently_closed: Vec<PullRequest> = Vec::new();
-
-    let futures = followed_users
-        .iter()
-        .filter(|u| !u.trim().is_empty())
-        .map(|user| {
-            fetch_prs_for_author(
-                &client,
-                token,
-                user.trim(),
-                merged_window_hours,
-                show_recently_merged,
-                closed_window_hours,
-                show_recently_closed,
-                &exclusions,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let results = future::join_all(futures).await;
-    for result in results {
-        if let Ok((open, recent, closed, _)) = result {
-            followed_open.extend(open);
-            followed_recently_merged.extend(recent);
-            followed_recently_closed.extend(closed);
-        }
-    }
+    // Fetch PRs authored by followed users (single batched query).
+    let (mut followed_open, mut followed_recently_merged, mut followed_recently_closed) =
+        fetch_followed_users_prs(
+            &client,
+            token,
+            followed_users,
+            merged_window_hours,
+            show_recently_merged,
+            closed_window_hours,
+            show_recently_closed,
+            &exclusions,
+        )
+        .await
+        .unwrap_or_default();
 
     // Fetch specifically followed PRs
     let (followed_pr_open, followed_pr_merged, followed_pr_closed) =

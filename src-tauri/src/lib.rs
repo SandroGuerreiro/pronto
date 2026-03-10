@@ -692,9 +692,14 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
         return;
     };
 
-    let (fingerprint, result_clone, viewer_login) = {
+    let (is_open, fingerprint, result_clone, viewer_login) = {
         let cache = state.cached_prs.lock().unwrap();
         let Some(result) = cache.as_ref() else { return };
+        let is_open = result
+            .open
+            .iter()
+            .chain(result.followed_open.iter())
+            .any(|p| p.url == url);
         let pr_opt = result
             .open
             .iter()
@@ -706,12 +711,18 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
             .find(|p| p.url == url);
         let Some(pr) = pr_opt else { return };
         let viewer_login = state.viewer_login.lock().unwrap().clone();
-        (tray::attention_fingerprint(pr, &viewer_login), result.clone(), viewer_login)
+        (is_open, tray::attention_fingerprint(pr, &viewer_login), result.clone(), viewer_login)
     };
 
     {
         let mut seen = state.seen_prs.lock().unwrap();
-        seen.insert(url.clone(), fingerprint);
+        if is_open {
+            // For open PRs: update fingerprint so the current state is no longer "new"
+            seen.insert(url.clone(), fingerprint);
+        } else {
+            // For merged/closed PRs: remove from seen so contains_key() returns false
+            seen.remove(&url);
+        }
         let settings = state.settings.lock().unwrap().clone();
         let has_attention = !tray::attention_urls(&result_clone, &seen, &settings, &viewer_login).is_empty();
         drop(seen);
