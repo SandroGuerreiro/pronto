@@ -461,14 +461,14 @@ async fn fix_premature_success(
     let mut repo_groups: std::collections::HashMap<String, Vec<(usize, String)>> =
         std::collections::HashMap::new();
     for (idx, pr) in prs.iter().enumerate() {
-        let is_success = pr.state == "OPEN"
+        let rollup_state = pr.state == "OPEN"
             && pr
                 .commits
                 .nodes
                 .first()
                 .and_then(|n| n.commit.status_check_rollup.as_ref())
-                .map_or(false, |r| r.state == "SUCCESS");
-        if is_success {
+                .map_or(false, |r| r.state == "SUCCESS" || r.state == "FAILURE" || r.state == "ERROR");
+        if rollup_state {
             let key = format!("{}/{}", pr.repository.owner.login, pr.repository.name);
             let sha = pr.commits.nodes[0].commit.oid.clone();
             repo_groups.entry(key).or_default().push((idx, sha));
