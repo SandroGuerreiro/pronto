@@ -50,6 +50,18 @@ impl Default for NotificationPreferences {
     }
 }
 
+fn default_notification_prefs_owned() -> NotificationPreferences {
+    NotificationPreferences {
+        review_required: true,
+        changes_requested: true,
+        approved: true,
+        checks_failed: true,
+        checks_recovered: true,
+        kicked_from_queue: true,
+        new_comment: true,
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -126,7 +138,7 @@ pub struct Settings {
     pub global_reload_shortcut: String,
     #[serde(default = "default_global_follow")]
     pub global_follow_shortcut: String,
-    #[serde(default)]
+    #[serde(default = "default_notification_prefs_owned")]
     pub notification_prefs_owned: NotificationPreferences,
     #[serde(default)]
     pub notification_prefs_followed: NotificationPreferences,

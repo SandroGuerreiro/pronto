@@ -161,6 +161,60 @@ pub struct Commit {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StatusCheckRollup {
     pub state: String,
+    #[serde(skip_serializing)]
+    contexts: Option<serde_json::Value>,
+}
+
+impl StatusCheckRollup {
+    /// Overwrites `state` by examining individual check run contexts.
+    /// GitHub's rollup can report SUCCESS before all workflow stages register their checks.
+    pub fn normalize(&mut self) {
+        let nodes = self.contexts.as_ref()
+            .and_then(|c| c.get("nodes"))
+            .and_then(|n| n.as_array());
+        let nodes = match nodes {
+            Some(n) => n,
+            None => return,
+        };
+        let mut has_failure = false;
+        let mut has_pending = false;
+        for node in nodes {
+            let typename = node.get("__typename").and_then(|v| v.as_str());
+            match typename {
+                Some("CheckRun") => {
+                    let status = node.get("status").and_then(|v| v.as_str());
+                    match status {
+                        Some("COMPLETED") => {
+                            let conclusion = node.get("conclusion").and_then(|v| v.as_str());
+                            if matches!(conclusion, Some("FAILURE" | "TIMED_OUT" | "STARTUP_FAILURE" | "ACTION_REQUIRED")) {
+                                has_failure = true;
+                            }
+                        }
+                        Some("QUEUED" | "IN_PROGRESS" | "WAITING" | "PENDING" | "REQUESTED") => {
+                            has_pending = true;
+                        }
+                        _ => {}
+                    }
+                }
+                Some("StatusContext") => {
+                    let state = node.get("state").and_then(|v| v.as_str());
+                    match state {
+                        Some("PENDING" | "EXPECTED") => has_pending = true,
+                        Some("FAILURE" | "ERROR") => has_failure = true,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Only override rollup when contexts reveal a worse state than reported.
+        // We may not see all contexts (pagination), so never downgrade the rollup.
+        if has_failure && self.state != "FAILURE" && self.state != "ERROR" {
+            self.state = "FAILURE".into();
+        } else if has_pending && self.state == "SUCCESS" {
+            self.state = "PENDING".into();
+        }
+    }
 }
 
 pub enum PrStatus {
@@ -300,7 +354,7 @@ async fn fetch_prs_for_author(
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -321,7 +375,7 @@ async fn fetch_prs_for_author(
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -342,7 +396,7 @@ async fn fetch_prs_for_author(
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
         reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
+        commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
         author {{ login }}
       }}
     }}
@@ -376,9 +430,136 @@ async fn fetch_prs_for_author(
 
     for pr in open.iter_mut().chain(recently_merged.iter_mut()).chain(recently_closed.iter_mut()) {
         pr.comments.subtract_bots();
+        normalize_checks(pr);
     }
 
+    fix_premature_success(client, token, &mut open).await;
+
     Ok((open, recently_merged, recently_closed, viewer_login))
+}
+
+fn normalize_checks(pr: &mut PullRequest) {
+    if let Some(node) = pr.commits.nodes.first_mut() {
+        if let Some(rollup) = &mut node.commit.status_check_rollup {
+            rollup.normalize();
+        }
+    }
+}
+
+/// For open PRs whose rollup says SUCCESS, check the Actions API for pending
+/// workflow runs that haven't registered check runs yet.
+/// GitHub's statusCheckRollup can report SUCCESS while workflows are still queued.
+///
+/// Groups PRs by repo so we make only one API call per unique repo (status=pending),
+/// then matches the returned SHAs against our PRs.
+async fn fix_premature_success(
+    client: &reqwest::Client,
+    token: &str,
+    prs: &mut [PullRequest],
+) {
+    // Collect (index, sha) for open PRs with SUCCESS rollup, grouped by "owner/repo"
+    let mut repo_groups: std::collections::HashMap<String, Vec<(usize, String)>> =
+        std::collections::HashMap::new();
+    for (idx, pr) in prs.iter().enumerate() {
+        let is_success = pr.state == "OPEN"
+            && pr
+                .commits
+                .nodes
+                .first()
+                .and_then(|n| n.commit.status_check_rollup.as_ref())
+                .map_or(false, |r| r.state == "SUCCESS");
+        if is_success {
+            let key = format!("{}/{}", pr.repository.owner.login, pr.repository.name);
+            let sha = pr.commits.nodes[0].commit.oid.clone();
+            repo_groups.entry(key).or_default().push((idx, sha));
+        }
+    }
+
+    if repo_groups.is_empty() {
+        return;
+    }
+
+    // One API call per unique repo, fetched concurrently
+    let futures: Vec<_> = repo_groups
+        .into_iter()
+        .map(|(repo_full, pr_entries)| {
+            let client = client.clone();
+            let token = token.to_string();
+            async move {
+                let pending_shas = fetch_pending_run_shas(&client, &token, &repo_full)
+                    .await
+                    .unwrap_or_default();
+                let mut results = Vec::new();
+                for (idx, sha) in pr_entries {
+                    if pending_shas.contains(&sha) {
+                        results.push(idx);
+                    }
+                }
+                results
+            }
+        })
+        .collect();
+
+    let all_results = future::join_all(futures).await;
+    for indices in all_results {
+        for idx in indices {
+            if let Some(node) = prs[idx].commits.nodes.first_mut() {
+                if let Some(rollup) = &mut node.commit.status_check_rollup {
+                    rollup.state = "PENDING".into();
+                }
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ActionsRunsResponse {
+    workflow_runs: Vec<ActionsRun>,
+}
+
+#[derive(Deserialize)]
+struct ActionsRun {
+    head_sha: String,
+    status: String,
+}
+
+/// Fetches workflow runs that are not yet completed for a repo and returns their head SHAs.
+async fn fetch_pending_run_shas(
+    client: &reqwest::Client,
+    token: &str,
+    repo_full: &str,
+) -> Result<std::collections::HashSet<String>, Box<dyn std::error::Error + Send + Sync>> {
+    // The Actions API only accepts a single status filter, but we can use
+    // "queued" and "in_progress" in separate calls — or just omit the filter
+    // and check client-side. Using no filter with a small per_page is cheapest
+    // since recent runs are returned first and most repos won't have many.
+    let url = format!(
+        "https://api.github.com/repos/{}/actions/runs?per_page=30",
+        repo_full
+    );
+    let response = client
+        .get(&url)
+        .header(AUTHORIZATION, format!("Bearer {}", token))
+        .header(USER_AGENT, "pronto")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Ok(Default::default());
+    }
+
+    let runs: ActionsRunsResponse = response.json().await?;
+    Ok(runs
+        .workflow_runs
+        .into_iter()
+        .filter(|r| {
+            matches!(
+                r.status.as_str(),
+                "queued" | "in_progress" | "waiting" | "pending" | "requested"
+            )
+        })
+        .map(|r| r.head_sha)
+        .collect())
 }
 
 fn build_exclusions(hidden_orgs: &[String], hidden_repos: &[String]) -> String {
@@ -473,7 +654,7 @@ async fn fetch_prs_by_url(
       reviews(states: APPROVED) {{ totalCount }}
       comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
       reviewThreads(first: 100) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
-      commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
+      commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state contexts(first: 100) {{ nodes {{ __typename ... on CheckRun {{ status conclusion }} ... on StatusContext {{ state }} }} }} }} }} }} }}
       author {{ login }}
       repository {{ name owner {{ login }} }}
     }}
@@ -508,6 +689,7 @@ async fn fetch_prs_by_url(
                         // Categorize PR
                         let mut pr = pr;
                         pr.comments.subtract_bots();
+                        normalize_checks(&mut pr);
                         match pr.status() {
                             PrStatus::Open => open_prs.push(pr),
                             PrStatus::Merged => merged_prs.push(pr),
@@ -518,6 +700,8 @@ async fn fetch_prs_by_url(
             }
         }
     }
+
+    fix_premature_success(client, token, &mut open_prs).await;
 
     Ok((open_prs, merged_prs, closed_prs))
 }
