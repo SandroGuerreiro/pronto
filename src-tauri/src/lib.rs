@@ -699,6 +699,10 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
             .open
             .iter()
             .chain(result.followed_open.iter())
+            .chain(result.recently_merged.iter())
+            .chain(result.followed_recently_merged.iter())
+            .chain(result.recently_closed.iter())
+            .chain(result.followed_recently_closed.iter())
             .find(|p| p.url == url);
         let Some(pr) = pr_opt else { return };
         let viewer_login = state.viewer_login.lock().unwrap().clone();
