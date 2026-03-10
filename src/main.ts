@@ -482,6 +482,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const items = getFocusables();
     const tabKeys = [keybindings.tab_owned, keybindings.tab_followed];
     if (showRecentlyMerged) tabKeys.push(keybindings.tab_merged);
+    if (showClosed) tabKeys.push(keybindings.tab_closed);
     tabKeys.push("Tab");
     if (!items.length && !tabKeys.includes(e.key)) return;
 
