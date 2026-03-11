@@ -103,8 +103,8 @@ export function renderPrCard(pr: PullRequest): string {
   const { reviewText, statusText, statusClass } = getReviewStatus(pr);
   const checks = getChecksLabel(pr);
   const resolvedThreads = pr.reviewThreads.nodes.filter((t) => t.isResolved).length;
-  const threadComments = pr.reviewThreads.nodes.reduce((sum, t) => sum + t.comments.totalCount, 0);
-  const commentCount = pr.comments.totalCount + threadComments;
+  const unresolvedThreadComments = pr.reviewThreads.nodes.filter((t) => !t.isResolved).reduce((sum, t) => sum + t.comments.totalCount, 0);
+  const commentCount = pr.comments.totalCount + unresolvedThreadComments;
   const prNumber = getPrNumber(pr.url);
 
   const statusTitle =

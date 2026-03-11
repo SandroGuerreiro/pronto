@@ -264,7 +264,9 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     builder.on_tray_icon_event(|tray_handle, event| {
-            tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
+            }));
 
             if let tauri::tray::TrayIconEvent::Click {
                 button_state: tauri::tray::MouseButtonState::Up,
