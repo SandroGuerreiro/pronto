@@ -722,9 +722,9 @@ async fn fetch_prs_by_url(
                         pr.comments.subtract_bots();
                         apply_merge_state(&mut pr);
                         match pr.status() {
-                            PrStatus::Open => open_prs.push(pr),
+                            PrStatus::Open | PrStatus::InQueue => open_prs.push(pr),
                             PrStatus::Merged => merged_prs.push(pr),
-                            PrStatus::Closed | PrStatus::InQueue => closed_prs.push(pr),
+                            PrStatus::Closed => closed_prs.push(pr),
                         }
                     }
                 }
