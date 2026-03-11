@@ -509,26 +509,34 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   const title = el.getAttribute("data-title") || "";
   if (!url) return false;
 
-  // If it's a directly followed PR, unfollow instead of blacklisting
-  const isDirectFollow = followedPrs.has(url);
+  // Animate out, then perform the actual hide
+  el.classList.add("card-exit-hidden");
 
-  if (isDirectFollow) {
-    followedPrs.delete(url);
-  } else {
-    hiddenPrs.set(url, title);
-  }
+  await new Promise<void>((resolve) => {
+    setTimeout(() => {
+      const isDirectFollow = followedPrs.has(url);
 
-  if (currentResult) {
-    currentResult.open = currentResult.open.filter((pr) => pr.url !== url);
-    currentResult.recently_merged = currentResult.recently_merged.filter((pr) => pr.url !== url);
-    currentResult.recently_closed = currentResult.recently_closed.filter((pr) => pr.url !== url);
-    currentResult.followed_open = currentResult.followed_open.filter((pr) => pr.url !== url);
-    currentResult.followed_recently_merged = currentResult.followed_recently_merged.filter((pr) => pr.url !== url);
-    currentResult.followed_recently_closed = currentResult.followed_recently_closed.filter((pr) => pr.url !== url);
-  }
-  renderActiveTab();
+      if (isDirectFollow) {
+        followedPrs.delete(url);
+      } else {
+        hiddenPrs.set(url, title);
+      }
+
+      if (currentResult) {
+        currentResult.open = currentResult.open.filter((pr) => pr.url !== url);
+        currentResult.recently_merged = currentResult.recently_merged.filter((pr) => pr.url !== url);
+        currentResult.recently_closed = currentResult.recently_closed.filter((pr) => pr.url !== url);
+        currentResult.followed_open = currentResult.followed_open.filter((pr) => pr.url !== url);
+        currentResult.followed_recently_merged = currentResult.followed_recently_merged.filter((pr) => pr.url !== url);
+        currentResult.followed_recently_closed = currentResult.followed_recently_closed.filter((pr) => pr.url !== url);
+      }
+      renderActiveTab();
+      resolve();
+    }, 400);
+  });
 
   const current = await invoke<import("./types").Settings>("get_settings");
+  const isDirectFollow = !hiddenPrs.has(url) && !followedPrs.has(url);
   if (isDirectFollow) {
     current.followed_prs = [...followedPrs];
   } else {

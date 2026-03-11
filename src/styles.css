@@ -217,16 +217,24 @@ body {
   pointer-events: none;
 }
 
+.pr-card.card-exit-hidden {
+  animation: card-exit-hidden 0.4s ease-out forwards;
+  pointer-events: none;
+}
+
 @keyframes card-exit-merged {
-  0%   { opacity: 1; transform: translateX(0); border-left-color: transparent; }
-  30%  { border-left-color: #a855f7; box-shadow: inset 2px 0 12px rgba(168, 85, 247, 0.2); }
-  100% { opacity: 0; transform: translateX(8px); border-left-color: #a855f7; }
+  0%   { opacity: 1; transform: translateX(0); border-left-color: #a855f7; box-shadow: inset 2px 0 12px rgba(168, 85, 247, 0.2); }
+  100% { opacity: 0; transform: translateX(-8px); border-left-color: #a855f7; }
 }
 
 @keyframes card-exit-closed {
-  0%   { opacity: 1; transform: translateX(0); border-left-color: transparent; }
-  30%  { border-left-color: #ef4444; box-shadow: inset 2px 0 12px rgba(239, 68, 68, 0.15); }
+  0%   { opacity: 1; transform: translateX(0); border-left-color: #ef4444; box-shadow: inset 2px 0 12px rgba(239, 68, 68, 0.15); }
   100% { opacity: 0; transform: translateX(-8px); border-left-color: #ef4444; }
+}
+
+@keyframes card-exit-hidden {
+  0%   { opacity: 1; transform: translateX(0); border-left-color: #71717a; box-shadow: inset 2px 0 12px rgba(113, 113, 122, 0.15); }
+  100% { opacity: 0; transform: translateX(-8px); border-left-color: #71717a; }
 }
 
 .pr-card:hover {

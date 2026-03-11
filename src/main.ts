@@ -509,12 +509,32 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // Dev states preview (dev only)
+  let devStatesOpen = false;
+  const toggleDevStates = import.meta.env.DEV
+    ? async () => {
+        const content = document.getElementById("content")!;
+        devStatesOpen = !devStatesOpen;
+        if (devStatesOpen) {
+          const { renderDevStates, bindDevStateEvents } = await import("./dev-states");
+          content.innerHTML = renderDevStates();
+          bindDevStateEvents(content);
+        } else {
+          renderActiveTab();
+        }
+      }
+    : null;
+
   // Keyboard navigation
   document.addEventListener("keydown", async (e) => {
     const settingsOpen = activeTab === "settings";
 
     if (e.key === "Escape") {
       e.preventDefault();
+      if (devStatesOpen && toggleDevStates) {
+        toggleDevStates();
+        return;
+      }
       if (settingsOpen) {
         hideSettings();
       } else {
@@ -523,7 +543,14 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    if (settingsOpen || !currentResult) return;
+    // Dev states toggle (D key, dev only)
+    if (e.key === "D" && toggleDevStates) {
+      e.preventDefault();
+      toggleDevStates();
+      return;
+    }
+
+    if (settingsOpen || devStatesOpen || !currentResult) return;
 
     const items = getFocusables();
     const tabKeys = [keybindings.tab_owned, keybindings.tab_followed];
