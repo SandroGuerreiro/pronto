@@ -40,6 +40,49 @@ validate_version() {
     fi
 }
 
+# Generate release notes from commits since last tag
+generate_release_notes() {
+    local new_version=$1
+    local last_tag=$(git describe --tags --abbrev=0 2>/dev/null)
+
+    if [ -z "$last_tag" ]; then
+        log_warning "No previous tag found, using all commits"
+        last_tag=$(git rev-list --max-parents=0 HEAD)
+    fi
+
+    log_info "Generating release notes from commits since $last_tag..."
+
+    local commits=$(git log "${last_tag}..HEAD" --pretty=format:"%s" --no-merges | grep -v "^Bump version")
+
+    if [ -z "$commits" ]; then
+        echo "- Maintenance release"
+        return
+    fi
+
+    if ! command -v claude &> /dev/null; then
+        log_warning "Claude Code not found, falling back to raw commit messages"
+        echo "$commits" | sed 's/^/- /'
+        return
+    fi
+
+    local prompt="You are writing release notes for Pronto v${new_version}, a macOS menu bar app for GitHub PR monitoring.
+
+Below are the git commit messages since the last release (${last_tag}).
+Write concise, user-friendly release notes in markdown bullet points.
+Group related changes together. Use clear, non-technical language where possible.
+Skip version bump commits. Do not add a heading or preamble — just the bullet points.
+
+Commits:
+${commits}"
+
+    echo "$prompt" | claude -p --model haiku 2>/dev/null
+
+    if [ $? -ne 0 ]; then
+        log_warning "Claude failed, falling back to raw commit messages"
+        echo "$commits" | sed 's/^/- /'
+    fi
+}
+
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
@@ -134,22 +177,29 @@ main() {
     local from_step=""
     local force_redo=""
 
-    if [ $# -lt 2 ]; then
-        echo "Usage: $0 <version> <release-notes> [options]"
+    if [ $# -lt 1 ]; then
+        echo "Usage: $0 <version> [release-notes] [options]"
         echo "Options:"
         echo "  --from-step N      Start from step N (1-8), auto-skip completed steps"
         echo "  --force-from-step N Start from step N, redo that step even if completed"
         echo ""
         echo "Example: $0 0.4.3 'Fix: improved PR detection'"
-        echo "Resume: $0 0.4.3 'Fix: improved PR detection' --from-step 4"
+        echo "Auto notes: $0 0.4.3"
+        echo "Resume: $0 0.4.3 --from-step 4"
         exit 1
     fi
 
     local new_version=$1
-    local release_notes=$2
+    shift
+
+    # Check if second arg is release notes or an option
+    local release_notes=""
+    if [ $# -gt 0 ] && [[ ! "$1" =~ ^-- ]]; then
+        release_notes=$1
+        shift
+    fi
 
     # Parse options
-    shift 2
     while [ $# -gt 0 ]; do
         case "$1" in
             --from-step)
@@ -178,6 +228,28 @@ main() {
 
     # Get current version from package.json
     local current_version=$(grep '"version"' package.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')
+
+    # Auto-generate release notes if not provided
+    if [ -z "$release_notes" ]; then
+        release_notes=$(generate_release_notes "$new_version")
+        log_info "Auto-generated release notes:"
+        echo -e "$release_notes"
+        echo ""
+        read -p "Use these notes? (Y/n/e=edit) " choice
+        case "$choice" in
+            n|N)
+                read -p "Enter release notes: " release_notes
+                ;;
+            e|E)
+                local tmpfile=$(mktemp)
+                echo "$release_notes" > "$tmpfile"
+                ${EDITOR:-vim} "$tmpfile"
+                release_notes=$(cat "$tmpfile")
+                rm -f "$tmpfile"
+                ;;
+        esac
+    fi
+
     log_info "Current version: $current_version"
     log_info "New version: $new_version"
     log_info "Release notes: $release_notes"
@@ -228,16 +300,42 @@ main() {
             # Regenerate Cargo.lock with the new version
             (cd "$PROJECT_ROOT/src-tauri" && cargo update --workspace)
             log_success "Versions bumped"
+
+            # Update documentation with Claude
+            local last_tag=$(git describe --tags --abbrev=0 2>/dev/null)
+            local commits=$(git log "${last_tag}..HEAD" --pretty=format:"%s" --no-merges 2>/dev/null)
+
+            if command -v claude &> /dev/null; then
+                read -p "Update CLAUDE.md, MEMORY.md, and README.md with Claude? (Y/n) " update_docs
+                if [[ ! "$update_docs" =~ ^[nN]$ ]]; then
+                    local docs_prompt="I just released Pronto v${new_version} (previous: ${last_tag}). Here are the changes since the last release:
+
+${commits}
+
+Please update the following files:
+1. CLAUDE.md — update the version number (Current version: ...) and add/update any sections that reflect the new changes
+2. ~/.claude/projects/-Users-sandroguerreiro-Code-pronto/memory/MEMORY.md — update the version number and add any relevant notes about new features or changes
+3. README.md — update version references and feature descriptions if the changes warrant it
+
+Only make changes that are necessary. Keep the existing structure and style of each file. Do not remove existing content unless it's outdated."
+
+                    echo "$docs_prompt" | claude
+                    log_success "Documentation updated"
+                fi
+            else
+                log_warning "Claude Code not found, skipping documentation update"
+            fi
         fi
     fi
 
-    # Step 2: Commit version bump
+    # Step 2: Commit version bump + docs
     if [ "$from_step" -le 2 ]; then
         if [[ "$completion_status" =~ 2 ]] && [ -z "$force_redo" ]; then
             log_info "Step 2/8: Version already committed, skipping..."
         else
-            log_info "Step 2/8: Committing version bump..."
+            log_info "Step 2/8: Committing version bump + docs..."
             git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+            git add CLAUDE.md README.md 2>/dev/null || true
             git commit -m "Bump version to $new_version"
             log_success "Version bump committed"
         fi
@@ -349,6 +447,7 @@ main() {
         log_info "Step 8/8: Updating Homebrew tap..."
         local dmg_sha256=$(shasum -a 256 "$dmg_path" | awk '{print $1}')
         update_homebrew_tap "$new_version" "$release_url" "$dmg_sha256" "$dmg_filename"
+        log_success "Homebrew tap updated"
         log_success "Release $new_version completed successfully!"
     fi
 }
