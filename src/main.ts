@@ -56,13 +56,59 @@ export async function loadPrs() {
 function renderPrView(result: FetchResult) {
   document.getElementById("signout-btn")!.style.display = "";
   document.getElementById("main-nav")!.style.display = "";
-  setCurrentAttentionUrls(result.attention_urls);
-  setCurrentResult(result);
-  clearPendingUnhide();
-  updateWorkflowIndicator(result.workflow_status);
-  renderActiveTab();
-  lastCheckedAt = new Date();
-  updatePollStatus();
+
+  // Detect PRs that just left the current tab (merged/closed while viewing)
+  const content = document.getElementById("content")!;
+  const visibleUrls = new Set<string>();
+  content.querySelectorAll(".pr-card[data-url]").forEach((card) => {
+    visibleUrls.add(card.getAttribute("data-url")!);
+  });
+
+  const newOpenUrls = new Set([
+    ...result.open.map((pr) => pr.url),
+    ...result.followed_open.map((pr) => pr.url),
+  ]);
+  const newMergedUrls = new Set([
+    ...result.recently_merged.map((pr) => pr.url),
+    ...(result.followed_recently_merged || []).map((pr) => pr.url),
+  ]);
+  const newClosedUrls = new Set([
+    ...result.recently_closed.map((pr) => pr.url),
+    ...(result.followed_recently_closed || []).map((pr) => pr.url),
+  ]);
+
+  // Find cards that were visible but are no longer open (they got merged or closed)
+  const exitingCards: { el: Element; kind: "merged" | "closed" }[] = [];
+  if (activeTab === "mine" || activeTab === "followed") {
+    for (const url of visibleUrls) {
+      if (!newOpenUrls.has(url)) {
+        const card = content.querySelector(`.pr-card[data-url="${CSS.escape(url)}"]`);
+        if (card) {
+          const kind = newMergedUrls.has(url) ? "merged" : newClosedUrls.has(url) ? "closed" : null;
+          if (kind) exitingCards.push({ el: card, kind });
+        }
+      }
+    }
+  }
+
+  const finishRender = () => {
+    setCurrentAttentionUrls(result.attention_urls);
+    setCurrentResult(result);
+    clearPendingUnhide();
+    updateWorkflowIndicator(result.workflow_status);
+    renderActiveTab();
+    lastCheckedAt = new Date();
+    updatePollStatus();
+  };
+
+  if (exitingCards.length > 0) {
+    for (const { el, kind } of exitingCards) {
+      el.classList.add(`card-exit-${kind}`);
+    }
+    setTimeout(finishRender, 400);
+  } else {
+    finishRender();
+  }
 }
 
 // ── Workflow indicator ────────────────────────────────────────────────────────
