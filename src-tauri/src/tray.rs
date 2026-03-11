@@ -63,7 +63,7 @@ fn load_tray_icon_inverted() -> Image<'static> {
 }
 
 /// Captures the full PR state so we can detect actual changes between polls.
-/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments|thread_comments_by_others
+/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments|thread_comments_by_others|thread_comments_by_others_participated
 pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
     let review = pr.review_decision.as_deref().unwrap_or("");
     let head = pr.commits.nodes.first();
@@ -81,9 +81,26 @@ pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
             .unwrap_or(true))
         .map(|t| t.comments.total_count)
         .sum();
+    // Sum comment counts only from threads where the viewer is the author (first commenter)
+    // AND the last commenter is someone else (i.e. someone replied to viewer's thread).
+    let thread_comments_by_others_participated: i32 = pr.review_threads.nodes.iter()
+        .filter(|t| {
+            let viewer_started = t.first_comment.as_ref()
+                .and_then(|fc| fc.nodes.first())
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login == viewer_login)
+                .unwrap_or(false);
+            let other_replied = t.comments.nodes.last()
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login != viewer_login)
+                .unwrap_or(true);
+            viewer_started && other_replied
+        })
+        .map(|t| t.comments.total_count)
+        .sum();
     let in_queue = pr.merge_queue_entry.is_some();
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    format!("{}|{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments, thread_comments_by_others)
+    format!("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments, thread_comments_by_others, thread_comments_by_others_participated)
 }
 
 
@@ -119,6 +136,25 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         .sum();
     let has_new_thread_comment_by_other = new_thread_comments_by_others > old_thread_comments_by_others;
 
+    // Sum comment counts only from threads the viewer started AND someone else replied.
+    let old_thread_comments_by_others_participated = parts.get(9).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let new_thread_comments_by_others_participated: i32 = pr.review_threads.nodes.iter()
+        .filter(|t| {
+            let viewer_started = t.first_comment.as_ref()
+                .and_then(|fc| fc.nodes.first())
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login == viewer_login)
+                .unwrap_or(false);
+            let other_replied = t.comments.nodes.last()
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login != viewer_login)
+                .unwrap_or(true);
+            viewer_started && other_replied
+        })
+        .map(|t| t.comments.total_count)
+        .sum();
+    let has_new_comment_participated = new_thread_comments_by_others_participated > old_thread_comments_by_others_participated;
+
     // Only notify when new non-bot comments exist and the last human commenter is not the viewer.
     // total_count is already bot-free (adjusted at fetch time), so no bot check needed here.
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
@@ -133,6 +169,7 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         checks_recovered: old_checks != "SUCCESS" && new_checks == "SUCCESS",
         kicked_from_queue: old_in_queue && !new_in_queue,
         new_comment: has_new_comment || has_new_thread_comment_by_other,
+        new_comment_participated: has_new_comment_participated,
     }
 }
 
@@ -148,6 +185,7 @@ fn should_notify_for_changes(
         || (changes.checks_recovered && prefs.checks_recovered)
         || (changes.kicked_from_queue && prefs.kicked_from_queue)
         || (changes.new_comment && prefs.new_comment)
+        || (changes.new_comment_participated && prefs.new_comment_participated)
 }
 
 /// Returns URLs of PRs whose state changed since last seen.

@@ -134,6 +134,9 @@ pub struct ReviewThread {
     #[serde(rename = "isResolved")]
     pub is_resolved: bool,
     pub comments: ReviewThreadComments,
+    /// First comment in the thread (the thread author). GraphQL alias: `firstComment: comments(first: 1)`.
+    #[serde(rename = "firstComment")]
+    pub first_comment: Option<ReviewThreadComments>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -227,6 +230,7 @@ pub struct PrElementChanges {
     pub checks_recovered: bool,
     pub kicked_from_queue: bool,
     pub new_comment: bool,
+    pub new_comment_participated: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -307,7 +311,7 @@ async fn fetch_prs_for_author(
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} firstComment: comments(first: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
@@ -329,7 +333,7 @@ async fn fetch_prs_for_author(
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} firstComment: comments(first: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
@@ -351,7 +355,7 @@ async fn fetch_prs_for_author(
         reviewDecision
         reviews(states: APPROVED) {{ totalCount }}
         comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+        reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} firstComment: comments(first: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
         commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
         author {{ login }}
       }}
@@ -426,7 +430,7 @@ const PR_FIELDS: &str = r#"title
       reviewDecision
       reviews(states: APPROVED) { totalCount }
       comments(last: 5) { totalCount nodes { author { login __typename } } }
-      reviewThreads(first: 20) { nodes { isResolved comments(last: 1) { totalCount nodes { author { login } } } } }
+      reviewThreads(first: 20) { nodes { isResolved comments(last: 1) { totalCount nodes { author { login } } } firstComment: comments(first: 1) { totalCount nodes { author { login } } } } }
       commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }
       author { login }"#;
 
@@ -684,7 +688,7 @@ async fn fetch_prs_by_url(
       reviewDecision
       reviews(states: APPROVED) {{ totalCount }}
       comments(last: 5) {{ totalCount nodes {{ author {{ login __typename }} }} }}
-      reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
+      reviewThreads(first: 20) {{ nodes {{ isResolved comments(last: 1) {{ totalCount nodes {{ author {{ login }} }} }} firstComment: comments(first: 1) {{ totalCount nodes {{ author {{ login }} }} }} }} }}
       commits(last: 1) {{ nodes {{ commit {{ oid statusCheckRollup {{ state }} }} }} }}
       author {{ login }}
       repository {{ name owner {{ login }} }}

@@ -127,6 +127,7 @@ export interface NotificationPreferences {
   checks_recovered: boolean;
   kicked_from_queue: boolean;
   new_comment: boolean;
+  new_comment_participated: boolean;
 }
 
 export interface Settings {

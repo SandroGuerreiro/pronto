@@ -34,6 +34,8 @@ pub struct NotificationPreferences {
     pub kicked_from_queue: bool,
     #[serde(default)]
     pub new_comment: bool,
+    #[serde(default = "default_true")]
+    pub new_comment_participated: bool,
 }
 
 impl Default for NotificationPreferences {
@@ -46,6 +48,7 @@ impl Default for NotificationPreferences {
             checks_recovered: false,
             kicked_from_queue: false,
             new_comment: false,
+            new_comment_participated: true,
         }
     }
 }
@@ -59,6 +62,7 @@ fn default_notification_prefs_owned() -> NotificationPreferences {
         checks_recovered: true,
         kicked_from_queue: true,
         new_comment: true,
+        new_comment_participated: false,
     }
 }
 
@@ -178,15 +182,7 @@ impl Default for Settings {
             global_toggle_shortcut: default_global_toggle(),
             global_reload_shortcut: default_global_reload(),
             global_follow_shortcut: default_global_follow(),
-            notification_prefs_owned: NotificationPreferences {
-                review_required: true,
-                changes_requested: true,
-                approved: true,
-                checks_failed: true,
-                checks_recovered: true,
-                kicked_from_queue: true,
-                new_comment: true,
-            },
+            notification_prefs_owned: default_notification_prefs_owned(),
             notification_prefs_followed: NotificationPreferences {
                 review_required: true,
                 ..Default::default()
@@ -314,7 +310,28 @@ fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>, viewer_login:
     let has_new_thread_comment_by_other = new_thread_comments_by_others > old_thread_comments_by_others;
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
     let comment_count_changed = parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count;
-    if (comment_count_changed && last_human_commenter != viewer_login)
+    // Check for replies to threads the viewer started
+    let old_thread_comments_participated = parts.get(9).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let new_thread_comments_participated: i32 = pr.review_threads.nodes.iter()
+        .filter(|t| {
+            let viewer_started = t.first_comment.as_ref()
+                .and_then(|fc| fc.nodes.first())
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login == viewer_login)
+                .unwrap_or(false);
+            let other_replied = t.comments.nodes.last()
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login != viewer_login)
+                .unwrap_or(true);
+            viewer_started && other_replied
+        })
+        .map(|t| t.comments.total_count)
+        .sum();
+    let has_reply_to_my_thread = new_thread_comments_participated > old_thread_comments_participated;
+
+    if has_reply_to_my_thread {
+        changes.push("Reply to your comment");
+    } else if (comment_count_changed && last_human_commenter != viewer_login)
         || has_new_thread_comment_by_other
     {
         changes.push("New comments");

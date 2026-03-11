@@ -34,6 +34,7 @@ const defaultNotifPrefs = (): NotificationPreferences => ({
   checks_recovered: false,
   kicked_from_queue: false,
   new_comment: false,
+  new_comment_participated: false,
 });
 
 let _notificationsEnabled: boolean = true;
@@ -411,6 +412,24 @@ export async function showSettings() {
                   <input type="checkbox" id="notif-followed-approved" class="settings-toggle"${_notifPrefsFollowed.approved ? " checked" : ""} />
                 </label>
               </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>Any new comments</span>
+                    <div class="settings-hint">Any comment or thread reply on the PR</div>
+                  </div>
+                  <input type="checkbox" id="notif-followed-new_comment" class="settings-toggle"${_notifPrefsFollowed.new_comment ? " checked" : ""} />
+                </label>
+              </div>
+              <div class="settings-group">
+                <label class="settings-label">
+                  <div>
+                    <span>Replies to my threads</span>
+                    <div class="settings-hint">Someone replied to a thread you started</div>
+                  </div>
+                  <input type="checkbox" id="notif-followed-new_comment_participated" class="settings-toggle"${_notifPrefsFollowed.new_comment_participated ? " checked" : ""} />
+                </label>
+              </div>
             </div>
 
             <div class="settings-section">
@@ -454,6 +473,8 @@ export async function showSettings() {
           { id: "notif-followed-review_required", key: "review_required",   state: _notifPrefsFollowed },
           { id: "notif-followed-changes_requested", key: "changes_requested", state: _notifPrefsFollowed },
           { id: "notif-followed-approved",        key: "approved",          state: _notifPrefsFollowed },
+          { id: "notif-followed-new_comment",     key: "new_comment",       state: _notifPrefsFollowed },
+          { id: "notif-followed-new_comment_participated", key: "new_comment_participated", state: _notifPrefsFollowed },
         ];
 
         for (const { id, key, state } of notifMap) {
