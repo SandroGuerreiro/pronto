@@ -398,6 +398,10 @@ pub fn toggle_window(app: &AppHandle) {
     }
 }
 
+#[cfg(test)]
+#[path = "tray_tests.rs"]
+mod tray_tests;
+
 pub fn update_tray_icon(app: &AppHandle, attention: bool) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if attention {

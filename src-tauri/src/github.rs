@@ -842,6 +842,10 @@ pub async fn fetch_all_prs(
     })
 }
 
+#[cfg(test)]
+#[path = "github_tests.rs"]
+pub mod github_tests;
+
 pub async fn fetch_workflow_status(
     client: &reqwest::Client,
     token: &str,
