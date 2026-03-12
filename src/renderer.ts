@@ -13,7 +13,7 @@ import {
   pendingUnhideRepos,
 } from "./state";
 
-export type GroupedPrs = [string, [string, PullRequest[]][]][];
+type GroupedPrs = [string, [string, PullRequest[]][]][];
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 
@@ -284,7 +284,7 @@ export function renderAccordionContent(prs: PullRequest[], forceExpand = false):
 
 // ── Grouping ──────────────────────────────────────────────────────────────────
 
-export function groupPrs(prs: PullRequest[]): GroupedPrs {
+function groupPrs(prs: PullRequest[]): GroupedPrs {
   const orgMap = new Map<string, Map<string, PullRequest[]>>();
   const sorted = [...prs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -327,22 +327,6 @@ export function renderFlatList(prs: PullRequest[]): string {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
   return sorted.map(renderPrCard).join("");
-}
-
-// ── Section ───────────────────────────────────────────────────────────────────
-
-export function renderSection(title: string, prs: PullRequest[]): string {
-  if (prs.length === 0) return "";
-  const body = groupByRepository ? renderAccordionContent(prs) : renderFlatList(prs);
-  if (!body) return "";
-  return `
-    <section class="pr-section">
-      <div class="pr-section-header">
-        <div class="pr-section-title">${title}</div>
-      </div>
-      ${body}
-    </section>
-  `;
 }
 
 // ── Collapsible Section (for merged tab) ───────────────────────────────────────

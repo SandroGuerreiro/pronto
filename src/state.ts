@@ -1,4 +1,4 @@
-import type { FetchResult, TabName, FilterType } from "./types";
+import type { FetchResult, TabName } from "./types";
 import { DEFAULT_KEYBINDINGS } from "./types";
 
 // ── PR data ──────────────────────────────────────────────────────────────────
@@ -35,7 +35,6 @@ export let pendingUnhideRepos = new Set<string>();
 
 // ── Search / filter (session-only, never persisted) ───────────────────────────
 export let searchQuery: string = "";
-export let activeFilter: FilterType = "all";
 
 // ── Setters ───────────────────────────────────────────────────────────────────
 export function setCurrentAttentionUrls(urls: string[]) { currentAttentionUrls = urls; }
@@ -51,9 +50,7 @@ export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbD
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
 export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }
 export function setFollowedUsers(users: string[]) { followedUsers = users; }
-export function setFollowedPrs(prs: Set<string>) { followedPrs = prs; }
 export function setSearchQuery(q: string) { searchQuery = q; }
-export function setActiveFilter(f: FilterType) { activeFilter = f; }
 export function clearPendingUnhide() {
   pendingUnhideOrgs.clear();
   pendingUnhideRepos.clear();
@@ -67,5 +64,4 @@ export function setKeybindings(kb: Record<string, string>) {
 
 // ── Homebrew ───────────────────────────────────────────────────────────
 import type { HomebrewStatus } from "./types";
-export let homebrewStatus: HomebrewStatus | null = null;
-export function setHomebrewStatus(s: HomebrewStatus | null) { homebrewStatus = s; }
+export function setHomebrewStatus(_s: HomebrewStatus | null) { }

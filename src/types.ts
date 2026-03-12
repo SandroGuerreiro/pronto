@@ -33,15 +33,15 @@ export interface Comments {
   totalCount: number;
 }
 
-export interface StatusCheckRollup {
+interface StatusCheckRollup {
   state: string;
 }
 
-export interface Commit {
+interface Commit {
   statusCheckRollup: StatusCheckRollup | null;
 }
 
-export interface CommitNode {
+interface CommitNode {
   commit: Commit;
 }
 
@@ -49,7 +49,7 @@ export interface CommitConnection {
   nodes: CommitNode[];
 }
 
-export interface ReviewThread {
+interface ReviewThread {
   isResolved: boolean;
   comments: { totalCount: number };
 }
