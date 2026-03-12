@@ -47,6 +47,11 @@ describe("getStatus", () => {
     const pr = makePr({ state: "OPEN", mergeQueueEntry: { position: 1 } });
     expect(getStatus(pr).class).toBe("in-queue");
   });
+
+  it("in-queue takes priority over merged state", () => {
+    const pr = makePr({ state: "OPEN", merged: true, mergeQueueEntry: { position: 1 } });
+    expect(getStatus(pr).class).toBe("in-queue");
+  });
 });
 
 // ---------------------------------------------------------------------------
