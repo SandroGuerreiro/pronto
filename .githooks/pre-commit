@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+echo "Running tests before commit..."
+
+echo "\n→ TypeScript tests"
+pnpm test
+
+echo "\n→ Rust tests"
+cd src-tauri && cargo test --quiet
+cd ..
+
+echo "\nAll tests passed."
