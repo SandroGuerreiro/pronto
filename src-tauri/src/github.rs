@@ -233,6 +233,34 @@ pub struct PrElementChanges {
     pub new_comment_participated: bool,
 }
 
+impl PrElementChanges {
+    /// Produces a human-readable description of what changed, for use in notifications.
+    pub fn describe(&self, is_merged: bool) -> String {
+        if is_merged {
+            return "PR was merged".to_string();
+        }
+
+        let mut parts = Vec::new();
+        if self.became_approved { parts.push("PR was approved"); }
+        if self.became_changes_requested { parts.push("Changes requested"); }
+        if self.became_review_required { parts.push("Review required"); }
+        if self.checks_failed { parts.push("Checks failed"); }
+        if self.checks_recovered { parts.push("Checks passed"); }
+        if self.kicked_from_queue { parts.push("Removed from merge queue"); }
+        if self.new_comment_participated {
+            parts.push("Reply to your comment");
+        } else if self.new_comment {
+            parts.push("New comments");
+        }
+
+        if parts.is_empty() {
+            "State changed".to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 pub struct FetchResult {
     pub open: Vec<PullRequest>,

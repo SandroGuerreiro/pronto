@@ -1,199 +1,18 @@
 pub mod auth;
 pub mod github;
-pub mod tray;
 pub mod homebrew;
+pub mod tray;
+pub mod types;
+
+pub use types::*;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HiddenPr {
-    pub url: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationPreferences {
-    #[serde(default)]
-    pub review_required: bool,
-    #[serde(default)]
-    pub changes_requested: bool,
-    #[serde(default)]
-    pub approved: bool,
-    #[serde(default)]
-    pub checks_failed: bool,
-    #[serde(default)]
-    pub checks_recovered: bool,
-    #[serde(default)]
-    pub kicked_from_queue: bool,
-    #[serde(default)]
-    pub new_comment: bool,
-    #[serde(default = "default_true")]
-    pub new_comment_participated: bool,
-}
-
-impl Default for NotificationPreferences {
-    fn default() -> Self {
-        Self {
-            review_required: false,
-            changes_requested: false,
-            approved: false,
-            checks_failed: false,
-            checks_recovered: false,
-            kicked_from_queue: false,
-            new_comment: false,
-            new_comment_participated: true,
-        }
-    }
-}
-
-fn default_notification_prefs_owned() -> NotificationPreferences {
-    NotificationPreferences {
-        review_required: true,
-        changes_requested: true,
-        approved: true,
-        checks_failed: true,
-        checks_recovered: true,
-        kicked_from_queue: true,
-        new_comment: true,
-        new_comment_participated: false,
-    }
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_poll_interval() -> u64 {
-    60
-}
-
-fn default_merged_window() -> u64 {
-    24
-}
-
-fn default_global_toggle() -> String {
-    "Super+Ctrl+P".to_string()
-}
-
-fn default_global_reload() -> String {
-    "Super+Ctrl+R".to_string()
-}
-
-fn default_global_follow() -> String {
-    "Super+Ctrl+L".to_string()
-}
-
-fn default_homebrew_check_interval() -> u64 {
-    14400  // 4 hours
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Settings {
-    #[serde(default = "default_poll_interval")]
-    pub poll_interval_secs: u64,
-    #[serde(default = "default_true")]
-    pub notifications_enabled: bool,
-    #[serde(default = "default_true")]
-    pub show_recently_merged: bool,
-    #[serde(default = "default_merged_window")]
-    pub merged_window_hours: u64,
-    #[serde(default)]
-    pub show_closed: bool,
-    #[serde(default)]
-    pub closed_window_hours: u64,
-    #[serde(default)]
-    pub favorite_orgs: Vec<String>,
-    #[serde(default)]
-    pub favorite_repos: Vec<String>,
-    #[serde(default)]
-    pub collapsed_accordions: Vec<String>,
-    #[serde(default)]
-    pub hidden_orgs: Vec<String>,
-    #[serde(default)]
-    pub hidden_repos: Vec<String>,
-    #[serde(default)]
-    pub hidden_prs: Vec<HiddenPr>,
-    #[serde(default)]
-    pub followed_users: Vec<String>,
-    #[serde(default)]
-    pub followed_prs: Vec<String>,
-    #[serde(default = "default_true")]
-    pub group_by_repository: bool,
-    #[serde(default)]
-    pub workflow_monitor_enabled: bool,
-    #[serde(default)]
-    pub workflow_org: String,
-    #[serde(default)]
-    pub workflow_repo: String,
-    #[serde(default)]
-    pub workflow_name: String,
-    #[serde(default)]
-    pub keybindings: HashMap<String, String>,
-    #[serde(default = "default_global_toggle")]
-    pub global_toggle_shortcut: String,
-    #[serde(default = "default_global_reload")]
-    pub global_reload_shortcut: String,
-    #[serde(default = "default_global_follow")]
-    pub global_follow_shortcut: String,
-    #[serde(default = "default_notification_prefs_owned")]
-    pub notification_prefs_owned: NotificationPreferences,
-    #[serde(default)]
-    pub notification_prefs_followed: NotificationPreferences,
-    #[serde(default = "default_true")]
-    pub notify_on_merged: bool,
-    #[serde(default)]
-    pub notify_on_closed: bool,
-    #[serde(default = "default_true")]
-    pub homebrew_check_enabled: bool,
-    #[serde(default = "default_homebrew_check_interval")]
-    pub homebrew_check_interval_secs: u64,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            poll_interval_secs: 60,
-            notifications_enabled: true,
-            show_recently_merged: true,
-            merged_window_hours: 24,
-            show_closed: false,
-            closed_window_hours: 24,
-            favorite_orgs: vec![],
-            favorite_repos: vec![],
-            collapsed_accordions: vec![],
-            hidden_orgs: vec![],
-            hidden_repos: vec![],
-            hidden_prs: vec![],
-            followed_users: vec![],
-            followed_prs: vec![],
-            group_by_repository: false,
-            workflow_monitor_enabled: false,
-            workflow_org: String::new(),
-            workflow_repo: String::new(),
-            workflow_name: String::new(),
-            keybindings: HashMap::new(),
-            global_toggle_shortcut: default_global_toggle(),
-            global_reload_shortcut: default_global_reload(),
-            global_follow_shortcut: default_global_follow(),
-            notification_prefs_owned: default_notification_prefs_owned(),
-            notification_prefs_followed: NotificationPreferences {
-                review_required: true,
-                ..Default::default()
-            },
-            notify_on_merged: true,
-            notify_on_closed: false,
-            homebrew_check_enabled: true,
-            homebrew_check_interval_secs: 14400,
-        }
-    }
-}
 
 fn load_settings(path: &PathBuf) -> Settings {
     std::fs::read_to_string(path)
@@ -215,13 +34,6 @@ fn settings_path(app: &tauri::AppHandle) -> PathBuf {
         .app_data_dir()
         .expect("no app data dir")
         .join("settings.json")
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotifyData {
-    pub kind: String,
-    pub title: String,
-    pub message: String,
 }
 
 pub struct AppState {
@@ -257,99 +69,6 @@ fn get_token(state: &AppState) -> Result<String, String> {
     }
 }
 
-fn describe_change(pr: &github::PullRequest, old_fp: Option<&str>, viewer_login: &str) -> String {
-    if pr.merged {
-        return "PR was merged".to_string();
-    }
-
-    let Some(old) = old_fp else {
-        return "State changed".to_string();
-    };
-
-    let parts: Vec<&str> = old.split('|').collect();
-    if parts.len() < 5 {
-        return "State changed".to_string();
-    }
-
-    let mut changes = Vec::new();
-
-    let new_review = pr.review_decision.as_deref().unwrap_or("");
-    if parts[0] != new_review {
-        match new_review {
-            "APPROVED" => changes.push("PR was approved"),
-            "CHANGES_REQUESTED" => changes.push("Changes requested"),
-            "REVIEW_REQUIRED" => changes.push("Review required"),
-            _ => changes.push("Review status changed"),
-        }
-    }
-
-    let new_checks = pr
-        .commits
-        .nodes
-        .first()
-        .and_then(|n| n.commit.status_check_rollup.as_ref())
-        .map(|r| r.state.as_str())
-        .unwrap_or("");
-    if parts[1] != new_checks {
-        match new_checks {
-            "SUCCESS" => changes.push("Checks passed"),
-            "FAILURE" | "ERROR" => changes.push("Checks failed"),
-            "PENDING" | "EXPECTED" => changes.push("Checks running"),
-            _ => changes.push("Check status changed"),
-        }
-    }
-
-    let old_thread_comments_by_others = parts.get(8).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-    let new_thread_comments_by_others: i32 = pr.review_threads.nodes.iter()
-        .filter(|t| t.comments.nodes.last()
-            .and_then(|c| c.author.as_ref())
-            .map(|a| a.login != viewer_login)
-            .unwrap_or(true))
-        .map(|t| t.comments.total_count)
-        .sum();
-    let has_new_thread_comment_by_other = new_thread_comments_by_others > old_thread_comments_by_others;
-    let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    let comment_count_changed = parts[2].parse::<i32>().unwrap_or(0) != pr.comments.total_count;
-    // Check for replies to threads the viewer started
-    let old_thread_comments_participated = parts.get(9).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-    let new_thread_comments_participated: i32 = pr.review_threads.nodes.iter()
-        .filter(|t| {
-            let viewer_started = t.first_comment.as_ref()
-                .and_then(|fc| fc.nodes.first())
-                .and_then(|c| c.author.as_ref())
-                .map(|a| a.login == viewer_login)
-                .unwrap_or(false);
-            let other_replied = t.comments.nodes.last()
-                .and_then(|c| c.author.as_ref())
-                .map(|a| a.login != viewer_login)
-                .unwrap_or(true);
-            viewer_started && other_replied
-        })
-        .map(|t| t.comments.total_count)
-        .sum();
-    let has_reply_to_my_thread = new_thread_comments_participated > old_thread_comments_participated;
-
-    if has_reply_to_my_thread {
-        changes.push("Reply to your comment");
-    } else if (comment_count_changed && last_human_commenter != viewer_login)
-        || has_new_thread_comment_by_other
-    {
-        changes.push("New comments");
-    }
-
-    let old_in_queue = parts[4] == "true";
-    let new_in_queue = pr.merge_queue_entry.is_some();
-    if old_in_queue && !new_in_queue {
-        changes.push("Removed from merge queue");
-    }
-
-    if changes.is_empty() {
-        "State changed".to_string()
-    } else {
-        changes.join(", ")
-    }
-}
-
 fn ensure_notification_app(app: &tauri::AppHandle) {
     use std::sync::Once;
     static INIT: Once = Once::new();
@@ -367,7 +86,6 @@ fn ensure_notification_app(app: &tauri::AppHandle) {
 fn send_attention_notification(
     app: &tauri::AppHandle,
     result: &github::FetchResult,
-    seen: &HashMap<String, String>,
 ) {
     let mut attention_prs: Vec<&github::PullRequest> = result
         .open
@@ -396,8 +114,10 @@ fn send_attention_notification(
 
     let (title, body) = if attention_prs.len() == 1 {
         let pr = attention_prs[0];
-        let old_fp = seen.get(&pr.url).map(|s| s.as_str());
-        (pr.title.clone(), describe_change(pr, old_fp, &result.viewer_login))
+        let changes = result.element_changes.get(&pr.url)
+            .cloned()
+            .unwrap_or_default();
+        (pr.title.clone(), changes.describe(pr.merged))
     } else {
         let count = attention_prs.len();
         let names: Vec<String> = attention_prs.iter().map(|pr| pr.title.clone()).collect();
@@ -448,76 +168,35 @@ fn process_result(
             let mut seen = state.seen_prs.lock().unwrap();
             let settings = state.settings.lock().unwrap().clone();
 
-            // Update viewer_login from the latest fetch result.
             if !result.viewer_login.is_empty() {
                 *state.viewer_login.lock().unwrap() = result.viewer_login.clone();
             }
             let viewer_login = state.viewer_login.lock().unwrap().clone();
 
-            result.attention_urls = tray::attention_urls(&result, &seen, &settings, &viewer_login);
+            let (attention, element_changes) = tray::process_attention(
+                &result,
+                &mut seen,
+                &settings,
+                &viewer_login,
+            );
+            result.attention_urls = attention;
+            result.element_changes = element_changes;
+        }
 
-            // Compute per-element changes for every PR in attention_urls
-            let all_prs: Vec<&github::PullRequest> = result
-                .open
-                .iter()
-                .chain(result.followed_open.iter())
-                .collect();
-            result.element_changes = result
-                .attention_urls
-                .iter()
-                .filter_map(|url| {
-                    let old_fp = seen.get(url)?;
-                    let pr = all_prs.iter().find(|p| &p.url == url)?;
-                    Some((url.clone(), tray::compute_element_changes(pr, old_fp, &viewer_login)))
-                })
-                .collect();
-
-            // Drop entries from notified_prs that are no longer in attention so they
-            // can trigger a fresh notification if they re-enter attention later.
-            {
-                let attention_set: HashSet<&str> =
-                    result.attention_urls.iter().map(|s| s.as_str()).collect();
-                state
-                    .notified_prs
-                    .lock()
-                    .unwrap()
-                    .retain(|url| attention_set.contains(url.as_str()));
-            }
-
-            if notify {
-                send_attention_notification(app, &result, &seen);
-            }
-
+        // Drop entries from notified_prs that are no longer in attention so they
+        // can trigger a fresh notification if they re-enter attention later.
+        {
             let attention_set: HashSet<&str> =
                 result.attention_urls.iter().map(|s| s.as_str()).collect();
-            for pr in result.open.iter().chain(result.followed_open.iter()) {
-                // Update fingerprint for PRs not in attention, so we track
-                // intermediate states (e.g. PENDING) for future change detection.
-                // Attention PRs keep their old fingerprint until dismissed.
-                if !attention_set.contains(pr.url.as_str()) {
-                    seen.insert(pr.url.clone(), tray::attention_fingerprint(pr, &viewer_login));
-                }
-            }
+            state
+                .notified_prs
+                .lock()
+                .unwrap()
+                .retain(|url| attention_set.contains(url.as_str()));
+        }
 
-            for pr in result
-                .recently_merged
-                .iter()
-                .chain(result.followed_recently_merged.iter())
-                .chain(result.recently_closed.iter())
-                .chain(result.followed_recently_closed.iter())
-            {
-                seen.remove(&pr.url);
-            }
-
-            // Remove stale entries for PRs that are no longer open (hidden, org-hidden,
-            // unfollowed users, etc.) to prevent seen_prs from growing unboundedly.
-            let current_open_urls: HashSet<&str> = result
-                .open
-                .iter()
-                .chain(result.followed_open.iter())
-                .map(|p| p.url.as_str())
-                .collect();
-            seen.retain(|url, _| current_open_urls.contains(url.as_str()));
+        if notify {
+            send_attention_notification(app, &result);
         }
 
         changed = result.attention_urls != prev_attention || result.open.len() != prev_open_len;

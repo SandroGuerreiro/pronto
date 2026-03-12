@@ -5,7 +5,7 @@ use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
 use tauri_plugin_positioner::{Position, WindowExt};
 
 use crate::github::{FetchResult, PrElementChanges, PullRequest};
-use crate::{NotificationPreferences, Settings};
+use crate::types::{NotificationPreferences, Settings};
 
 const TRAY_ID: &str = "main-tray";
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
@@ -248,6 +248,67 @@ pub fn attention_urls(
     }
 
     urls
+}
+
+/// Pure computation: given a fetch result and seen state, compute attention URLs
+/// and element changes, then update the seen fingerprints for the next poll cycle.
+///
+/// This function is free of Tauri/AppHandle dependencies and can be tested in isolation.
+pub fn process_attention(
+    result: &FetchResult,
+    seen: &mut HashMap<String, String>,
+    settings: &Settings,
+    viewer_login: &str,
+) -> (Vec<String>, HashMap<String, PrElementChanges>) {
+    let attention = attention_urls(result, seen, settings, viewer_login);
+
+    let all_prs: Vec<&PullRequest> = result
+        .open
+        .iter()
+        .chain(result.followed_open.iter())
+        .collect();
+
+    let element_changes: HashMap<String, PrElementChanges> = attention
+        .iter()
+        .filter_map(|url| {
+            let old_fp = seen.get(url)?;
+            let pr = all_prs.iter().find(|p| &p.url == url)?;
+            Some((url.clone(), compute_element_changes(pr, old_fp, viewer_login)))
+        })
+        .collect();
+
+    // Update fingerprints for non-attention PRs so we track intermediate states
+    // (e.g. PENDING) for future change detection. Attention PRs keep their old
+    // fingerprint until dismissed.
+    let attention_set: HashSet<&str> = attention.iter().map(|s| s.as_str()).collect();
+    for pr in result.open.iter().chain(result.followed_open.iter()) {
+        if !attention_set.contains(pr.url.as_str()) {
+            seen.insert(pr.url.clone(), attention_fingerprint(pr, viewer_login));
+        }
+    }
+
+    // Remove merged/closed PRs from seen
+    for pr in result
+        .recently_merged
+        .iter()
+        .chain(result.followed_recently_merged.iter())
+        .chain(result.recently_closed.iter())
+        .chain(result.followed_recently_closed.iter())
+    {
+        seen.remove(&pr.url);
+    }
+
+    // Remove stale entries for PRs that are no longer open (hidden, org-hidden,
+    // unfollowed users, etc.) to prevent seen_prs from growing unboundedly.
+    let current_open_urls: HashSet<&str> = result
+        .open
+        .iter()
+        .chain(result.followed_open.iter())
+        .map(|p| p.url.as_str())
+        .collect();
+    seen.retain(|url, _| current_open_urls.contains(url.as_str()));
+
+    (attention, element_changes)
 }
 
 pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
