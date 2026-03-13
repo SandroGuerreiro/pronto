@@ -405,6 +405,21 @@ pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
                 }));
             }
 
+            // Dismiss workflow attention when opening the popup
+            if let Some(state) = app.try_state::<crate::AppState>() {
+                let has_workflow = state.last_workflow_status.lock().unwrap().is_some();
+                if has_workflow {
+                    let has_pr_attention = state
+                        .cached_prs
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .map(|r| !r.attention_urls.is_empty())
+                        .unwrap_or(false);
+                    crate::set_tray_attention(app, has_pr_attention);
+                }
+            }
+
             let _ = window.show();
             // The panel uses NonactivatingPanel so it can overlay fullscreen
             // apps without activating our app (which would exit fullscreen).

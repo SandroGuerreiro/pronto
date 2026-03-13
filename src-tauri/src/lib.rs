@@ -110,7 +110,7 @@ fn send_attention_notification(
     macos_notify::send(&info);
 }
 
-fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
+pub(crate) fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
     if let Some(state) = app.try_state::<AppState>() {
         let mut last = state.last_tray_attention.lock().unwrap();
         // When not in attention mode, skip if nothing changed.

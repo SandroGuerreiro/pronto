@@ -95,6 +95,12 @@ function renderPrView(result: FetchResult) {
     setCurrentResult(result);
     clearPendingUnhide();
     updateWorkflowIndicator(result.workflow_status);
+    // Dismiss workflow attention when popup is visible — the user sees the status directly
+    if (workflowHasAttention) {
+      setWorkflowHasAttention(false);
+      document.getElementById("workflow-indicator")?.classList.remove("wf-attention");
+      invoke("dismiss_workflow");
+    }
     renderActiveTab();
     lastCheckedAt = new Date();
     updatePollStatus();
