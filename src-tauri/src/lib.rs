@@ -257,6 +257,59 @@ fn update_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), Stri
     Ok(())
 }
 
+/// Snapshot of settings needed for a fetch + process cycle.
+struct FetchSettings {
+    notify: bool,
+    merged_hours: u64,
+    show_merged: bool,
+    closed_hours: u64,
+    show_closed: bool,
+    hidden_orgs: Vec<String>,
+    hidden_repos: Vec<String>,
+    hidden_prs: Vec<HiddenPr>,
+    followed_users: Vec<String>,
+    followed_prs: Vec<String>,
+    workflow_settings: Settings,
+}
+
+fn snapshot_fetch_settings(settings: &Settings) -> FetchSettings {
+    FetchSettings {
+        notify: settings.notifications_enabled,
+        merged_hours: settings.merged_window_hours,
+        show_merged: settings.show_recently_merged,
+        closed_hours: settings.closed_window_hours,
+        show_closed: settings.show_closed,
+        hidden_orgs: settings.hidden_orgs.clone(),
+        hidden_repos: settings.hidden_repos.clone(),
+        hidden_prs: settings.hidden_prs.clone(),
+        followed_users: settings.followed_users.clone(),
+        followed_prs: settings.followed_prs.clone(),
+        workflow_settings: Settings {
+            workflow_monitor_enabled: settings.workflow_monitor_enabled,
+            workflow_org: settings.workflow_org.clone(),
+            workflow_repo: settings.workflow_repo.clone(),
+            workflow_name: settings.workflow_name.clone(),
+            ..Default::default()
+        },
+    }
+}
+
+/// Remove expired followed PRs from settings and persist to disk.
+fn cleanup_expired_followed_prs(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    expired: &[String],
+) {
+    if expired.is_empty() {
+        return;
+    }
+    let mut settings = state.settings.lock().unwrap();
+    settings.followed_prs.retain(|url| !expired.contains(url));
+    let settings_to_save = settings.clone();
+    drop(settings);
+    let _ = save_settings(&settings_path(app), &settings_to_save);
+}
+
 fn filter_hidden_prs(
     mut result: github::FetchResult,
     hidden_prs: &[HiddenPr],
@@ -290,66 +343,29 @@ fn filter_hidden_prs(
 async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, String> {
     let state = app.state::<AppState>();
     let token = get_token(&state)?;
-    let (
-        merged_hours,
-        show_merged,
-        closed_hours,
-        show_closed,
-        hidden_orgs,
-        hidden_repos,
-        hidden_prs,
-        followed_users,
-        followed_prs,
-        settings_clone,
-    ) = {
+    let fs = {
         let s = state.settings.lock().unwrap();
-        (
-            s.merged_window_hours,
-            s.show_recently_merged,
-            s.closed_window_hours,
-            s.show_closed,
-            s.hidden_orgs.clone(),
-            s.hidden_repos.clone(),
-            s.hidden_prs.clone(),
-            s.followed_users.clone(),
-            s.followed_prs.clone(),
-            Settings {
-                workflow_monitor_enabled: s.workflow_monitor_enabled,
-                workflow_org: s.workflow_org.clone(),
-                workflow_repo: s.workflow_repo.clone(),
-                workflow_name: s.workflow_name.clone(),
-                ..Default::default()
-            },
-        )
+        snapshot_fetch_settings(&s)
     };
     let mut result = github::fetch_all_prs(
         &state.http_client,
         &token,
-        merged_hours,
-        show_merged,
-        closed_hours,
-        show_closed,
-        &hidden_orgs,
-        &hidden_repos,
-        &followed_users,
-        &followed_prs,
+        fs.merged_hours,
+        fs.show_merged,
+        fs.closed_hours,
+        fs.show_closed,
+        &fs.hidden_orgs,
+        &fs.hidden_repos,
+        &fs.followed_users,
+        &fs.followed_prs,
     )
     .await
     .map_err(|e| e.to_string())?;
 
-    // Clean up expired followed PRs (merged/closed > 48h ago)
-    if !result.expired_followed_prs.is_empty() {
-        let mut settings = state.settings.lock().unwrap();
-        settings.followed_prs.retain(|url| !result.expired_followed_prs.contains(url));
-        let settings_to_save = settings.clone();
-        drop(settings);
-        let path = settings_path(&app);
-        let _ = save_settings(&path, &settings_to_save);
-    }
+    cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
+    result = filter_hidden_prs(result, &fs.hidden_prs);
 
-    result = filter_hidden_prs(result, &hidden_prs);
-
-    if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await {
+    if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await {
         check_workflow_attention(&app, &wf, false);
         result.workflow_status = Some(wf);
     }
@@ -815,39 +831,9 @@ fn update_global_shortcuts(
                     return;
                 };
                 let _ = h.emit("polling-started", ());
-                let (
-                    notify,
-                    merged_hours,
-                    show_merged,
-                    closed_hours,
-                    show_closed,
-                    hidden_orgs,
-                    hidden_repos,
-                    hidden_prs,
-                    followed_users,
-                    followed_prs,
-                    settings_clone,
-                ) = {
+                let fs = {
                     let s = state.settings.lock().unwrap();
-                    (
-                        s.notifications_enabled,
-                        s.merged_window_hours,
-                        s.show_recently_merged,
-                        s.closed_window_hours,
-                        s.show_closed,
-                        s.hidden_orgs.clone(),
-                        s.hidden_repos.clone(),
-                        s.hidden_prs.clone(),
-                        s.followed_users.clone(),
-                        s.followed_prs.clone(),
-                        Settings {
-                            workflow_monitor_enabled: s.workflow_monitor_enabled,
-                            workflow_org: s.workflow_org.clone(),
-                            workflow_repo: s.workflow_repo.clone(),
-                            workflow_name: s.workflow_name.clone(),
-                            ..Default::default()
-                        },
-                    )
+                    snapshot_fetch_settings(&s)
                 };
                 let token = match get_token(&state) {
                     Ok(t) => t,
@@ -857,39 +843,30 @@ fn update_global_shortcuts(
                 let pr_fetch = github::fetch_all_prs(
                     &state.http_client,
                     &token,
-                    merged_hours,
-                    show_merged,
-                    closed_hours,
-                    show_closed,
-                    &hidden_orgs,
-                    &hidden_repos,
-                    &followed_users,
-                    &followed_prs,
+                    fs.merged_hours,
+                    fs.show_merged,
+                    fs.closed_hours,
+                    fs.show_closed,
+                    &fs.hidden_orgs,
+                    &fs.hidden_repos,
+                    &fs.followed_users,
+                    &fs.followed_prs,
                 )
                 .await;
                 if let Ok(result) = pr_fetch {
-                    // Clean up expired followed PRs (merged/closed > 48h ago)
-                    if !result.expired_followed_prs.is_empty() {
-                        let mut settings = state.settings.lock().unwrap();
-                        settings.followed_prs.retain(|url| !result.expired_followed_prs.contains(url));
-                        let settings_to_save = settings.clone();
-                        drop(settings);
-                        let path = settings_path(&h);
-                        let _ = save_settings(&path, &settings_to_save);
-                    }
-
-                    let result = filter_hidden_prs(result, &hidden_prs);
+                    cleanup_expired_followed_prs(&state, &h, &result.expired_followed_prs);
+                    let result = filter_hidden_prs(result, &fs.hidden_prs);
 
                     if let Some(wf) =
-                        fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await
+                        fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await
                     {
                         let mut result_with_wf = result;
                         result_with_wf.workflow_status = Some(wf.clone());
-                        let _wf_attention = check_workflow_attention(&h, &wf, notify);
-                        let (pr_result, _changed) = process_result(&h, result_with_wf, notify);
+                        let _wf_attention = check_workflow_attention(&h, &wf, fs.notify);
+                        let (pr_result, _changed) = process_result(&h, result_with_wf, fs.notify);
                         let _ = h.emit("prs-updated", pr_result);
                     } else {
-                        let (pr_result, _changed) = process_result(&h, result, notify);
+                        let (pr_result, _changed) = process_result(&h, result, fs.notify);
                         let _ = h.emit("prs-updated", pr_result);
                     }
                 }
@@ -949,39 +926,9 @@ async fn poll_prs(app: tauri::AppHandle) {
         let Some(state) = app.try_state::<AppState>() else {
             continue;
         };
-        let (
-            notify,
-            merged_hours,
-            show_merged,
-            closed_hours,
-            show_closed,
-            hidden_orgs,
-            hidden_repos,
-            hidden_prs,
-            followed_users,
-            followed_prs,
-            settings_clone,
-        ) = {
+        let fs = {
             let s = state.settings.lock().unwrap();
-            (
-                s.notifications_enabled,
-                s.merged_window_hours,
-                s.show_recently_merged,
-                s.closed_window_hours,
-                s.show_closed,
-                s.hidden_orgs.clone(),
-                s.hidden_repos.clone(),
-                s.hidden_prs.clone(),
-                s.followed_users.clone(),
-                s.followed_prs.clone(),
-                Settings {
-                    workflow_monitor_enabled: s.workflow_monitor_enabled,
-                    workflow_org: s.workflow_org.clone(),
-                    workflow_repo: s.workflow_repo.clone(),
-                    workflow_name: s.workflow_name.clone(),
-                    ..Default::default()
-                },
-            )
+            snapshot_fetch_settings(&s)
         };
         let token = match get_token(&state) {
             Ok(t) => t,
@@ -991,43 +938,34 @@ async fn poll_prs(app: tauri::AppHandle) {
         let pr_fetch = github::fetch_all_prs(
             &state.http_client,
             &token,
-            merged_hours,
-            show_merged,
-            closed_hours,
-            show_closed,
-            &hidden_orgs,
-            &hidden_repos,
-            &followed_users,
-            &followed_prs,
+            fs.merged_hours,
+            fs.show_merged,
+            fs.closed_hours,
+            fs.show_closed,
+            &fs.hidden_orgs,
+            &fs.hidden_repos,
+            &fs.followed_users,
+            &fs.followed_prs,
         )
         .await;
         match pr_fetch {
             Ok(mut result) => {
-                // Clean up expired followed PRs (merged/closed > 48h ago)
-                if !result.expired_followed_prs.is_empty() {
-                    let mut settings = state.settings.lock().unwrap();
-                    settings.followed_prs.retain(|url| !result.expired_followed_prs.contains(url));
-                    let settings_to_save = settings.clone();
-                    drop(settings);
-                    let path = settings_path(&app);
-                    let _ = save_settings(&path, &settings_to_save);
-                }
-
-                result = filter_hidden_prs(result, &hidden_prs);
+                cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
+                result = filter_hidden_prs(result, &fs.hidden_prs);
 
                 let (changed, pr_result) = if let Some(wf) =
-                    fetch_workflow_if_enabled(&state.http_client, &token, &settings_clone).await
+                    fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await
                 {
-                    let wf_attention = check_workflow_attention(&app, &wf, notify);
+                    let wf_attention = check_workflow_attention(&app, &wf, fs.notify);
                     result.workflow_status = Some(wf);
-                    let (pr_result, changed) = process_result(&app, result, notify);
+                    let (pr_result, changed) = process_result(&app, result, fs.notify);
 
                     if wf_attention && pr_result.attention_urls.is_empty() {
                         set_tray_attention(&app, true);
                     }
                     (changed || wf_attention, pr_result)
                 } else {
-                    let (pr_result, changed) = process_result(&app, result, notify);
+                    let (pr_result, changed) = process_result(&app, result, fs.notify);
                     (changed, pr_result)
                 };
 

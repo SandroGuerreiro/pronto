@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
 use tauri_plugin_positioner::{Position, WindowExt};
 
-use crate::github::{FetchResult, PrElementChanges, PullRequest};
+use crate::github::{FetchResult, PrElementChanges, PullRequest, ReviewThread};
 use crate::types::{NotificationPreferences, Settings};
 
 const TRAY_ID: &str = "main-tray";
@@ -62,28 +62,20 @@ fn load_tray_icon_inverted() -> Image<'static> {
     Image::new_owned(pixels, w, h)
 }
 
-/// Captures the full PR state so we can detect actual changes between polls.
-/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments|thread_comments_by_others|thread_comments_by_others_participated
-pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
-    let review = pr.review_decision.as_deref().unwrap_or("");
-    let head = pr.commits.nodes.first();
-    let checks = head
-        .and_then(|n| n.commit.status_check_rollup.as_ref())
-        .map(|r| r.state.as_str())
-        .unwrap_or("");
-    let oid = head.map(|n| n.commit.oid.as_str()).unwrap_or("");
-    let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
-    let thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
-    let thread_comments_by_others: i32 = pr.review_threads.nodes.iter()
+/// Sum comment counts from threads where the last commenter is NOT the viewer.
+fn thread_comments_by_others(threads: &[ReviewThread], viewer_login: &str) -> i32 {
+    threads.iter()
         .filter(|t| t.comments.nodes.last()
             .and_then(|c| c.author.as_ref())
             .map(|a| a.login != viewer_login)
             .unwrap_or(true))
         .map(|t| t.comments.total_count)
-        .sum();
-    // Sum comment counts only from threads where the viewer is the author (first commenter)
-    // AND the last commenter is someone else (i.e. someone replied to viewer's thread).
-    let thread_comments_by_others_participated: i32 = pr.review_threads.nodes.iter()
+        .sum()
+}
+
+/// Sum comment counts from threads the viewer started AND someone else replied to.
+fn thread_comments_by_others_participated(threads: &[ReviewThread], viewer_login: &str) -> i32 {
+    threads.iter()
         .filter(|t| {
             let viewer_started = t.first_comment.as_ref()
                 .and_then(|fc| fc.nodes.first())
@@ -97,10 +89,26 @@ pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
             viewer_started && other_replied
         })
         .map(|t| t.comments.total_count)
-        .sum();
+        .sum()
+}
+
+/// Captures the full PR state so we can detect actual changes between polls.
+/// Format: review|checks|comments|unresolved|in_queue|last_commenter|oid|thread_comments|thread_comments_by_others|thread_comments_by_others_participated
+pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
+    let review = pr.review_decision.as_deref().unwrap_or("");
+    let head = pr.commits.nodes.first();
+    let checks = head
+        .and_then(|n| n.commit.status_check_rollup.as_ref())
+        .map(|r| r.state.as_str())
+        .unwrap_or("");
+    let oid = head.map(|n| n.commit.oid.as_str()).unwrap_or("");
+    let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+    let thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
+    let by_others = thread_comments_by_others(&pr.review_threads.nodes, viewer_login);
+    let by_others_participated = thread_comments_by_others_participated(&pr.review_threads.nodes, viewer_login);
     let in_queue = pr.merge_queue_entry.is_some();
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    format!("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments, thread_comments_by_others, thread_comments_by_others_participated)
+    format!("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments, by_others, by_others_participated)
 }
 
 
@@ -126,34 +134,12 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
         .unwrap_or("");
     let new_in_queue = pr.merge_queue_entry.is_some();
 
-    // Sum comment counts only from threads where the last commenter is NOT the viewer.
-    let new_thread_comments_by_others: i32 = pr.review_threads.nodes.iter()
-        .filter(|t| t.comments.nodes.last()
-            .and_then(|c| c.author.as_ref())
-            .map(|a| a.login != viewer_login)
-            .unwrap_or(true))
-        .map(|t| t.comments.total_count)
-        .sum();
-    let has_new_thread_comment_by_other = new_thread_comments_by_others > old_thread_comments_by_others;
+    let new_by_others = thread_comments_by_others(&pr.review_threads.nodes, viewer_login);
+    let has_new_thread_comment_by_other = new_by_others > old_thread_comments_by_others;
 
-    // Sum comment counts only from threads the viewer started AND someone else replied.
-    let old_thread_comments_by_others_participated = parts.get(9).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-    let new_thread_comments_by_others_participated: i32 = pr.review_threads.nodes.iter()
-        .filter(|t| {
-            let viewer_started = t.first_comment.as_ref()
-                .and_then(|fc| fc.nodes.first())
-                .and_then(|c| c.author.as_ref())
-                .map(|a| a.login == viewer_login)
-                .unwrap_or(false);
-            let other_replied = t.comments.nodes.last()
-                .and_then(|c| c.author.as_ref())
-                .map(|a| a.login != viewer_login)
-                .unwrap_or(true);
-            viewer_started && other_replied
-        })
-        .map(|t| t.comments.total_count)
-        .sum();
-    let has_new_comment_participated = new_thread_comments_by_others_participated > old_thread_comments_by_others_participated;
+    let old_by_others_participated = parts.get(9).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let new_by_others_participated = thread_comments_by_others_participated(&pr.review_threads.nodes, viewer_login);
+    let has_new_comment_participated = new_by_others_participated > old_by_others_participated;
 
     // Only notify when new non-bot comments exist and the last human commenter is not the viewer.
     // total_count is already bot-free (adjusted at fetch time), so no bot check needed here.

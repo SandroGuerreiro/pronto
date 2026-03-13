@@ -61,7 +61,3 @@ export let keybindings: Record<string, string> = { ...DEFAULT_KEYBINDINGS };
 export function setKeybindings(kb: Record<string, string>) {
   keybindings = { ...DEFAULT_KEYBINDINGS, ...kb };
 }
-
-// ── Homebrew ───────────────────────────────────────────────────────────
-import type { HomebrewStatus } from "./types";
-export function setHomebrewStatus(_s: HomebrewStatus | null) { }

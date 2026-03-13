@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { makePr, withChecks, withReviewDecision } from "./fixtures";
 
 // Mock state module — renderer.ts imports currentAttentionUrls from it

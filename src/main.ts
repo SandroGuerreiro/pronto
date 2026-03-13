@@ -24,7 +24,6 @@ import {
   setShowRecentlyMerged,
   showClosed,
   setShowClosed,
-  setHomebrewStatus,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -459,14 +458,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Homebrew update indicator
   invoke<HomebrewStatus | null>("get_brew_status").then((status) => {
-    setHomebrewStatus(status);
     updateBrewIndicator(status);
   }).catch(() => {
     // Silently fail if brew status can't be fetched
   });
 
   await listen<HomebrewStatus>("brew-updated", (event) => {
-    setHomebrewStatus(event.payload);
     updateBrewIndicator(event.payload);
   });
 
