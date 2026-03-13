@@ -165,7 +165,9 @@ export function renderActionButtons(type: "org" | "repo", key: string): string {
   const scope = type === "org" ? "organization" : "repository";
   const hideTitle = isHidden ? `Show ${scope}` : `Hide ${scope}`;
   const favTitle = isFav ? `Unfavorite ${scope}` : `Favorite ${scope}`;
-  return `<button class="hide-btn${isHidden ? " active" : ""}" data-hide-type="${type}" data-hide-key="${key}" title="${hideTitle}" aria-label="${hideTitle}"></button><button class="fav-btn${isFav ? " active" : ""}" data-fav-type="${type}" data-fav-key="${key}" title="${favTitle}" aria-label="${favTitle}">${isFav ? "★" : "☆"}</button>`;
+  const ghUrl = `https://github.com/${key}`;
+  const openTitle = `Open ${scope} on GitHub`;
+  return `<button class="open-gh-btn" data-gh-url="${ghUrl}" title="${openTitle}" aria-label="${openTitle}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H3v10h10v-3"/><path d="M9 2h5v5"/><path d="M14 2L7 9"/></svg></button><button class="hide-btn${isHidden ? " active" : ""}" data-hide-type="${type}" data-hide-key="${key}" title="${hideTitle}" aria-label="${hideTitle}"></button><button class="fav-btn${isFav ? " active" : ""}" data-fav-type="${type}" data-fav-key="${key}" title="${favTitle}" aria-label="${favTitle}">${isFav ? "★" : "☆"}</button>`;
 }
 
 // ── Accordion rendering ───────────────────────────────────────────────────────

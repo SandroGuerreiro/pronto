@@ -493,6 +493,29 @@ export function bindContentEvents(container: HTMLElement) {
       toggleHidden(type, key);
     });
   });
+
+  container.querySelectorAll(".open-gh-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const url = btn.getAttribute("data-gh-url");
+      if (url) openUrl(url);
+    });
+  });
+
+  // Cmd+click on accordion label opens org/repo on GitHub
+  container.querySelectorAll(".accordion-label").forEach((label) => {
+    label.addEventListener("click", (e) => {
+      if (!(e as MouseEvent).metaKey) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const details = label.closest("details[data-accordion-id]");
+      if (!details) return;
+      const id = details.getAttribute("data-accordion-id") || "";
+      const key = id.replace(/^(org|repo):/, "");
+      if (key) openUrl(`https://github.com/${key}`);
+    });
+  });
 }
 
 // ── Hide PR (keyboard shortcut 'i') ──────────────────────────────────────────
