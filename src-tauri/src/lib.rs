@@ -14,6 +14,18 @@ use std::time::Duration;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+// Module-level functions for ProntoPanel ObjC class overrides.
+// Defined here (not inside a block) so Rust gives them higher-ranked
+// lifetime bounds required by objc2's MethodImplementation trait.
+#[cfg(target_os = "macos")]
+extern "C-unwind" fn pronto_panel_can_become_key(
+    _this: &objc2::runtime::AnyObject,
+    _sel: objc2::runtime::Sel,
+) -> objc2::runtime::Bool {
+    objc2::runtime::Bool::YES
+}
+
+
 fn load_settings(path: &PathBuf) -> Settings {
     std::fs::read_to_string(path)
         .ok()
@@ -827,7 +839,7 @@ fn update_global_shortcuts(
     app.global_shortcut()
         .on_shortcut(toggle_shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                tray::toggle_window(&handle);
+                tray::toggle_window(&handle, tray::ToggleSource::GlobalShortcut);
             }
         })
         .map_err(|e| e.to_string())?;
@@ -1203,6 +1215,69 @@ pub fn run() {
             tray::setup_tray(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
+                // Convert the window to NSPanel so it can float above fullscreen apps.
+                // NSPanel is the standard AppKit mechanism for auxiliary windows (pickers,
+                // HUDs, menu-bar popups) that need to appear on every Space and over
+                // fullscreen apps.  Plain NSWindow cannot do this reliably.
+                #[cfg(target_os = "macos")]
+                if let Ok(ptr) = window.ns_window() {
+                    use objc2::runtime::{AnyClass, AnyObject, ClassBuilder};
+                    use objc2_app_kit::{
+                        NSFloatingWindowLevel, NSPanel,
+                        NSWindowCollectionBehavior, NSWindowStyleMask,
+                    };
+
+                    // Register ProntoPanel (subclass of NSPanel) with
+                    // canBecomeKeyWindow → YES so WKWebView receives keyboard events.
+                    let panel_superclass =
+                        AnyClass::get(c"NSPanel").expect("NSPanel class not found");
+                    let pronto_class =
+                        if let Some(existing) = AnyClass::get(c"ProntoPanel") {
+                            existing
+                        } else {
+                            let mut builder =
+                                ClassBuilder::new(c"ProntoPanel", panel_superclass)
+                                    .expect("failed to create ProntoPanel class");
+                            unsafe {
+                                builder.add_method(
+                                    objc2::sel!(canBecomeKeyWindow),
+                                    pronto_panel_can_become_key
+                                        as extern "C-unwind" fn(_, _) -> _,
+                                );
+                            }
+                            builder.register()
+                        };
+
+                    // Isa-swap to ProntoPanel.
+                    unsafe { AnyObject::set_class(&*ptr.cast::<AnyObject>(), pronto_class) };
+
+                    let panel: &NSPanel = unsafe { &*ptr.cast::<NSPanel>() };
+                    panel.setFloatingPanel(true);
+                    panel.setBecomesKeyOnlyIfNeeded(false);
+
+                    // NonactivatingPanel is CRITICAL for fullscreen overlay.
+                    // Without it, showing the panel activates the app and macOS
+                    // pulls the user out of the fullscreen Space.  With it, the
+                    // panel overlays without activation.  Keyboard events still
+                    // reach WKWebView because canBecomeKeyWindow returns YES and
+                    // the panel becomes the key window via makeKeyWindow().
+                    let mask = panel.styleMask();
+                    panel.setStyleMask(mask | NSWindowStyleMask::NonactivatingPanel);
+
+                    panel.setCollectionBehavior(
+                        panel.collectionBehavior()
+                            | NSWindowCollectionBehavior::CanJoinAllSpaces
+                            | NSWindowCollectionBehavior::FullScreenAuxiliary,
+                    );
+                    panel.setLevel(NSFloatingWindowLevel);
+                    panel.setHidesOnDeactivate(false);
+                }
+
+                // Park the window off-screen so the first show() doesn't
+                // flash briefly at the default center position before the
+                // real positioning takes effect.
+                let _ = window.set_position(tauri::PhysicalPosition::new(-9999_i32, -9999_i32));
+
                 let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {

@@ -372,7 +372,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } = event
             {
-                toggle_window(tray_handle.app_handle());
+                toggle_window(tray_handle.app_handle(), ToggleSource::TrayClick);
             }
         })
         .build(app)?;
@@ -380,7 +380,16 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn toggle_window(app: &AppHandle) {
+/// Where the toggle was triggered from — determines positioning strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToggleSource {
+    /// User clicked the tray icon — position near the tray icon.
+    TrayClick,
+    /// Global keyboard shortcut — position based on `popup_screen` setting.
+    GlobalShortcut,
+}
+
+pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
@@ -389,13 +398,172 @@ pub fn toggle_window(app: &AppHandle) {
             if let Some(notify) = app.get_webview_window("notify") {
                 let _ = notify.destroy();
             }
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = window.move_window(Position::TrayCenter);
-            }));
+
+            match source {
+                ToggleSource::TrayClick => {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let _ = window.move_window(Position::TrayCenter);
+                    }));
+                }
+                ToggleSource::GlobalShortcut => {
+                    let _ = position_for_shortcut(app, &window);
+                }
+            };
+
             let _ = window.show();
+            // The panel uses NonactivatingPanel so it can overlay fullscreen
+            // apps without activating our app (which would exit fullscreen).
+            // We call makeKeyWindow() directly instead of Tauri's set_focus()
+            // (which calls activateIgnoringOtherApps).  The panel receives
+            // keyboard events because canBecomeKeyWindow returns YES.
+            #[cfg(target_os = "macos")]
+            if let Ok(ptr) = window.ns_window() {
+                use objc2_app_kit::NSPanel;
+                let panel: &NSPanel = unsafe { &*ptr.cast::<NSPanel>() };
+                panel.makeKeyWindow();
+            }
+            #[cfg(not(target_os = "macos"))]
             let _ = window.set_focus();
         }
     }
+}
+
+/// Position the popup for a global shortcut based on the `popup_screen` setting.
+/// Returns true if positioning succeeded.
+fn position_for_shortcut(app: &AppHandle, window: &tauri::WebviewWindow) -> bool {
+    let popup_screen = {
+        let state = app.state::<crate::AppState>();
+        let settings = state.settings.lock().unwrap();
+        settings.popup_screen.clone()
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        position_on_screen(app, window, &popup_screen)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = popup_screen;
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = window.move_window(Position::TrayCenter);
+        }));
+        true
+    }
+}
+
+/// Position the popup below the tray icon on the target screen.
+/// - `"primary"` → uses actual tray icon position (always on primary display).
+/// - `"active"`  → the screen where the mouse cursor is, centered horizontally
+///                  near the menu bar if the tray icon is on a different screen.
+#[cfg(target_os = "macos")]
+fn position_on_screen(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str) -> bool {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSEvent, NSScreen};
+    use tauri::PhysicalPosition;
+
+    // Logical window width — must be scaled for physical positioning.
+    let win_w_logical = 480.0_f64;
+
+    // Try to get the actual tray icon rectangle from Tauri.
+    // Convert the Position/Size enums to physical pixel values (f64).
+    let tray_phys = app
+        .tray_by_id(TRAY_ID)
+        .and_then(|tray| tray.rect().ok())
+        .flatten()
+        .map(|rect| {
+            let pos = rect.position.to_physical::<f64>(1.0);
+            let sz = rect.size.to_physical::<f64>(1.0);
+            (pos.x, pos.y, sz.width, sz.height)
+        });
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let screens = NSScreen::screens(mtm);
+    if screens.len() == 0 {
+        return false;
+    }
+
+    let primary = screens.objectAtIndex(0);
+    let primary_height = primary.frame().size.height;
+    let primary_scale = primary.backingScaleFactor();
+
+    // Helper: position the popup centered below the tray icon (physical coords).
+    let position_below_tray =
+        |tx: f64, ty: f64, tw: f64, th: f64, scale: f64| -> Option<bool> {
+            let win_w_phys = win_w_logical * scale;
+            let tray_center_x = tx + tw / 2.0;
+            let popup_x = tray_center_x - (win_w_phys / 2.0);
+            let popup_y = ty + th;
+            Some(
+                window
+                    .set_position(PhysicalPosition::new(popup_x as i32, popup_y as i32))
+                    .is_ok(),
+            )
+        };
+
+    // For "primary" mode, position directly below the tray icon.
+    if mode != "active" {
+        if let Some((tx, ty, tw, th)) = tray_phys {
+            return position_below_tray(tx, ty, tw, th, primary_scale).unwrap_or(false);
+        }
+    }
+
+    if mode == "active" {
+        let mouse = NSEvent::mouseLocation();
+
+        // Find the screen containing the cursor.
+        let mut cursor_screen_idx: usize = 0;
+        for i in 0..screens.len() {
+            let f = screens.objectAtIndex(i).frame();
+            if mouse.x >= f.origin.x
+                && mouse.x < f.origin.x + f.size.width
+                && mouse.y >= f.origin.y
+                && mouse.y < f.origin.y + f.size.height
+            {
+                cursor_screen_idx = i;
+                break;
+            }
+        }
+
+        // If cursor is on the primary screen (where tray lives), use tray position.
+        if cursor_screen_idx == 0 {
+            if let Some((tx, ty, tw, th)) = tray_phys {
+                return position_below_tray(tx, ty, tw, th, primary_scale).unwrap_or(false);
+            }
+        }
+
+        // Cursor is on a different screen — center horizontally near the menu bar.
+        let target_screen = screens.objectAtIndex(cursor_screen_idx);
+        let visible = target_screen.visibleFrame();
+        let full = target_screen.frame();
+        let scale = target_screen.backingScaleFactor();
+
+        let x = full.origin.x + (full.size.width - win_w_logical) / 2.0;
+        let ns_top = visible.origin.y + visible.size.height;
+        let y = primary_height - ns_top;
+
+        let phys_x = (x * scale) as i32;
+        let phys_y = (y * scale) as i32;
+
+        return window
+            .set_position(PhysicalPosition::new(phys_x, phys_y))
+            .is_ok();
+    }
+
+    // Fallback for "primary" mode when tray rect wasn't available.
+    let visible = primary.visibleFrame();
+    let full = primary.frame();
+    let x = full.origin.x + (full.size.width - win_w_logical) / 2.0;
+    let ns_top = visible.origin.y + visible.size.height;
+    let y = primary_height - ns_top;
+
+    let phys_x = (x * primary_scale) as i32;
+    let phys_y = (y * primary_scale) as i32;
+
+    window
+        .set_position(PhysicalPosition::new(phys_x, phys_y))
+        .is_ok()
 }
 
 #[cfg(test)]

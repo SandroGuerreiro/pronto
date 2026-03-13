@@ -84,6 +84,10 @@ fn default_homebrew_check_interval() -> u64 {
     14400 // 4 hours
 }
 
+fn default_popup_screen() -> String {
+    "primary".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_poll_interval")]
@@ -144,6 +148,8 @@ pub struct Settings {
     pub homebrew_check_enabled: bool,
     #[serde(default = "default_homebrew_check_interval")]
     pub homebrew_check_interval_secs: u64,
+    #[serde(default = "default_popup_screen")]
+    pub popup_screen: String,
 }
 
 impl Default for Settings {
@@ -181,6 +187,7 @@ impl Default for Settings {
             notify_on_closed: false,
             homebrew_check_enabled: true,
             homebrew_check_interval_secs: 14400,
+            popup_screen: default_popup_screen(),
         }
     }
 }

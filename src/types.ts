@@ -160,6 +160,7 @@ export interface Settings {
   notify_on_closed: boolean;
   homebrew_check_enabled: boolean;
   homebrew_check_interval_secs: number;
+  popup_screen?: string;
 }
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {

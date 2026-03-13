@@ -47,6 +47,9 @@ let _notifyOnClosed: boolean = false;
 let _brewCheckEnabled: boolean = false;
 let _brewCheckIntervalSecs: number = 14400;
 
+// ── Popup screen preference ──────────────────────────────────────────────
+let _popupScreen: string = "primary";
+
 export function loadNotifPrefsFromSettings(s: Settings) {
   _notificationsEnabled = s.notifications_enabled ?? true;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
@@ -55,6 +58,7 @@ export function loadNotifPrefsFromSettings(s: Settings) {
   _notifyOnClosed = s.notify_on_closed ?? false;
   _brewCheckEnabled = s.homebrew_check_enabled ?? false;
   _brewCheckIntervalSecs = s.homebrew_check_interval_secs ?? 14400;
+  _popupScreen = s.popup_screen ?? "primary";
 }
 
 export function initSettings(onClosed: () => void) {
@@ -119,6 +123,7 @@ export async function autoSaveSettings() {
     notify_on_closed: _notifyOnClosed,
     homebrew_check_enabled: _brewCheckEnabled,
     homebrew_check_interval_secs: _brewCheckIntervalSecs,
+    popup_screen: _popupScreen,
   };
 
   setGroupByRepository(updated.group_by_repository);
@@ -211,7 +216,6 @@ export async function showSettings() {
     <div class="settings-view">
       <div class="settings-sidebar">
         <button class="settings-tab active" data-tab="general">⚙<span>General</span></button>
-        <button class="settings-tab" data-tab="display">▤<span>Display</span></button>
         <button class="settings-tab" data-tab="notifications">🔔<span>Notifications</span></button>
         <button class="settings-tab" data-tab="workflow">⚡<span>Workflow</span></button>
         <button class="settings-tab" data-tab="shortcuts">⌨<span>Keys</span></button>
@@ -233,7 +237,8 @@ export async function showSettings() {
     freshSettings = await invoke<Settings>("get_settings");
 
     switch (tabName) {
-      case "general":
+      case "general": {
+        const popupScreen = freshSettings.popup_screen ?? "primary";
         contentArea.innerHTML = `
           <div class="settings-section">
             <div class="settings-section-title">General</div>
@@ -246,15 +251,14 @@ export async function showSettings() {
                 <option value="600"${freshSettings.poll_interval_secs === 600 ? " selected" : ""}>10 minutes</option>
               </select>
             </div>
-          </div>
-        `;
-        setupEventListeners();
-        break;
-
-      case "display":
-        contentArea.innerHTML = `
-          <div class="settings-section">
-            <div class="settings-section-title">Display</div>
+            <div class="settings-group">
+              <label class="settings-label">Open popup on</label>
+              <select id="setting-popup-screen" class="settings-select">
+                <option value="primary"${popupScreen === "primary" ? " selected" : ""}>Primary screen</option>
+                <option value="active"${popupScreen === "active" ? " selected" : ""}>Active screen</option>
+              </select>
+              <span class="settings-hint">${popupScreen === "active" ? "Opens where your cursor is" : "Always opens on your main display"}</span>
+            </div>
             <div class="settings-group">
               <label class="settings-label">
                 <span>Group by repository</span>
@@ -312,7 +316,17 @@ export async function showSettings() {
           setShowClosed(checked);
           autoSaveSettings();
         });
+        const popupScreenEl = document.getElementById("setting-popup-screen") as HTMLSelectElement;
+        popupScreenEl?.addEventListener("change", () => {
+          _popupScreen = popupScreenEl.value;
+          const hint = popupScreenEl.closest(".settings-group")?.querySelector(".settings-hint");
+          if (hint) {
+            hint.textContent = _popupScreen === "active" ? "Opens where your cursor is" : "Always opens on your main display";
+          }
+          autoSaveSettings();
+        });
         break;
+      }
 
       case "notifications":
         contentArea.innerHTML = `

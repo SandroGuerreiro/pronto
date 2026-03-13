@@ -3383,6 +3383,7 @@ dependencies = [
  "image",
  "keyring",
  "mac-notification-sys",
+ "objc2",
  "objc2-app-kit",
  "open",
  "reqwest",
