@@ -1,6 +1,9 @@
 pub mod auth;
 pub mod github;
 pub mod homebrew;
+#[cfg(target_os = "macos")]
+pub mod macos_notify;
+pub mod notification;
 pub mod tray;
 pub mod types;
 
@@ -81,70 +84,30 @@ fn get_token(state: &AppState) -> Result<String, String> {
     }
 }
 
-fn ensure_notification_app(app: &tauri::AppHandle) {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let bundle_id = &app.config().identifier;
-        let id = if tauri::is_dev() {
-            "com.apple.Terminal"
-        } else {
-            bundle_id
-        };
-        let _ = mac_notification_sys::set_application(id);
-    });
-}
-
 fn send_attention_notification(
     app: &tauri::AppHandle,
     result: &github::FetchResult,
 ) {
-    let mut attention_prs: Vec<&github::PullRequest> = result
-        .open
-        .iter()
-        .chain(result.recently_merged.iter())
-        .filter(|pr| result.attention_urls.contains(&pr.url))
-        .collect();
+    let already_notified = app.try_state::<AppState>()
+        .map(|state| state.notified_prs.lock().unwrap().clone())
+        .unwrap_or_default();
 
-    if let Some(state) = app.try_state::<AppState>() {
-        let mut notified = state.notified_prs.lock().unwrap();
-        attention_prs.retain(|pr| {
-            if notified.contains(&pr.url) {
-                false
-            } else {
-                notified.insert(pr.url.clone());
-                true
-            }
-        });
-    }
-
-    if attention_prs.is_empty() {
-        return;
-    }
-
-    ensure_notification_app(app);
-
-    let (title, body) = if attention_prs.len() == 1 {
-        let pr = attention_prs[0];
-        let changes = result.element_changes.get(&pr.url)
-            .cloned()
-            .unwrap_or_default();
-        (pr.title.clone(), changes.describe(pr.merged))
-    } else {
-        let count = attention_prs.len();
-        let names: Vec<String> = attention_prs.iter().map(|pr| pr.title.clone()).collect();
-        (
-            format!("{} PRs need attention", count),
-            names.join("\n"),
-        )
+    let info = match notification::build_attention_notification(result, &already_notified) {
+        Some(info) => info,
+        None => return,
     };
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let _ = mac_notification_sys::Notification::new()
-            .title(&title)
-            .message(&body)
-            .send();
-    });
+    // Mark these PRs as notified
+    if let Some(state) = app.try_state::<AppState>() {
+        let mut notified = state.notified_prs.lock().unwrap();
+        for pr in result.open.iter().chain(result.recently_merged.iter()) {
+            if result.attention_urls.contains(&pr.url) {
+                notified.insert(pr.url.clone());
+            }
+        }
+    }
+
+    macos_notify::send(&info);
 }
 
 fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
@@ -469,19 +432,13 @@ fn check_workflow_attention(
     };
 
     if changed && notify {
-        ensure_notification_app(app);
-        let title = format!("{} — {}", new_status.repo, new_status.workflow_name);
-        let body = if new_status.conclusion == "success" {
-            "Workflow succeeded".to_string()
-        } else {
-            format!("Workflow {}", new_status.conclusion)
-        };
-        tauri::async_runtime::spawn_blocking(move || {
-            let _ = mac_notification_sys::Notification::new()
-                .title(&title)
-                .message(&body)
-                .send();
-        });
+        let info = notification::build_workflow_notification(
+            &new_status.repo,
+            &new_status.workflow_name,
+            &new_status.conclusion,
+            Some(&new_status.html_url),
+        );
+        macos_notify::send(&info);
     }
 
     // Only update last status if it's an actual conclusion, not in_progress
@@ -1213,6 +1170,8 @@ pub fn run() {
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             tray::setup_tray(app)?;
+            #[cfg(target_os = "macos")]
+            macos_notify::init(app.handle());
 
             if let Some(window) = app.get_webview_window("main") {
                 // Convert the window to NSPanel so it can float above fullscreen apps.

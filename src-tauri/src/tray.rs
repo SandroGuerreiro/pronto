@@ -399,16 +399,25 @@ pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
                 let _ = notify.destroy();
             }
 
-            match source {
+            // position_on_screen reads the tray rect directly from Tauri's
+            // API and doesn't depend on the positioner plugin's cached position
+            // (which may not be set on first click, causing a panic).
+            let positioned = match source {
                 ToggleSource::TrayClick => {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        let _ = window.move_window(Position::TrayCenter);
-                    }));
+                    #[cfg(target_os = "macos")]
+                    { position_on_screen(app, &window, "primary") }
+                    #[cfg(not(target_os = "macos"))]
+                    { false }
                 }
                 ToggleSource::GlobalShortcut => {
-                    let _ = position_for_shortcut(app, &window);
+                    position_for_shortcut(app, &window)
                 }
             };
+            if !positioned {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = window.move_window(Position::TrayCenter);
+                }));
+            }
 
             let _ = window.show();
             // The panel uses NonactivatingPanel so it can overlay fullscreen
