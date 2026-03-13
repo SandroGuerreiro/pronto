@@ -19,6 +19,7 @@ type GroupedPrs = [string, [string, PullRequest[]][]][];
 
 export function getStatus(pr: PullRequest): { label: string; class: string } {
   if (pr.mergeQueueEntry) return { label: "◎", class: "in-queue" };
+  if (pr.state === "OPEN" && pr.isDraft) return { label: "●", class: "draft" };
   if (pr.state === "OPEN") return { label: "●", class: "open" };
   if (pr.merged) return { label: "✓", class: "merged" };
   return { label: "✗", class: "closed" };
@@ -109,6 +110,7 @@ export function renderPrCard(pr: PullRequest): string {
 
   const statusTitle =
     status.class === "in-queue" ? "In merge queue"
+    : status.class === "draft"  ? "Draft PR"
     : status.class === "open"   ? "Open PR"
     : status.class === "merged" ? "Merged PR"
     : "Closed PR";
@@ -120,6 +122,9 @@ export function renderPrCard(pr: PullRequest): string {
   const commentsClass = changes?.new_comment ? " highlight-attention" : "";
 
   const statusParts: string[] = [];
+  if (pr.isDraft) {
+    statusParts.push(`<span class="draft-label">draft</span>`);
+  }
   if (pr.mergeQueueEntry) {
     statusParts.push(`<span class="in-queue-text">in queue #${pr.mergeQueueEntry.position}</span>`);
     statusParts.push(`<span class="status-detail" title="Approvals">${reviewText}</span>`);

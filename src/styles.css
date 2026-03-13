@@ -270,6 +270,7 @@ body {
 }
 
 .pr-status.open     { background-color: rgba(34, 197, 94, 0.15);  color: #22c55e; }
+.pr-status.draft    { background-color: rgba(156, 163, 175, 0.15); color: #9ca3af; }
 .pr-status.merged   { background-color: rgba(168, 85, 247, 0.15); color: #a855f7; animation: merged-fade-in 0.4s ease-out; }
 
 @keyframes merged-fade-in {
@@ -380,6 +381,7 @@ body {
   0%, 100% { color: #ef4444; }
   50%      { color: #f87171; }
 }
+.pr-status-line .draft-label       { color: #9ca3af; }
 .pr-status-line .in-queue-text     { color: #eab308; }
 .pr-status-line .checks-pass       { color: #22c55e; }
 .pr-status-line .checks-fail       { color: #ef4444; animation: fail-pulse 3s ease-in-out infinite; }

@@ -9,6 +9,7 @@ pub fn make_pr(url: &str) -> PullRequest {
         url: url.to_string(),
         state: "OPEN".to_string(),
         merged: false,
+        is_draft: false,
         repository: Repository {
             name: "repo".to_string(),
             owner: Owner { login: "org".to_string() },
@@ -173,6 +174,13 @@ fn status_in_queue() {
     let mut pr = make_pr("url");
     pr.merge_queue_entry = Some(MergeQueueEntry { position: 1 });
     assert!(matches!(pr.status(), PrStatus::InQueue));
+}
+
+#[test]
+fn status_draft() {
+    let mut pr = make_pr("url");
+    pr.is_draft = true;
+    assert!(matches!(pr.status(), PrStatus::Draft));
 }
 
 // ── PullRequest::review_label ─────────────────────────────────────────────────

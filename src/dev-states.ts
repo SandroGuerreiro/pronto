@@ -120,6 +120,14 @@ export function renderDevStates(): string {
     repo: "acme/payments", number: "#231",
   }));
 
+  // ── Draft ──
+  html += section("draft", "Draft PR", mockCard({
+    title: "WIP: Explore new caching strategy",
+    statusLabel: "●", statusClass: "draft",
+    statusLine: `<span class="draft-label">draft</span>${sep}<span class="checks-pending">checks running</span>${sep}<span class="status-detail">☑ 0</span>${sep}<span class="status-detail">${commentIcon} 1</span>${sep}<span class="status-detail">▣ 0</span>`,
+    repo: "acme/perf", number: "#64",
+  }));
+
   // ── Attention states ──
   html += section("attention-new", "Attention — New Activity", mockCard({
     title: "Update caching layer for better performance",

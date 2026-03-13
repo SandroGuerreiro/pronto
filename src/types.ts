@@ -63,6 +63,7 @@ export interface PullRequest {
   url: string;
   state: string;
   merged: boolean;
+  isDraft: boolean;
   createdAt: string;
   repository: Repository;
   mergeQueueEntry: MergeQueueEntry | null;

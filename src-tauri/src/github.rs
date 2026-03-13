@@ -43,6 +43,8 @@ pub struct PullRequest {
     pub url: String,
     pub state: String,
     pub merged: bool,
+    #[serde(rename = "isDraft")]
+    pub is_draft: bool,
     pub repository: Repository,
     #[serde(rename = "mergeQueueEntry")]
     pub merge_queue_entry: Option<MergeQueueEntry>,
@@ -175,6 +177,7 @@ pub struct StatusCheckRollup {
 
 pub enum PrStatus {
     Open,
+    Draft,
     Merged,
     Closed,
     InQueue,
@@ -184,6 +187,8 @@ impl PullRequest {
     pub fn status(&self) -> PrStatus {
         if self.merge_queue_entry.is_some() {
             PrStatus::InQueue
+        } else if self.state == "OPEN" && self.is_draft {
+            PrStatus::Draft
         } else if self.state == "OPEN" {
             PrStatus::Open
         } else if self.merged {
@@ -196,6 +201,7 @@ impl PullRequest {
     pub fn status_icon(&self) -> &str {
         match self.status() {
             PrStatus::Open => "●",
+            PrStatus::Draft => "●",
             PrStatus::Merged => "✓",
             PrStatus::Closed => "✗",
             PrStatus::InQueue => "◎",
@@ -330,6 +336,7 @@ async fn fetch_prs_for_author(
         url
         state
         merged
+        isDraft
         createdAt
         mergedAt
         closedAt
@@ -352,6 +359,7 @@ async fn fetch_prs_for_author(
         url
         state
         merged
+        isDraft
         createdAt
         mergedAt
         closedAt
@@ -374,6 +382,7 @@ async fn fetch_prs_for_author(
         url
         state
         merged
+        isDraft
         createdAt
         mergedAt
         closedAt
@@ -449,6 +458,7 @@ const PR_FIELDS: &str = r#"title
       url
       state
       merged
+      isDraft
       createdAt
       mergedAt
       closedAt
@@ -708,6 +718,7 @@ async fn fetch_prs_by_url(
       url
       state
       merged
+      isDraft
       createdAt
       mergedAt
       closedAt
@@ -754,7 +765,7 @@ async fn fetch_prs_by_url(
                         pr.comments.subtract_bots();
                         apply_merge_state(&mut pr);
                         match pr.status() {
-                            PrStatus::Open | PrStatus::InQueue => open_prs.push(pr),
+                            PrStatus::Open | PrStatus::Draft | PrStatus::InQueue => open_prs.push(pr),
                             PrStatus::Merged => merged_prs.push(pr),
                             PrStatus::Closed => closed_prs.push(pr),
                         }

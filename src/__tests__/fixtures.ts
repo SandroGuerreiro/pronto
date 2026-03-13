@@ -7,6 +7,7 @@ export function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     url: "https://github.com/org/repo/pull/1",
     state: "OPEN",
     merged: false,
+    isDraft: false,
     createdAt: "2024-01-01T00:00:00Z",
     repository: { name: "repo", owner: { login: "org" } },
     mergeQueueEntry: null,
