@@ -180,12 +180,13 @@ fn handle_notification_response(user_info: &NSDictionary) {
     let url = get_string(user_info, USERINFO_URL);
     let dismiss_raw = get_string(user_info, USERINFO_DISMISS);
 
-    if let Some(url) = url {
-        crate::notification::open_notification_url(&url);
-    }
+    if let Some(app) = APP_HANDLE.get() {
+        match url {
+            Some(url) => crate::notification::open_notification_url(&url),
+            None => crate::tray::toggle_window(app, crate::tray::ToggleSource::TrayClick),
+        }
 
-    if let Some(raw) = dismiss_raw {
-        if let Some(app) = APP_HANDLE.get() {
+        if let Some(raw) = dismiss_raw {
             for pr_url in raw.split('\n').filter(|s| !s.is_empty()) {
                 crate::dismiss_pr(app.clone(), pr_url.to_string());
             }
