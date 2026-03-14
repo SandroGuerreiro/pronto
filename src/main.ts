@@ -24,6 +24,8 @@ import {
   setShowRecentlyMerged,
   showClosed,
   setShowClosed,
+  viewerLogin,
+  setViewerLogin,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -55,6 +57,19 @@ export async function loadPrs() {
 function renderPrView(result: FetchResult) {
   document.getElementById("signout-btn")!.style.display = "";
   document.getElementById("main-nav")!.style.display = "";
+
+  // Update viewer info (avatar + login)
+  if (result.viewer_login) {
+    setViewerLogin(result.viewer_login);
+  }
+  if (result.viewer_avatar_url) {
+    const avatarImg = document.getElementById("avatar-img") as HTMLImageElement | null;
+    if (avatarImg) {
+      const url = new URL(result.viewer_avatar_url);
+      url.searchParams.set("s", "72");
+      avatarImg.src = url.toString();
+    }
+  }
 
   // Detect PRs that just left the current tab (merged/closed while viewing)
   const content = document.getElementById("content")!;
@@ -693,12 +708,95 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Sign out + quit buttons
+  // Avatar menu
+  const avatarMenu = document.getElementById("avatar-menu");
+  const avatarBtn = document.getElementById("avatar-btn");
+  const avatarImg = document.getElementById("avatar-img") as HTMLImageElement | null;
   const signoutBtn = document.getElementById("signout-btn");
-  if (signoutBtn) {
-    addConfirmedClickHandler(signoutBtn, async () => {
-      await invoke("logout");
-      showLogin();
+  const signoutLabel = signoutBtn?.querySelector<HTMLElement>(".popover-label");
+  let signoutConfirming = false;
+  let signoutTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const cancelSignout = () => {
+    signoutConfirming = false;
+    signoutBtn?.classList.remove("confirming");
+    if (signoutLabel) signoutLabel.textContent = "Sign out";
+    if (signoutTimeout) clearTimeout(signoutTimeout);
+    signoutTimeout = null;
+  };
+
+  const closeAvatarMenu = () => {
+    avatarMenu?.classList.remove("open");
+    cancelSignout();
+  };
+
+  if (avatarBtn && avatarMenu) {
+    avatarBtn.addEventListener("click", () => {
+      if (avatarMenu.classList.contains("open")) {
+        closeAvatarMenu();
+      } else {
+        avatarMenu.classList.add("open");
+      }
+    });
+
+    // Click outside to collapse
+    document.addEventListener("click", (e) => {
+      if (avatarMenu.classList.contains("open") && !avatarMenu.contains(e.target as Node)) {
+        closeAvatarMenu();
+      }
+    });
+  }
+
+  // Avatar image error fallback
+  if (avatarImg) {
+    avatarImg.addEventListener("load", () => {
+      avatarImg.classList.add("loaded");
+    });
+    avatarImg.addEventListener("error", () => {
+      avatarImg.style.display = "none";
+    });
+  }
+
+  // Profile button
+  const profileBtn = document.getElementById("profile-btn");
+  if (profileBtn) {
+    profileBtn.addEventListener("click", () => {
+      if (viewerLogin) {
+        openUrl(`https://github.com/${viewerLogin}`);
+      }
+      closeAvatarMenu();
+    });
+  }
+
+  // Settings button — switch tab and collapse avatar menu
+  const settingsBtn = document.getElementById("settings-btn");
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", () => {
+      setActiveTab("settings");
+      closeAvatarMenu();
+    });
+  }
+
+  // Sign out (confirmation keeps icon, only changes label)
+  if (signoutBtn && signoutLabel) {
+    signoutBtn.addEventListener("click", async () => {
+      if (!signoutConfirming) {
+        signoutConfirming = true;
+        signoutBtn.classList.add("confirming");
+        signoutLabel.textContent = "Sure?";
+        signoutTimeout = setTimeout(cancelSignout, 3000);
+      } else {
+        cancelSignout();
+        closeAvatarMenu();
+        await invoke("logout");
+        showLogin();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (signoutConfirming && !signoutBtn.contains(e.target as Node)) {
+        cancelSignout();
+      }
     });
   }
 

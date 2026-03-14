@@ -36,17 +36,26 @@
 
           <div class="nav-spacer"></div>
 
-          <button class="nav-item" data-tab="settings" id="settings-btn" title="Settings">
-            <span class="nav-icon">⚙</span>
-            <span class="nav-label">Settings</span>
-          </button>
+          <div id="avatar-menu" class="avatar-menu">
+            <button class="avatar-btn" id="avatar-btn" title="Account">
+              <span class="avatar-img-wrap">
+                <img id="avatar-img" class="avatar-img" alt="" />
+              </span>
+            </button>
+            <div class="avatar-popover" id="avatar-popover">
+              <button class="avatar-popover-item" id="profile-btn">
+                <span class="popover-icon">◐</span>Profile
+              </button>
+              <button class="avatar-popover-item" data-tab="settings" id="settings-btn">
+                <span class="popover-icon">⚙</span>Settings
+              </button>
+              <div class="avatar-popover-sep"></div>
+              <button class="avatar-popover-item" id="signout-btn" style="display: none;">
+                <span class="popover-icon">↪</span><span class="popover-label">Sign out</span>
+              </button>
+            </div>
+          </div>
 
-          <div class="nav-divider"></div>
-
-          <button class="nav-item nav-item-action" id="signout-btn" title="Sign out" style="display: none;">
-            <span class="nav-icon">↪</span>
-            <span class="nav-label">Sign out</span>
-          </button>
           <button class="nav-item nav-item-action" id="quit-btn" title="Quit">
             <span class="nav-icon">✕</span>
             <span class="nav-label">Quit</span>

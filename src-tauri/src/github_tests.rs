@@ -58,6 +58,7 @@ pub fn make_fetch_result(open: Vec<PullRequest>) -> FetchResult {
         workflow_status: None,
         expired_followed_prs: vec![],
         viewer_login: "viewer".to_string(),
+        viewer_avatar_url: String::new(),
     }
 }
 

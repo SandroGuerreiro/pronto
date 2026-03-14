@@ -20,6 +20,8 @@ pub struct GraphQLError {
 #[derive(Debug, Deserialize)]
 pub struct Viewer {
     pub login: String,
+    #[serde(rename = "avatarUrl", default)]
+    pub avatar_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -280,6 +282,7 @@ pub struct FetchResult {
     pub workflow_status: Option<WorkflowStatus>,
     pub expired_followed_prs: Vec<String>,
     pub viewer_login: String,
+    pub viewer_avatar_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -315,7 +318,7 @@ async fn fetch_prs_for_author(
     show_recently_closed: bool,
     exclusions: &str,
 ) -> Result<
-    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>, String),
+    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>, String, String),
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let merged_cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
@@ -328,7 +331,7 @@ async fn fetch_prs_for_author(
     let query = GraphQLQuery {
         query: format!(
             r#"{{
-  viewer {{ login }}
+  viewer {{ login avatarUrl }}
   open: search(query: "author:{author} type:pr state:open{exclusions}", type: ISSUE, first: 20) {{
     nodes {{
       ... on PullRequest {{
@@ -434,6 +437,7 @@ async fn fetch_prs_for_author(
     })?;
 
     let viewer_login = data.viewer.login.clone();
+    let viewer_avatar_url = data.viewer.avatar_url.clone();
     let mut open = data.open.nodes;
     let mut recently_merged = if show_recently_merged {
         data.recently_merged.nodes
@@ -451,7 +455,7 @@ async fn fetch_prs_for_author(
         apply_merge_state(pr);
     }
 
-    Ok((open, recently_merged, recently_closed, viewer_login))
+    Ok((open, recently_merged, recently_closed, viewer_login, viewer_avatar_url))
 }
 
 const PR_FIELDS: &str = r#"title
@@ -793,7 +797,7 @@ pub async fn fetch_all_prs(
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
     // Fetch PRs authored by the current user (also retrieves viewer login).
-    let (my_open, my_recently_merged, my_recently_closed, viewer_login) = fetch_prs_for_author(
+    let (my_open, my_recently_merged, my_recently_closed, viewer_login, viewer_avatar_url) = fetch_prs_for_author(
         &client,
         token,
         "@me",
@@ -850,6 +854,7 @@ pub async fn fetch_all_prs(
         workflow_status: None,
         expired_followed_prs,
         viewer_login,
+        viewer_avatar_url,
     })
 }
 

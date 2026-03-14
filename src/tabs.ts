@@ -277,6 +277,18 @@ export function renderActiveTab() {
 // ── Set active tab ────────────────────────────────────────────────────────────
 
 export function setActiveTab(tab: TabName) {
+  // Collapse avatar menu on tab switch + reset sign-out confirmation
+  const menu = document.getElementById("avatar-menu");
+  if (menu?.classList.contains("open")) {
+    menu.classList.remove("open");
+    const signoutBtn = document.getElementById("signout-btn");
+    const signoutLabel = signoutBtn?.querySelector<HTMLElement>(".popover-label");
+    if (signoutBtn && signoutLabel) {
+      signoutBtn.classList.remove("confirming");
+      signoutLabel.textContent = "Sign out";
+    }
+  }
+
   // Reset search on tab switch
   setSearchQuery("");
 

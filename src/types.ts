@@ -106,6 +106,8 @@ export interface FetchResult {
   attention_urls: string[];
   element_changes: Record<string, PrElementChanges>;
   workflow_status: WorkflowStatus | null;
+  viewer_login: string;
+  viewer_avatar_url: string;
 }
 
 export interface DeviceCodeResponse {

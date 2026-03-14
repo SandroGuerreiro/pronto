@@ -61,6 +61,7 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     pub last_tray_attention: Mutex<Option<bool>>,
     pub viewer_login: Mutex<String>,
+    pub viewer_avatar_url: Mutex<String>,
     pub pending_notifications: Mutex<Vec<NotifyData>>,
     pub notify_close_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     pub last_brew_status: Mutex<Option<homebrew::HomebrewStatus>>,
@@ -145,6 +146,9 @@ fn process_result(
 
             if !result.viewer_login.is_empty() {
                 *state.viewer_login.lock().unwrap() = result.viewer_login.clone();
+            }
+            if !result.viewer_avatar_url.is_empty() {
+                *state.viewer_avatar_url.lock().unwrap() = result.viewer_avatar_url.clone();
             }
             let viewer_login = state.viewer_login.lock().unwrap().clone();
 
@@ -1099,6 +1103,7 @@ pub fn run() {
                 http_client: reqwest::Client::new(),
                 last_tray_attention: Mutex::new(None),
                 viewer_login: Mutex::new(String::new()),
+                viewer_avatar_url: Mutex::new(String::new()),
                 pending_notifications: Mutex::new(Vec::new()),
                 notify_close_tx: Mutex::new(None),
                 last_brew_status: Mutex::new(None),
