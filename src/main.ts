@@ -403,12 +403,23 @@ window.addEventListener("DOMContentLoaded", async () => {
     return;
   }
 
-  // Load and display app version
-  invoke<string>("get_app_version").then((version) => {
+  // Load and display app version, check for update cue
+  invoke<string>("get_app_version").then(async (version) => {
     const versionEl = document.getElementById("version-text");
-    if (versionEl) {
-      versionEl.textContent = `v${version}`;
-      versionEl.addEventListener("click", () => showReleaseNotes());
+    if (!versionEl) return;
+
+    versionEl.textContent = `v${version}`;
+    versionEl.addEventListener("click", () => {
+      versionEl.classList.remove("version-new");
+      showReleaseNotes();
+    });
+
+    const isNew = await invoke<boolean>("check_version_update");
+    if (isNew) {
+      versionEl.classList.add("version-new");
+      versionEl.addEventListener("mouseenter", () => {
+        versionEl.classList.remove("version-new");
+      }, { once: true });
     }
   }).catch(() => {
     // Silently fail if version can't be loaded

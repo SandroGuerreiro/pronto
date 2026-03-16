@@ -1820,6 +1820,27 @@ details[open] > .section-header .accordion-chevron::before {
   color: var(--text-secondary);
 }
 
+.version-new {
+  color: var(--text-secondary);
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    transparent 30%,
+    rgba(255, 255, 255, 0.12) 45%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.12) 55%,
+    transparent 70%,
+    transparent 100%
+  );
+  background-size: 250% 100%;
+  animation: version-shimmer 1.4s ease-out forwards;
+}
+
+@keyframes version-shimmer {
+  0%   { background-position: 150% center; }
+  100% { background-position: -50% center; }
+}
+
 .poll-status {
   font-size: var(--text-sm);
   color: var(--color-neutral);

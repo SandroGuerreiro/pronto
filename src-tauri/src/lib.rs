@@ -200,6 +200,28 @@ fn get_app_version(app: tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
+fn check_version_update(app: tauri::AppHandle) -> bool {
+    let current = app.package_info().version.to_string();
+    let path = settings_path(&app);
+    let mut settings = load_settings(&path);
+    match &settings.last_seen_version {
+        Some(v) if v == &current => false,
+        None => {
+            // First install — save version, no cue
+            settings.last_seen_version = Some(current);
+            let _ = save_settings(&path, &settings);
+            false
+        }
+        Some(_) => {
+            // Version changed — update and signal new
+            settings.last_seen_version = Some(current);
+            let _ = save_settings(&path, &settings);
+            true
+        }
+    }
+}
+
+#[tauri::command]
 fn fetch_releases(app: tauri::AppHandle) -> Vec<github::Release> {
     let state = app.state::<AppState>();
     let cache = state.cached_releases.lock().unwrap();
@@ -1102,6 +1124,7 @@ pub fn run() {
             get_brew_status,
             update_brew,
             fetch_releases,
+            check_version_update,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));

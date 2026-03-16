@@ -198,6 +198,13 @@ export function renderDevStates(): string {
     </div>
   `);
 
+  html += section("version-shimmer", "Version — New Update Shimmer", `
+    <div style="display: flex; gap: 12px; align-items: center; padding: 8px;">
+      <span class="version-text version-new" style="cursor: pointer;">v0.7.0</span>
+      <span style="font-size: 11px; color: #52525b;">(shimmer plays once, text stays brighter until hover)</span>
+    </div>
+  `);
+
   html += section("workflows", "Workflow Indicators", `
     <div style="display: flex; gap: 8px; padding: 8px; flex-wrap: wrap;">
       <span class="workflow-indicator wf-success"><span class="wf-dot"></span><span class="wf-label">Success</span></span>

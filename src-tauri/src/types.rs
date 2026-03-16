@@ -150,6 +150,8 @@ pub struct Settings {
     pub homebrew_check_interval_secs: u64,
     #[serde(default = "default_popup_screen")]
     pub popup_screen: String,
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
 }
 
 impl Default for Settings {
@@ -188,6 +190,7 @@ impl Default for Settings {
             homebrew_check_enabled: true,
             homebrew_check_interval_secs: 14400,
             popup_screen: default_popup_screen(),
+            last_seen_version: None,
         }
     }
 }
