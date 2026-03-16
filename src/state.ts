@@ -13,6 +13,10 @@ export let groupByRepository: boolean = true;
 export let showRecentlyMerged: boolean = false;
 export let showClosed: boolean = false;
 export let focusIndex: number = -1;
+export let sidebarFocus: "avatar" | "quit" | null = null;
+export let popoverFocusIndex: number = -1;
+export let settingsNavIndex: number = 0;
+export let settingsGroupIndex: number = -1;
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 export let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -49,6 +53,10 @@ export function setGroupByRepository(v: boolean) { groupByRepository = v; }
 export function setShowRecentlyMerged(v: boolean) { showRecentlyMerged = v; }
 export function setShowClosed(v: boolean) { showClosed = v; }
 export function setFocusIndex(i: number) { focusIndex = i; }
+export function setSidebarFocus(v: "avatar" | "quit" | null) { sidebarFocus = v; }
+export function setPopoverFocusIndex(i: number) { popoverFocusIndex = i; }
+export function setSettingsNavIndex(i: number) { settingsNavIndex = i; }
+export function setSettingsGroupIndex(i: number) { settingsGroupIndex = i; }
 export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbDismissTimer = t; }
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
 export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }

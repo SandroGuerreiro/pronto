@@ -345,7 +345,8 @@ body {
   white-space: nowrap;
 }
 
-.avatar-popover-item:hover {
+.avatar-popover-item:hover,
+.avatar-popover-item.popover-kb-focus {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
 }
@@ -372,6 +373,13 @@ body {
   background: var(--color-danger-bg);
 }
 
+
+.nav-item.tab-focus,
+.avatar-btn.tab-focus {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
+  background: var(--surface-hover);
+}
 
 .nav-item-action {
   color: var(--text-tertiary);
@@ -1217,6 +1225,11 @@ details[open] > .section-header .accordion-chevron::before {
   color: var(--text-primary);
 }
 
+.settings-tab.tab-focus {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
+}
+
 .settings-tab span {
   display: block;
 }
@@ -1240,6 +1253,13 @@ details[open] > .section-header .accordion-chevron::before {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.settings-group.settings-group-focus,
+.notif-master-row.settings-group-focus {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .settings-label {

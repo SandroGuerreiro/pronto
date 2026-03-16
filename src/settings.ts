@@ -17,6 +17,8 @@ import {
   setKeybindings,
   setShowRecentlyMerged,
   setShowClosed,
+  setSettingsNavIndex,
+  setSettingsGroupIndex,
 } from "./state";
 
 // Injected callback: called when settings view is closed (wired in main.ts)
@@ -906,16 +908,19 @@ export async function showSettings() {
   }
 
   // Tab switching
-  const tabButtons = content.querySelectorAll(".settings-tab");
-  tabButtons.forEach((btn) => {
+  const tabButtons = [...content.querySelectorAll<HTMLElement>(".settings-tab")];
+  tabButtons.forEach((btn, index) => {
     btn.addEventListener("click", async () => {
       tabButtons.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
+      setSettingsNavIndex(index);
+      setSettingsGroupIndex(-1);
       const tabName = btn.getAttribute("data-tab")!;
       await renderTab(tabName);
     });
   });
 
   // Render initial tab
+  setSettingsNavIndex(0);
   await renderTab("general");
 }

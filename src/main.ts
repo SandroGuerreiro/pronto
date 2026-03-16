@@ -26,11 +26,19 @@ import {
   setShowClosed,
   viewerLogin,
   setViewerLogin,
+  sidebarFocus,
+  setSidebarFocus,
+  popoverFocusIndex,
+  setPopoverFocusIndex,
+  settingsNavIndex,
+  settingsGroupIndex,
+  setSettingsGroupIndex,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
 import { showSettings, hideSettings, initSettings, loadNotifPrefsFromSettings } from "./settings";
 import { showLogin, initAuth } from "./auth";
+import { tabForNumber, getVisibleGroups, getGroupControl } from "./settings-nav";
 
 // ── Polling indicators ────────────────────────────────────────────────────────
 
@@ -234,6 +242,45 @@ function clearKbDismiss() {
     clearTimeout(kbDismissTimer);
     setKbDismissTimer(null);
   }
+}
+
+function clearSidebarFocus() {
+  if (sidebarFocus) {
+    document.getElementById("avatar-btn")?.classList.remove("tab-focus");
+    document.getElementById("quit-btn")?.classList.remove("tab-focus");
+    setSidebarFocus(null);
+  }
+}
+
+function getPopoverItems(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>(
+    "#avatar-popover .avatar-popover-item"
+  )].filter((el) => el.offsetParent !== null); // only visible items
+}
+
+function isPopoverOpen(): boolean {
+  return document.getElementById("avatar-menu")?.classList.contains("open") ?? false;
+}
+
+function setPopoverFocus(index: number) {
+  const items = getPopoverItems();
+  if (items.length === 0) return;
+  document.querySelector(".popover-kb-focus")?.classList.remove("popover-kb-focus");
+  const clamped = Math.max(0, Math.min(index, items.length - 1));
+  setPopoverFocusIndex(clamped);
+  items[clamped].classList.add("popover-kb-focus");
+}
+
+/** Close the avatar popover and return sidebar focus to the avatar button.
+ *  The popover is only reachable via the avatar, so restoring focus there
+ *  (rather than clearing it) lets the user continue Tab-cycling from the
+ *  same position. */
+function closePopoverKeyboard() {
+  document.getElementById("avatar-menu")?.classList.remove("open");
+  document.querySelector(".popover-kb-focus")?.classList.remove("popover-kb-focus");
+  setPopoverFocusIndex(-1);
+  setSidebarFocus("avatar");
+  document.getElementById("avatar-btn")?.classList.add("tab-focus");
 }
 
 function setFocus(index: number) {
@@ -545,10 +592,44 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Keyboard navigation
   document.addEventListener("keydown", async (e) => {
+    // Avatar popover navigation — intercept all keys while open
+    if (isPopoverOpen()) {
+      const down = e.key === keybindings.navigate_down || e.key === "ArrowDown";
+      const up = e.key === keybindings.navigate_up || e.key === "ArrowUp";
+      const close = e.key === "Escape" || e.key === keybindings.collapse || e.key === "ArrowLeft";
+      const activate = e.key === keybindings.open_pr || e.key === " ";
+
+      if (down || up || close || activate) {
+        e.preventDefault();
+        if (close) {
+          closePopoverKeyboard();
+          return;
+        }
+        if (down) {
+          setPopoverFocus(popoverFocusIndex + 1);
+          return;
+        }
+        if (up) {
+          setPopoverFocus(popoverFocusIndex - 1);
+          return;
+        }
+        if (activate && popoverFocusIndex >= 0) {
+          const items = getPopoverItems();
+          const item = items[popoverFocusIndex];
+          closePopoverKeyboard();
+          clearSidebarFocus();
+          item?.click();
+          return;
+        }
+      }
+      return; // swallow all other keys while popover is open
+    }
+
     const settingsOpen = activeTab === "settings";
 
     if (e.key === "Escape") {
       e.preventDefault();
+      clearSidebarFocus();
       if (devStatesOpen && toggleDevStates) {
         toggleDevStates();
         return;
@@ -568,18 +649,140 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    if (settingsOpen || devStatesOpen || !currentResult) return;
+    // Settings keyboard navigation
+    if (settingsOpen) {
+      const focused = document.activeElement;
+      const inInput = focused instanceof HTMLInputElement
+        || focused instanceof HTMLSelectElement
+        || focused instanceof HTMLTextAreaElement;
+
+      // Escape from a focused input → return to group navigation
+      if (inInput && e.key === "Escape") {
+        e.preventDefault();
+        (focused as HTMLElement).blur();
+        return;
+      }
+
+      // While a native control has focus, let the browser handle keys
+      if (inInput) return;
+
+      const down = e.key === keybindings.navigate_down || e.key === "ArrowDown";
+      const up = e.key === keybindings.navigate_up || e.key === "ArrowUp";
+      const activate = e.key === keybindings.open_pr || e.key === " ";
+
+      // Number keys → switch settings tab directly
+      const numTab = tabForNumber(e.key);
+      if (numTab) {
+        e.preventDefault();
+        const tabs = [...document.querySelectorAll<HTMLElement>(".settings-tab")];
+        const idx = tabs.findIndex((t) => t.getAttribute("data-tab") === numTab);
+        if (idx >= 0) {
+          document.querySelector(".settings-group-focus")?.classList.remove("settings-group-focus");
+          setSettingsGroupIndex(-1);
+          tabs[idx].click();
+        }
+        return;
+      }
+
+      // Tab key → cycle settings sidebar tabs
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const tabs = [...document.querySelectorAll<HTMLElement>(".settings-tab")];
+        if (tabs.length === 0) return;
+        document.querySelector(".settings-group-focus")?.classList.remove("settings-group-focus");
+        setSettingsGroupIndex(-1);
+        const step = e.shiftKey ? tabs.length - 1 : 1;
+        const next = (settingsNavIndex + step) % tabs.length;
+        tabs[next].click();
+        return;
+      }
+
+      // j/k / arrows → navigate content groups
+      if (down || up) {
+        e.preventDefault();
+        const contentArea = document.querySelector<HTMLElement>(".settings-content");
+        if (!contentArea) return;
+        const groups = getVisibleGroups(contentArea);
+        if (groups.length === 0) return;
+
+        document.querySelector(".settings-group-focus")?.classList.remove("settings-group-focus");
+        const next = down
+          ? (settingsGroupIndex + 1) % groups.length
+          : (settingsGroupIndex - 1 + groups.length) % groups.length;
+        setSettingsGroupIndex(next);
+        groups[next].classList.add("settings-group-focus");
+        groups[next].scrollIntoView({ block: "nearest" });
+        return;
+      }
+
+      // Enter/Space → activate focused group control
+      if (activate && settingsGroupIndex >= 0) {
+        const contentArea = document.querySelector<HTMLElement>(".settings-content");
+        if (!contentArea) return;
+        const groups = getVisibleGroups(contentArea);
+        const group = groups[settingsGroupIndex];
+        if (!group) return;
+
+        const control = getGroupControl(group);
+        if (!control) return;
+
+        e.preventDefault();
+        if (control.type === "checkbox") {
+          (control.element as HTMLInputElement).click();
+        } else if (control.type === "select") {
+          (control.element as HTMLSelectElement).focus();
+          // showPicker is the modern way to open a select dropdown
+          if ("showPicker" in control.element) {
+            (control.element as HTMLSelectElement).showPicker();
+          }
+        } else if (control.type === "input") {
+          (control.element as HTMLInputElement).focus();
+        } else if (control.type === "button") {
+          (control.element as HTMLButtonElement).click();
+        }
+        return;
+      }
+
+      return;
+    }
+
+    if (devStatesOpen || !currentResult) return;
 
     const items = getFocusables();
     const tabKeys = [keybindings.tab_owned, keybindings.tab_followed];
     if (showRecentlyMerged) tabKeys.push(keybindings.tab_merged);
     if (showClosed) tabKeys.push(keybindings.tab_closed);
     tabKeys.push("Tab");
-    if (!items.length && !tabKeys.includes(e.key)) return;
+    if (!items.length && !tabKeys.includes(e.key) && !sidebarFocus) return;
+
+    // Activate sidebar-focused button (avatar / quit)
+    if ((e.key === keybindings.open_pr || e.key === " ") && sidebarFocus) {
+      e.preventDefault();
+      if (sidebarFocus === "avatar") {
+        // Open popover and focus first item
+        document.getElementById("avatar-menu")?.classList.add("open");
+        clearSidebarFocus();
+        setPopoverFocus(0);
+      } else {
+        clearSidebarFocus();
+        document.getElementById("quit-btn")?.click();
+      }
+      return;
+    }
+
+    // Expand into avatar popover with ArrowRight / l
+    if ((e.key === keybindings.expand || e.key === "ArrowRight") && sidebarFocus === "avatar") {
+      e.preventDefault();
+      document.getElementById("avatar-menu")?.classList.add("open");
+      clearSidebarFocus();
+      setPopoverFocus(0);
+      return;
+    }
 
     // Navigate down
     if (e.key === keybindings.navigate_down || e.key === "ArrowDown") {
       e.preventDefault();
+      clearSidebarFocus();
       setFocus(focusIndex + 1);
       return;
     }
@@ -587,6 +790,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Navigate up
     if (e.key === keybindings.navigate_up || e.key === "ArrowUp") {
       e.preventDefault();
+      clearSidebarFocus();
       setFocus(focusIndex - 1);
       return;
     }
@@ -638,6 +842,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Tab: Owned
     if (e.key === keybindings.tab_owned) {
       e.preventDefault();
+      clearSidebarFocus();
       setActiveTab("mine");
       return;
     }
@@ -645,6 +850,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Tab: Followed
     if (e.key === keybindings.tab_followed) {
       e.preventDefault();
+      clearSidebarFocus();
       setActiveTab("followed");
       return;
     }
@@ -652,6 +858,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Tab: Merged
     if (e.key === keybindings.tab_merged && showRecentlyMerged) {
       e.preventDefault();
+      clearSidebarFocus();
       setActiveTab("merged");
       return;
     }
@@ -659,6 +866,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Tab: Closed
     if (e.key === keybindings.tab_closed && showClosed) {
       e.preventDefault();
+      clearSidebarFocus();
       setActiveTab("closed");
       return;
     }
@@ -691,19 +899,30 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // Cycle tabs with Tab key
+    // Cycle sidebar items with Tab key
     if (e.key === "Tab") {
       e.preventDefault();
-      const cycle: TabName[] = ["mine", "followed"];
-      if (showRecentlyMerged) {
-        cycle.push("merged");
+      type SidebarItem = TabName | "avatar" | "quit";
+      const cycle: SidebarItem[] = ["mine", "followed"];
+      if (showRecentlyMerged) cycle.push("merged");
+      if (showClosed) cycle.push("closed");
+      cycle.push("avatar", "quit");
+
+      const current: SidebarItem = sidebarFocus ?? activeTab;
+      const i = cycle.indexOf(current);
+      const step = e.shiftKey ? cycle.length - 1 : 1;
+      const next = cycle[(i + step) % cycle.length];
+
+      clearSidebarFocus();
+      if (next === "avatar" || next === "quit") {
+        setSidebarFocus(next);
+        const el = next === "avatar"
+          ? document.getElementById("avatar-btn")
+          : document.getElementById("quit-btn");
+        el?.classList.add("tab-focus");
+      } else {
+        setActiveTab(next as TabName);
       }
-      if (showClosed) {
-        cycle.push("closed");
-      }
-      const i = cycle.indexOf(activeTab);
-      const next = cycle[(i + (e.shiftKey ? 2 : 1)) % cycle.length];
-      setActiveTab(next);
       return;
     }
   });

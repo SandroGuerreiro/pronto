@@ -426,11 +426,27 @@ pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
             // We call makeKeyWindow() directly instead of Tauri's set_focus()
             // (which calls activateIgnoringOtherApps).  The panel receives
             // keyboard events because canBecomeKeyWindow returns YES.
+            //
+            // For tray clicks we must also activate the app: the
+            // NonactivatingPanel style means macOS keeps routing keyboard
+            // events to the previously active app after the tray click.
+            // This is safe because the user is at the menu bar (not in
+            // fullscreen). Global shortcuts don't need this — the shortcut
+            // system already establishes event routing to our app.
             #[cfg(target_os = "macos")]
             if let Ok(ptr) = window.ns_window() {
                 use objc2_app_kit::NSPanel;
                 let panel: &NSPanel = unsafe { &*ptr.cast::<NSPanel>() };
                 panel.makeKeyWindow();
+                if source == ToggleSource::TrayClick {
+                    use objc2::MainThreadMarker;
+                    use objc2_app_kit::NSApplication;
+                    if let Some(mtm) = MainThreadMarker::new() {
+                        #[allow(deprecated)]
+                        NSApplication::sharedApplication(mtm)
+                            .activateIgnoringOtherApps(true);
+                    }
+                }
             }
             #[cfg(not(target_os = "macos"))]
             let _ = window.set_focus();

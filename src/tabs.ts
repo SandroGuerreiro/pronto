@@ -342,7 +342,7 @@ export function updateTabBadges() {
 
 // ── Follow filter button badges ───────────────────────────────────────────────
 
-export function updateFollowFilterBadges() {
+function updateFollowFilterBadges() {
   if (!currentResult || activeTab !== "followed") return;
   const allOpen = currentResult.followed_open || [];
   const attentionByUser: Record<string, number> = {};
