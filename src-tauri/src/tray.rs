@@ -410,9 +410,12 @@ pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
             let _ = window.show();
             // on_tray_event (called before toggle_window) already cached the
             // tray icon position in the positioner plugin.
+            let old_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _ = window.move_window(Position::TrayCenter);
             }));
+            std::panic::set_hook(old_hook);
         }
         ToggleSource::GlobalShortcut => {
             // Pre-position the hidden window via native AppKit (setFrame:display:)
