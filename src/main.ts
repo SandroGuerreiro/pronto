@@ -33,11 +33,13 @@ import {
   settingsNavIndex,
   settingsGroupIndex,
   setSettingsGroupIndex,
+  releaseNotesOpen,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
 import { showSettings, hideSettings, initSettings, loadNotifPrefsFromSettings } from "./settings";
 import { showLogin, initAuth } from "./auth";
+import { showReleaseNotes, hideReleaseNotes, initReleaseNotes, navigateReleaseNotes, openFocusedRelease } from "./release-notes";
 import { tabForNumber, getVisibleGroups, getGroupControl } from "./settings-nav";
 
 // ── Polling indicators ────────────────────────────────────────────────────────
@@ -406,6 +408,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const versionEl = document.getElementById("version-text");
     if (versionEl) {
       versionEl.textContent = `v${version}`;
+      versionEl.addEventListener("click", () => showReleaseNotes());
     }
   }).catch(() => {
     // Silently fail if version can't be loaded
@@ -424,6 +427,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     loadPrs();
   });
   initAuth(() => loadPrs());
+  initReleaseNotes(() => {
+    renderActiveTab();
+  });
 
   await loadUserPrefs();
 
@@ -634,6 +640,10 @@ window.addEventListener("DOMContentLoaded", async () => {
         toggleDevStates();
         return;
       }
+      if (releaseNotesOpen) {
+        hideReleaseNotes();
+        return;
+      }
       if (settingsOpen) {
         hideSettings();
       } else {
@@ -647,6 +657,26 @@ window.addEventListener("DOMContentLoaded", async () => {
       e.preventDefault();
       toggleDevStates();
       return;
+    }
+
+    // Release notes keyboard navigation
+    if (releaseNotesOpen) {
+      if (e.key === keybindings.navigate_down || e.key === "ArrowDown") {
+        e.preventDefault();
+        navigateReleaseNotes(1);
+        return;
+      }
+      if (e.key === keybindings.navigate_up || e.key === "ArrowUp") {
+        e.preventDefault();
+        navigateReleaseNotes(-1);
+        return;
+      }
+      if (e.key === keybindings.open_pr) {
+        e.preventDefault();
+        openFocusedRelease();
+        return;
+      }
+      return; // swallow all other keys while release notes is open
     }
 
     // Settings keyboard navigation

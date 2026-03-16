@@ -85,6 +85,14 @@ export interface WorkflowStatus {
   html_url: string;
 }
 
+export interface Release {
+  tag_name: string;
+  name: string;
+  body: string;
+  published_at: string;
+  html_url: string;
+}
+
 export interface PrElementChanges {
   became_review_required: boolean;
   became_changes_requested: boolean;

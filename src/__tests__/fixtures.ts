@@ -1,4 +1,4 @@
-import type { PullRequest } from "../types";
+import type { PullRequest, Release } from "../types";
 
 /** Minimal valid PullRequest with all fields set to sensible defaults. */
 export function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
@@ -18,6 +18,17 @@ export function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     reviewThreads: { nodes: [] },
     commits: { nodes: [] },
     author: { login: "author" },
+    ...overrides,
+  };
+}
+
+export function makeRelease(overrides: Partial<Release> = {}): Release {
+  return {
+    tag_name: "v0.7.0",
+    name: "Pronto v0.7.0",
+    body: "Bug fixes and improvements",
+    published_at: "2026-03-11T14:27:26Z",
+    html_url: "https://github.com/SandroGuerreiro/pronto/releases/tag/v0.7.0",
     ...overrides,
   };
 }

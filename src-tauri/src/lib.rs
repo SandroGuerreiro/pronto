@@ -1210,7 +1210,7 @@ pub fn run() {
 
             // Fetch releases once at startup
             let releases_handle = app.handle().clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 match github::fetch_releases_from_github(
                     &releases_handle.state::<AppState>().http_client,
                 ).await {

@@ -34,5 +34,7 @@ src-tauri/target/
 
 .claude
 CLAUDE.md
+.superpowers/
+docs/superpowers/
 
 scripts/

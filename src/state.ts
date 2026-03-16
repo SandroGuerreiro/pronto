@@ -17,6 +17,8 @@ export let sidebarFocus: "avatar" | "quit" | null = null;
 export let popoverFocusIndex: number = -1;
 export let settingsNavIndex: number = 0;
 export let settingsGroupIndex: number = -1;
+export let releaseNotesOpen: boolean = false;
+export let releaseNotesIndex: number = 0;
 
 // ── Keyboard ──────────────────────────────────────────────────────────────────
 export let kbDismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -57,6 +59,8 @@ export function setSidebarFocus(v: "avatar" | "quit" | null) { sidebarFocus = v;
 export function setPopoverFocusIndex(i: number) { popoverFocusIndex = i; }
 export function setSettingsNavIndex(i: number) { settingsNavIndex = i; }
 export function setSettingsGroupIndex(i: number) { settingsGroupIndex = i; }
+export function setReleaseNotesOpen(v: boolean) { releaseNotesOpen = v; }
+export function setReleaseNotesIndex(i: number) { releaseNotesIndex = i; }
 export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbDismissTimer = t; }
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
 export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }
