@@ -308,6 +308,15 @@ struct WorkflowRun {
     html_url: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Release {
+    pub tag_name: String,
+    pub name: String,
+    pub body: String,
+    pub published_at: String,
+    pub html_url: String,
+}
+
 async fn fetch_prs_for_author(
     client: &reqwest::Client,
     token: &str,
@@ -922,4 +931,24 @@ pub async fn fetch_workflow_status(
         updated_at: run.updated_at.clone(),
         html_url: run.html_url.clone(),
     }))
+}
+
+pub async fn fetch_releases_from_github(
+    client: &reqwest::Client,
+) -> Result<Vec<Release>, Box<dyn std::error::Error + Send + Sync>> {
+    let response = client
+        .get("https://api.github.com/repos/SandroGuerreiro/pronto/releases?per_page=5")
+        .header(USER_AGENT, "pronto")
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        eprintln!("[pronto] Releases API returned {status}: {body}");
+        return Ok(vec![]);
+    }
+
+    let releases: Vec<Release> = response.json().await?;
+    Ok(releases)
 }
