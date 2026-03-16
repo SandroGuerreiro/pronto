@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "a11y": "tsx scripts/a11y-check.ts",
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@tauri-apps/cli": "^2",
     "@vitest/coverage-v8": "^2",
     "jsdom": "^25",
+    "tsx": "^4.21.0",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vitest": "^2"

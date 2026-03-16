@@ -1,7 +1,10 @@
 #!/bin/sh
 set -e
 
-echo "Running tests before commit..."
+echo "Running checks before commit..."
+
+echo "\n→ Accessibility checks"
+pnpm a11y
 
 echo "\n→ TypeScript tests"
 pnpm test

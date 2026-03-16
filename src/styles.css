@@ -27,7 +27,7 @@
   /* ── Text ── */
   --text-primary: #EDEDF0;
   --text-secondary: #9D9DA6;
-  --text-tertiary: #5C5C66;
+  --text-tertiary: #9191A0;
   --text-inverse: #111113;
 
   /* ── Borders ── */
@@ -73,7 +73,7 @@
   /* ── Typography ── */
   --font-ui: "Figtree", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", "Cascadia Code", monospace;
-  --text-xs: 10px;
+  --text-xs: 11px;
   --text-sm: 11px;
   --text-base: 13px;
   --text-md: 15px;
@@ -396,7 +396,7 @@ body {
   right: 4px;
   min-width: 14px;
   height: 14px;
-  font-size: 9px;
+  font-size: 11px;
   padding: 0 4px;
   margin-left: 0;
 }
@@ -936,7 +936,9 @@ details[open] > .accordion-header .accordion-chevron::before {
   transition: border-color var(--duration-fast), background-color var(--duration-fast);
 }
 
-.search-input:focus {
+.search-input:focus-visible {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
   border-color: var(--border-strong);
   background-color: rgba(255, 255, 255, 0.07);
 }
@@ -1270,7 +1272,9 @@ details[open] > .section-header .accordion-chevron::before {
   transition: border-color var(--duration-fast);
 }
 
-.settings-select:focus {
+.settings-select:focus-visible {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
   border-color: var(--border-strong);
 }
 
@@ -1327,7 +1331,7 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 .settings-input::placeholder { color: var(--text-tertiary); }
-.settings-input:focus        { border-color: var(--border-strong); }
+.settings-input:focus-visible { outline: 1px solid rgba(56, 139, 253, 0.5); outline-offset: -1px; border-color: var(--border-strong); }
 
 .settings-search {
   width: 100%;
@@ -1346,7 +1350,7 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 .settings-search::placeholder { color: var(--text-tertiary); }
-.settings-search:focus        { border-color: var(--border-strong); }
+.settings-search:focus-visible { outline: 1px solid rgba(56, 139, 253, 0.5); outline-offset: -1px; border-color: var(--border-strong); }
 
 .settings-section {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -1643,7 +1647,7 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 .pat-input::placeholder { color: var(--text-tertiary); }
-.pat-input:focus        { border-color: var(--border-strong); }
+.pat-input:focus-visible { outline: 1px solid rgba(56, 139, 253, 0.5); outline-offset: -1px; border-color: var(--border-strong); }
 
 .pat-error {
   font-size: 12px;
