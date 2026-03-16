@@ -376,220 +376,322 @@ pub enum ToggleSource {
 }
 
 pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
-    if let Some(window) = app.get_webview_window("main") {
-        if window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
-        } else {
-            // Dismiss any notification banner when opening the popup
-            if let Some(notify) = app.get_webview_window("notify") {
-                let _ = notify.destroy();
-            }
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
 
-            // position_on_screen reads the tray rect directly from Tauri's
-            // API and doesn't depend on the positioner plugin's cached position
-            // (which may not be set on first click, causing a panic).
-            let positioned = match source {
-                ToggleSource::TrayClick => {
-                    #[cfg(target_os = "macos")]
-                    { position_on_screen(app, &window, "primary") }
-                    #[cfg(not(target_os = "macos"))]
-                    { false }
-                }
-                ToggleSource::GlobalShortcut => {
-                    position_for_shortcut(app, &window)
-                }
-            };
-            if !positioned {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let _ = window.move_window(Position::TrayCenter);
-                }));
-            }
+    if window.is_visible().unwrap_or(false) {
+        let _ = window.hide();
+        return;
+    }
 
-            // Dismiss workflow attention when opening the popup
-            if let Some(state) = app.try_state::<crate::AppState>() {
-                let has_workflow = state.last_workflow_status.lock().unwrap().is_some();
-                if has_workflow {
-                    let has_pr_attention = state
-                        .cached_prs
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .map(|r| !r.attention_urls.is_empty())
-                        .unwrap_or(false);
-                    crate::set_tray_attention(app, has_pr_attention);
-                }
-            }
+    // Dismiss any notification banner when opening the popup.
+    if let Some(notify) = app.get_webview_window("notify") {
+        let _ = notify.destroy();
+    }
 
-            let _ = window.show();
-            // The panel uses NonactivatingPanel so it can overlay fullscreen
-            // apps without activating our app (which would exit fullscreen).
-            // We call makeKeyWindow() directly instead of Tauri's set_focus()
-            // (which calls activateIgnoringOtherApps).  The panel receives
-            // keyboard events because canBecomeKeyWindow returns YES.
-            //
-            // For tray clicks we must also activate the app: the
-            // NonactivatingPanel style means macOS keeps routing keyboard
-            // events to the previously active app after the tray click.
-            // This is safe because the user is at the menu bar (not in
-            // fullscreen). Global shortcuts don't need this — the shortcut
-            // system already establishes event routing to our app.
-            #[cfg(target_os = "macos")]
-            if let Ok(ptr) = window.ns_window() {
-                use objc2_app_kit::NSPanel;
-                let panel: &NSPanel = unsafe { &*ptr.cast::<NSPanel>() };
-                panel.makeKeyWindow();
-                if source == ToggleSource::TrayClick {
-                    use objc2::MainThreadMarker;
-                    use objc2_app_kit::NSApplication;
-                    if let Some(mtm) = MainThreadMarker::new() {
-                        #[allow(deprecated)]
-                        NSApplication::sharedApplication(mtm)
-                            .activateIgnoringOtherApps(true);
-                    }
-                }
-            }
-            #[cfg(not(target_os = "macos"))]
-            let _ = window.set_focus();
+    // Clear workflow attention badge when opening the popup.
+    if let Some(state) = app.try_state::<crate::AppState>() {
+        let has_workflow = state.last_workflow_status.lock().unwrap().is_some();
+        if has_workflow {
+            let has_pr_attention = state
+                .cached_prs
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|r| !r.attention_urls.is_empty())
+                .unwrap_or(false);
+            crate::set_tray_attention(app, has_pr_attention);
         }
     }
+
+    match source {
+        ToggleSource::TrayClick => {
+            let _ = window.show();
+            // on_tray_event (called before toggle_window) already cached the
+            // tray icon position in the positioner plugin.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = window.move_window(Position::TrayCenter);
+            }));
+        }
+        ToggleSource::GlobalShortcut => {
+            // Pre-position the hidden window via native AppKit (setFrame:display:)
+            // so that show() renders at the correct location with no flash.
+            // The primary-screen path also needs move_window after show() for
+            // fine-tuning, but the pre-position prevents a visible jump.
+            position_for_shortcut(app, &window);
+            let _ = window.show();
+        }
+    }
+
+    // Make the panel the key window for keyboard input.
+    #[cfg(target_os = "macos")]
+    if let Ok(ptr) = window.ns_window() {
+        use objc2_app_kit::NSPanel;
+        let panel: &NSPanel = unsafe { &*ptr.cast::<NSPanel>() };
+        panel.makeKeyWindow();
+        // For tray clicks, also activate the app — the NonactivatingPanel
+        // style keeps routing keyboard events to the previously active app.
+        if source == ToggleSource::TrayClick {
+            use objc2::MainThreadMarker;
+            use objc2_app_kit::NSApplication;
+            if let Some(mtm) = MainThreadMarker::new() {
+                #[allow(deprecated)]
+                NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = window.set_focus();
 }
 
+// ── Shortcut positioning ──────────────────────────────────────────────────
+
 /// Position the popup for a global shortcut based on the `popup_screen` setting.
-/// Returns true if positioning succeeded.
-fn position_for_shortcut(app: &AppHandle, window: &tauri::WebviewWindow) -> bool {
+fn position_for_shortcut(app: &AppHandle, window: &tauri::WebviewWindow) {
     let popup_screen = {
         let state = app.state::<crate::AppState>();
         let settings = state.settings.lock().unwrap();
         settings.popup_screen.clone()
     };
-
     #[cfg(target_os = "macos")]
-    {
-        position_on_screen(app, window, &popup_screen)
-    }
+    position_on_screen(app, window, &popup_screen);
+
     #[cfg(not(target_os = "macos"))]
     {
         let _ = popup_screen;
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = window.move_window(Position::TrayCenter);
         }));
-        true
     }
 }
 
-/// Position the popup below the tray icon on the target screen.
-/// - `"primary"` → uses actual tray icon position (always on primary display).
-/// - `"active"`  → the screen where the mouse cursor is, centered horizontally
-///                  near the menu bar if the tray icon is on a different screen.
+/// Position the popup below the tray icon on the correct screen.
+///
+/// - `"primary"` → always below the tray icon on the primary display.
+/// - `"active"`  → below the tray icon on whichever screen the cursor is on.
+///
+/// ## Positioning strategy
+///
+/// On macOS, each screen mirrors the tray icons in its own menu bar.
+/// We read our tray icon's NSStatusBarWindow frame directly from AppKit
+/// (Tauri's `tray.rect()` is unreliable on multi-monitor setups).
+///
+/// **Primary screen**: inject the tray position into the positioner plugin's
+/// state, then call `move_window(TrayBottomCenter)` — the proven code path.
+///
+/// **Secondary screens**: Tauri's `set_position` can't move windows across
+/// monitors, so we use native `NSWindow.setFrame:display:` with coordinates
+/// computed from the tray icon's AppKit frame.
 #[cfg(target_os = "macos")]
-fn position_on_screen(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str) -> bool {
+fn position_on_screen(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str) {
     use objc2::MainThreadMarker;
-    use objc2_app_kit::{NSEvent, NSScreen};
-    use tauri::PhysicalPosition;
-
-    // Logical window width — must be scaled for physical positioning.
-    let win_w_logical = 480.0_f64;
-
-    // Try to get the actual tray icon rectangle from Tauri.
-    // Convert the Position/Size enums to physical pixel values (f64).
-    let tray_phys = app
-        .tray_by_id(TRAY_ID)
-        .and_then(|tray| tray.rect().ok())
-        .flatten()
-        .map(|rect| {
-            let pos = rect.position.to_physical::<f64>(1.0);
-            let sz = rect.size.to_physical::<f64>(1.0);
-            (pos.x, pos.y, sz.width, sz.height)
-        });
+    use objc2_app_kit::NSScreen;
 
     let Some(mtm) = MainThreadMarker::new() else {
-        return false;
+        return;
     };
     let screens = NSScreen::screens(mtm);
-    if screens.len() == 0 {
-        return false;
+    if screens.is_empty() {
+        return;
     }
 
     let primary = screens.objectAtIndex(0);
+    let target_screen_idx = if mode == "active" {
+        find_cursor_screen(&screens)
+    } else {
+        0
+    };
+    let target_screen = screens.objectAtIndex(target_screen_idx);
+
+    let Some(tray_frame) = read_tray_frame_on_screen(mtm, &target_screen) else {
+        return;
+    };
+
+    if target_screen_idx == 0 {
+        position_on_primary(app, window, &primary, tray_frame);
+    } else {
+        position_on_secondary(app, window, &primary, tray_frame);
+    }
+}
+
+/// Find which screen the mouse cursor is on. Returns the screen index.
+#[cfg(target_os = "macos")]
+fn find_cursor_screen(
+    screens: &objc2::rc::Retained<objc2_foundation::NSArray<objc2_app_kit::NSScreen>>,
+) -> usize {
+    use objc2_app_kit::NSEvent;
+    let mouse = NSEvent::mouseLocation();
+    for i in 0..screens.len() {
+        let f = screens.objectAtIndex(i).frame();
+        if mouse.x >= f.origin.x
+            && mouse.x < f.origin.x + f.size.width
+            && mouse.y >= f.origin.y
+            && mouse.y < f.origin.y + f.size.height
+        {
+            return i;
+        }
+    }
+    0
+}
+
+/// Position the popup below the tray icon on the primary screen.
+///
+/// Uses native `NSWindow.setFrame:display:` to place the window directly
+/// below the tray icon.  This works on hidden windows, so the popup
+/// appears at the correct position when `show()` is called afterward.
+#[cfg(target_os = "macos")]
+fn position_on_primary(
+    _app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    _primary: &objc2_app_kit::NSScreen,
+    tray_frame: (f64, f64, f64, f64),
+) {
+    set_frame_below_tray(window, tray_frame);
+}
+
+/// Position the popup below the tray icon on a secondary screen.
+///
+/// After positioning, restores the real primary-screen tray position in the
+/// positioner plugin's state so subsequent tray clicks still work correctly.
+#[cfg(target_os = "macos")]
+fn position_on_secondary(
+    app: &AppHandle,
+    window: &tauri::WebviewWindow,
+    primary: &objc2_app_kit::NSScreen,
+    tray_frame: (f64, f64, f64, f64),
+) {
+    set_frame_below_tray(window, tray_frame);
+    restore_primary_tray_position(app, primary);
+}
+
+/// Place the popup window centered below the tray icon using native AppKit.
+///
+/// Uses `NSWindow.setFrame:display:` which works on both hidden and visible
+/// windows, on any screen.  `tray_frame` is `(x, y, w, h)` in AppKit logical
+/// points (bottom-left origin) from the tray icon's NSStatusBarWindow.
+#[cfg(target_os = "macos")]
+fn set_frame_below_tray(window: &tauri::WebviewWindow, tray_frame: (f64, f64, f64, f64)) {
+    let (tray_x, tray_y, tray_w, _) = tray_frame;
+    let win_w = 480.0_f64;
+    let win_h = 520.0_f64;
+
+    let popup_x = tray_x + tray_w / 2.0 - win_w / 2.0;
+    // In AppKit coords, tray_y is the bottom of the tray window.
+    // The popup's top should be at tray_y (just below the tray icon),
+    // so its origin (bottom-left) is at tray_y - win_h.
+    let popup_y_origin = tray_y - win_h;
+
+    let Ok(ptr) = window.ns_window() else { return };
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    unsafe {
+        let ns_win: &objc2_app_kit::NSWindow = &*ptr.cast();
+        let frame = CGRect::new(
+            CGPoint::new(popup_x, popup_y_origin),
+            CGSize::new(win_w, win_h),
+        );
+        ns_win.setFrame_display(frame, true);
+    }
+}
+
+/// Restore the positioner plugin's tray state to the real primary-screen
+/// tray icon position, so that tray clicks position the popup correctly.
+#[cfg(target_os = "macos")]
+fn restore_primary_tray_position(app: &AppHandle, primary: &objc2_app_kit::NSScreen) {
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let Some(tray_frame) = read_tray_frame_on_screen(mtm, primary) else {
+        return;
+    };
     let primary_height = primary.frame().size.height;
-    let primary_scale = primary.backingScaleFactor();
+    let primary_scale = primary.backingScaleFactor() as f64;
+    let (px, py, pw, ph) = appkit_to_tauri_phys(tray_frame, primary_height, primary_scale);
+    inject_tray_position(app, px, py, pw, ph);
+}
 
-    // Helper: position the popup centered below the tray icon (physical coords).
-    let position_below_tray =
-        |tx: f64, ty: f64, tw: f64, th: f64, scale: f64| -> Option<bool> {
-            let win_w_phys = win_w_logical * scale;
-            let tray_center_x = tx + tw / 2.0;
-            let popup_x = tray_center_x - (win_w_phys / 2.0);
-            let popup_y = ty + th;
-            Some(
-                window
-                    .set_position(PhysicalPosition::new(popup_x as i32, popup_y as i32))
-                    .is_ok(),
-            )
-        };
+// ── Coordinate helpers ────────────────────────────────────────────────────
 
-    // For "primary" mode, position directly below the tray icon.
-    if mode != "active" {
-        if let Some((tx, ty, tw, th)) = tray_phys {
-            return position_below_tray(tx, ty, tw, th, primary_scale).unwrap_or(false);
+/// Convert an AppKit frame (logical points, bottom-left origin) to Tauri
+/// physical coordinates (pixels, top-left origin).
+#[cfg(target_os = "macos")]
+fn appkit_to_tauri_phys(
+    frame: (f64, f64, f64, f64),
+    primary_height: f64,
+    scale: f64,
+) -> (f64, f64, f64, f64) {
+    let (ax, ay, aw, ah) = frame;
+    // AppKit y is the bottom edge.  Top edge = ay + ah.
+    // Tauri y (top-left, y-down) = primary_height - top_edge.
+    (
+        ax * scale,
+        (primary_height - (ay + ah)) * scale,
+        aw * scale,
+        ah * scale,
+    )
+}
+
+/// Inject a synthetic tray icon position into the positioner plugin's state.
+/// The next `move_window(TrayBottomCenter)` will use these coordinates.
+fn inject_tray_position(app: &AppHandle, x: f64, y: f64, w: f64, h: f64) {
+    use tauri::tray::TrayIconEvent;
+    use tauri::{PhysicalPosition, PhysicalSize, Rect};
+
+    let event = TrayIconEvent::Move {
+        id: tauri::tray::TrayIconId::new(TRAY_ID),
+        position: PhysicalPosition::new(x, y),
+        rect: Rect {
+            position: tauri::Position::Physical(PhysicalPosition::new(
+                x.round() as i32,
+                y.round() as i32,
+            )),
+            size: tauri::Size::Physical(PhysicalSize::new(
+                w.round().max(0.0) as u32,
+                h.round().max(0.0) as u32,
+            )),
+        },
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        tauri_plugin_positioner::on_tray_event(app, &event);
+    }));
+}
+
+// ── AppKit tray icon detection ────────────────────────────────────────────
+
+/// Read the tray icon's NSStatusBarWindow frame on a specific screen.
+///
+/// On modern macOS each screen mirrors the tray icons in its own menu bar.
+/// We find our icon's window by matching the `NSStatusBarWindow` class and
+/// checking which screen it's on.
+///
+/// Returns `(x, y, width, height)` in AppKit logical points (bottom-left origin).
+#[cfg(target_os = "macos")]
+fn read_tray_frame_on_screen(
+    mtm: objc2::MainThreadMarker,
+    screen: &objc2_app_kit::NSScreen,
+) -> Option<(f64, f64, f64, f64)> {
+    use objc2_app_kit::NSApplication;
+    use objc2_foundation::NSObjectProtocol;
+
+    let nsapp = NSApplication::sharedApplication(mtm);
+    let windows = nsapp.windows();
+    let screen_frame = screen.frame();
+    let status_bar_class = objc2::runtime::AnyClass::get(c"NSStatusBarWindow")?;
+
+    for i in 0..windows.len() {
+        let win = windows.objectAtIndex(i);
+        if !win.isKindOfClass(status_bar_class) {
+            continue;
+        }
+        let f = win.frame();
+        let win_center_x = f.origin.x + f.size.width / 2.0;
+        let on_screen = win_center_x >= screen_frame.origin.x
+            && win_center_x < screen_frame.origin.x + screen_frame.size.width;
+        if on_screen {
+            return Some((f.origin.x, f.origin.y, f.size.width, f.size.height));
         }
     }
-
-    if mode == "active" {
-        let mouse = NSEvent::mouseLocation();
-
-        // Find the screen containing the cursor.
-        let mut cursor_screen_idx: usize = 0;
-        for i in 0..screens.len() {
-            let f = screens.objectAtIndex(i).frame();
-            if mouse.x >= f.origin.x
-                && mouse.x < f.origin.x + f.size.width
-                && mouse.y >= f.origin.y
-                && mouse.y < f.origin.y + f.size.height
-            {
-                cursor_screen_idx = i;
-                break;
-            }
-        }
-
-        // If cursor is on the primary screen (where tray lives), use tray position.
-        if cursor_screen_idx == 0 {
-            if let Some((tx, ty, tw, th)) = tray_phys {
-                return position_below_tray(tx, ty, tw, th, primary_scale).unwrap_or(false);
-            }
-        }
-
-        // Cursor is on a different screen — center horizontally near the menu bar.
-        let target_screen = screens.objectAtIndex(cursor_screen_idx);
-        let visible = target_screen.visibleFrame();
-        let full = target_screen.frame();
-        let scale = target_screen.backingScaleFactor();
-
-        let x = full.origin.x + (full.size.width - win_w_logical) / 2.0;
-        let ns_top = visible.origin.y + visible.size.height;
-        let y = primary_height - ns_top;
-
-        let phys_x = (x * scale) as i32;
-        let phys_y = (y * scale) as i32;
-
-        return window
-            .set_position(PhysicalPosition::new(phys_x, phys_y))
-            .is_ok();
-    }
-
-    // Fallback for "primary" mode when tray rect wasn't available.
-    let visible = primary.visibleFrame();
-    let full = primary.frame();
-    let x = full.origin.x + (full.size.width - win_w_logical) / 2.0;
-    let ns_top = visible.origin.y + visible.size.height;
-    let y = primary_height - ns_top;
-
-    let phys_x = (x * primary_scale) as i32;
-    let phys_y = (y * primary_scale) as i32;
-
-    window
-        .set_position(PhysicalPosition::new(phys_x, phys_y))
-        .is_ok()
+    None
 }
 
 #[cfg(test)]

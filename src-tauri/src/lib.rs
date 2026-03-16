@@ -824,7 +824,10 @@ fn update_global_shortcuts(
     app.global_shortcut()
         .on_shortcut(toggle_shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                tray::toggle_window(&handle, tray::ToggleSource::GlobalShortcut);
+                let h = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    tray::toggle_window(&h, tray::ToggleSource::GlobalShortcut);
+                });
             }
         })
         .map_err(|e| e.to_string())?;
