@@ -66,6 +66,7 @@ pub struct AppState {
     pub notify_close_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     pub last_brew_status: Mutex<Option<homebrew::HomebrewStatus>>,
     pub last_notified_brew_update: Mutex<bool>,
+    pub cached_releases: Mutex<Option<Vec<github::Release>>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -196,6 +197,13 @@ async fn check_auth(app: tauri::AppHandle) -> Result<bool, String> {
 #[tauri::command]
 fn get_app_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+#[tauri::command]
+fn fetch_releases(app: tauri::AppHandle) -> Vec<github::Release> {
+    let state = app.state::<AppState>();
+    let cache = state.cached_releases.lock().unwrap();
+    cache.clone().unwrap_or_default()
 }
 
 #[tauri::command]
@@ -1090,6 +1098,7 @@ pub fn run() {
             dismiss_notification,
             get_brew_status,
             update_brew,
+            fetch_releases,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));
@@ -1108,6 +1117,7 @@ pub fn run() {
                 notify_close_tx: Mutex::new(None),
                 last_brew_status: Mutex::new(None),
                 last_notified_brew_update: Mutex::new(false),
+                cached_releases: Mutex::new(None),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -1196,6 +1206,21 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 poll_brew(handle).await;
+            });
+
+            // Fetch releases once at startup
+            let releases_handle = app.handle().clone();
+            tokio::spawn(async move {
+                match github::fetch_releases_from_github(
+                    &releases_handle.state::<AppState>().http_client,
+                ).await {
+                    Ok(releases) => {
+                        let state = releases_handle.state::<AppState>();
+                        let mut cache = state.cached_releases.lock().unwrap();
+                        *cache = Some(releases);
+                    }
+                    Err(e) => eprintln!("[pronto] Failed to fetch releases: {e}"),
+                }
             });
 
             // Setup global shortcuts from settings
