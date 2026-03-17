@@ -334,13 +334,13 @@ export async function showSettings() {
         contentArea.innerHTML = `
           <div class="notif-master-row">
             <div>
-              <div class="notif-master-label">System notifications</div>
-              <div class="notif-master-hint">Deliver macOS notifications for PR activity</div>
+              <div class="notif-master-label">macOS notifications</div>
+              <div class="notif-master-hint">Also deliver native macOS notifications</div>
             </div>
             <input type="checkbox" id="notif-master" class="settings-toggle notif-master-toggle"${_notificationsEnabled ? " checked" : ""} />
           </div>
 
-          <div class="notif-details${_notificationsEnabled ? "" : " disabled"}" id="notif-details">
+          <div class="notif-details" id="notif-details">
             <div class="settings-section">
               <div class="settings-section-title">Owned PRs</div>
               <div class="settings-group">
@@ -466,13 +466,11 @@ export async function showSettings() {
           </div>
         `;
 
-        // Wire up master toggle
+        // Wire up macOS notifications toggle
         const masterEl = document.getElementById("notif-master") as HTMLInputElement | null;
-        const detailsEl = document.getElementById("notif-details") as HTMLElement | null;
-        if (masterEl && detailsEl) {
+        if (masterEl) {
           masterEl.addEventListener("change", () => {
             _notificationsEnabled = masterEl.checked;
-            detailsEl.classList.toggle("disabled", !masterEl.checked);
             autoSaveSettings();
           });
         }

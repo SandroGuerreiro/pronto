@@ -89,6 +89,7 @@ fn get_token(state: &AppState) -> Result<String, String> {
 fn send_attention_notification(
     app: &tauri::AppHandle,
     result: &github::FetchResult,
+    send_native: bool,
 ) {
     let already_notified = app.try_state::<AppState>()
         .map(|state| state.notified_prs.lock().unwrap().clone())
@@ -109,7 +110,13 @@ fn send_attention_notification(
         }
     }
 
-    macos_notify::send(&info);
+    // Always show popup notification
+    show_tray_notification(app, "attention", &info.title, &info.body);
+
+    // Only send macOS native notification if enabled
+    if send_native {
+        macos_notify::send(&info);
+    }
 }
 
 pub(crate) fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
@@ -175,9 +182,8 @@ fn process_result(
                 .retain(|url| attention_set.contains(url.as_str()));
         }
 
-        if notify {
-            send_attention_notification(app, &result);
-        }
+        // Always show popup notifications; only send macOS native if enabled
+        send_attention_notification(app, &result, notify);
 
         changed = result.attention_urls != prev_attention || result.open.len() != prev_open_len;
         set_tray_attention(app, !result.attention_urls.is_empty());
@@ -481,14 +487,21 @@ fn check_workflow_attention(
         None => false,
     };
 
-    if changed && notify {
+    if changed {
         let info = notification::build_workflow_notification(
             &new_status.repo,
             &new_status.workflow_name,
             &new_status.conclusion,
             Some(&new_status.html_url),
         );
-        macos_notify::send(&info);
+
+        // Always show popup notification
+        show_tray_notification(app, "workflow", &info.title, &info.body);
+
+        // Only send macOS native notification if enabled
+        if notify {
+            macos_notify::send(&info);
+        }
     }
 
     // Only update last status if it's an actual conclusion, not in_progress
