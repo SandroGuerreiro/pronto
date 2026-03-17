@@ -38,10 +38,11 @@ function mockCard(opts: {
 
 const replayBtnStyle = 'background:none;border:1px solid rgba(255,255,255,0.08);color:#71717a;font-size:10px;padding:2px 8px;border-radius:4px;cursor:pointer;margin-left:auto;';
 
-function section(id: string, title: string, body: string, isExitDemo = false): string {
-  const replayBtn = isExitDemo ? `<button class="dev-replay-btn" data-replay="${id}" style="${replayBtnStyle}">replay</button>` : "";
+function section(id: string, title: string, body: string, opts: { exitDemo?: boolean; replayable?: boolean } = {}): string {
+  const showReplay = opts.exitDemo || opts.replayable;
+  const replayBtn = showReplay ? `<button class="dev-replay-btn" data-replay="${id}" style="${replayBtnStyle}">replay</button>` : "";
   return `
-    <div class="dev-section${isExitDemo ? " dev-exit-demo" : ""}" data-section-id="${id}" style="margin-bottom: 4px;">
+    <div class="dev-section${opts.exitDemo ? " dev-exit-demo" : ""}" data-section-id="${id}" style="margin-bottom: 4px;">
       <div style="font-size: 10px; font-weight: 600; color: #71717a; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 4px 4px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center;">
         ${title}
         ${replayBtn}
@@ -84,11 +85,11 @@ function replaySection(container: HTMLElement, sectionId: string) {
     return;
   }
 
-  // Default: re-insert HTML to restart CSS animations
-  const html = body.innerHTML;
+  // Default: re-insert original HTML to restart CSS animations
+  const original = body.getAttribute("data-original-html") ?? body.innerHTML;
   body.innerHTML = "";
   void body.offsetHeight;
-  body.innerHTML = html;
+  body.innerHTML = original;
 }
 
 export function renderDevStates(): string {
@@ -173,21 +174,21 @@ export function renderDevStates(): string {
     statusLabel: "●", statusClass: "open",
     statusLine: `<span class="approved">approved</span>${sep}<span class="checks-pass">checks passed</span>${sep}<span class="status-detail">☑ 2</span>${sep}<span class="status-detail">${commentIcon} 1</span>${sep}<span class="status-detail">▣ 0</span>`,
     repo: "acme/core", number: "#200",
-  }), true);
+  }), { exitDemo: true });
 
   html += section("card-exit-closed", "Exit Animation — Closed", mockCard({
     title: "This card is being closed right now",
     statusLabel: "●", statusClass: "open",
     statusLine: `<span class="needs-reviews">needs reviews</span>${sep}<span class="checks-none">no checks</span>${sep}<span class="status-detail">☑ 0</span>${sep}<span class="status-detail">${commentIcon} 0</span>${sep}<span class="status-detail">▣ 0</span>`,
     repo: "acme/experiment", number: "#7",
-  }), true);
+  }), { exitDemo: true });
 
   html += section("card-exit-hidden", "Exit Animation — Hidden", mockCard({
     title: "This card is being hidden right now",
     statusLabel: "●", statusClass: "open",
     statusLine: `<span class="approved">approved</span>${sep}<span class="checks-pass">checks passed</span>${sep}<span class="status-detail">☑ 1</span>${sep}<span class="status-detail">${commentIcon} 0</span>${sep}<span class="status-detail">▣ 0</span>`,
     repo: "acme/misc", number: "#55",
-  }), true);
+  }), { exitDemo: true });
 
   // ── Misc elements ──
   html += section("badges", "Tab Badge Pulse", `
@@ -203,7 +204,7 @@ export function renderDevStates(): string {
       <span class="version-text version-new" style="cursor: pointer;">v0.7.0</span>
       <span style="font-size: 11px; color: #52525b;">(shimmer plays once, text stays brighter until hover)</span>
     </div>
-  `);
+  `, { replayable: true });
 
   html += section("workflows", "Workflow Indicators", `
     <div style="display: flex; gap: 8px; padding: 8px; flex-wrap: wrap;">
@@ -218,6 +219,11 @@ export function renderDevStates(): string {
 }
 
 export function bindDevStateEvents(container: HTMLElement) {
+  // Snapshot original HTML for each section body so replay restores pristine state
+  container.querySelectorAll<HTMLElement>(".dev-section-body").forEach((body) => {
+    body.setAttribute("data-original-html", body.innerHTML);
+  });
+
   // Per-section replay buttons
   container.querySelectorAll<HTMLButtonElement>(".dev-replay-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -226,6 +232,17 @@ export function bindDevStateEvents(container: HTMLElement) {
       if (id) replaySection(container, id);
     });
   });
+
+  // Version shimmer: remove "version-new" on hover (matches real app behavior)
+  const shimmerSection = container.querySelector<HTMLElement>('.dev-section[data-section-id="version-shimmer"]');
+  if (shimmerSection) {
+    shimmerSection.addEventListener("mouseenter", (e) => {
+      const target = e.target as HTMLElement;
+      if (target.classList?.contains("version-new")) {
+        target.classList.remove("version-new");
+      }
+    }, true);
+  }
 
   // Replay all button
   const replayAllBtn = container.querySelector<HTMLButtonElement>("#dev-replay-all");

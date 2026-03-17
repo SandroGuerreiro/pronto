@@ -1821,7 +1821,7 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 .version-new {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: linear-gradient(
     110deg,
     transparent 0%,
