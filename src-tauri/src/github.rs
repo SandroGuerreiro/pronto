@@ -511,10 +511,7 @@ async fn fetch_followed_users_prs(
         .format("%Y-%m-%d")
         .to_string();
 
-    // Use {{ and }} for literal braces in format strings, { and } for interpolation
-    let pr_fragment = PR_FIELDS
-        .replace('{', "{{")
-        .replace('}', "}}");
+    let pr_fragment = PR_FIELDS;
 
     let mut query_parts = String::from("{");
     for (i, user) in users.iter().enumerate() {
