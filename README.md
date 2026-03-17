@@ -4,6 +4,32 @@ A macOS menu bar app that monitors your GitHub Pull Requests and notifies you wh
 
 Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 
+## Install
+
+### Homebrew (recommended)
+
+```bash
+brew install --cask SandroGuerreiro/tap/pronto
+```
+
+To update:
+
+```bash
+brew update && brew upgrade --cask pronto
+```
+
+### DMG
+
+Download the latest `.dmg` from [GitHub Releases](https://github.com/SandroGuerreiro/pronto/releases), open it, and drag `Pronto.app` to your Applications folder.
+
+> **⚠️ Important:** The app is not code-signed. macOS will likely show **"Pronto is damaged and can't be opened."** This is expected — run the following command to fix it:
+>
+> ```bash
+> xattr -cr /Applications/Pronto.app
+> ```
+>
+> This removes the quarantine attribute that macOS adds to unsigned apps downloaded from the internet. You only need to do this once after each install or update.
+
 ## Features
 
 - **Tray icon widget** -- lives in your menu bar, not the dock
@@ -37,30 +63,6 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 | Tray icon | PR list popup |
 | --- | --- |
 | Lives in the menu bar with a red badge when PRs need attention | Dark-themed popup showing open and recently merged PRs |
-
-## Install
-
-### Homebrew (recommended)
-
-```bash
-brew install --cask SandroGuerreiro/tap/pronto
-```
-
-To update:
-
-```bash
-brew update && brew upgrade --cask pronto
-```
-
-### DMG
-
-Download the latest `.dmg` from [GitHub Releases](https://github.com/SandroGuerreiro/pronto/releases), open it, and drag `Pronto.app` to your Applications folder.
-
-> **Note:** The app is not code-signed. macOS may show "Pronto is damaged and can't be opened." To fix this, run:
->
-> ```bash
-> xattr -cr /Applications/Pronto.app
-> ```
 
 ## Authentication
 
