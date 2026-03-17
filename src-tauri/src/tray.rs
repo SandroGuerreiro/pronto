@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
+#[cfg(not(target_os = "macos"))]
 use tauri_plugin_positioner::{Position, WindowExt};
 
 use crate::github::{FetchResult, PrElementChanges, PullRequest, ReviewThread};
