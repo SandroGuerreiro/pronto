@@ -407,15 +407,24 @@ pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
 
     match source {
         ToggleSource::TrayClick => {
+            // Use native AppKit positioning so the popup appears correctly
+            // even on the very first click (before the positioner plugin has
+            // cached any tray position), and always on the clicked screen
+            // regardless of the popup_screen setting.
+            #[cfg(target_os = "macos")]
+            {
+                position_on_tray_click(app, &window);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let old_hook = std::panic::take_hook();
+                std::panic::set_hook(Box::new(|_| {}));
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = window.move_window(Position::TrayCenter);
+                }));
+                std::panic::set_hook(old_hook);
+            }
             let _ = window.show();
-            // on_tray_event (called before toggle_window) already cached the
-            // tray icon position in the positioner plugin.
-            let old_hook = std::panic::take_hook();
-            std::panic::set_hook(Box::new(|_| {}));
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = window.move_window(Position::TrayCenter);
-            }));
-            std::panic::set_hook(old_hook);
         }
         ToggleSource::GlobalShortcut => {
             // Pre-position the hidden window via native AppKit (setFrame:display:)
@@ -449,6 +458,47 @@ pub fn toggle_window(app: &AppHandle, source: ToggleSource) {
 }
 
 // ── Shortcut positioning ──────────────────────────────────────────────────
+
+/// Position the popup for a tray click using native AppKit.
+///
+/// Always positions below the tray icon on the screen where the click happened
+/// (detected via cursor position), regardless of the `popup_screen` setting.
+/// Reads the tray frame directly from AppKit so it works on the very first
+/// click after app launch (before the positioner plugin has any cached state).
+#[cfg(target_os = "macos")]
+fn position_on_tray_click(app: &AppHandle, window: &tauri::WebviewWindow) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSScreen;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let screens = NSScreen::screens(mtm);
+    if screens.is_empty() {
+        return;
+    }
+
+    let primary = screens.objectAtIndex(0);
+    let clicked_screen_idx = find_cursor_screen(&screens);
+    let clicked_screen = screens.objectAtIndex(clicked_screen_idx);
+
+    let Some(tray_frame) = read_tray_frame_on_screen(mtm, &clicked_screen) else {
+        return;
+    };
+
+    set_frame_below_tray(window, tray_frame);
+
+    // Feed the primary screen's tray position to the positioner plugin
+    // so any code path still using move_window(TrayCenter) works afterward.
+    if clicked_screen_idx == 0 {
+        let primary_height = primary.frame().size.height;
+        let primary_scale = primary.backingScaleFactor() as f64;
+        let (px, py, pw, ph) = appkit_to_tauri_phys(tray_frame, primary_height, primary_scale);
+        inject_tray_position(app, px, py, pw, ph);
+    } else {
+        restore_primary_tray_position(app, &primary);
+    }
+}
 
 /// Position the popup for a global shortcut based on the `popup_screen` setting.
 fn position_for_shortcut(app: &AppHandle, window: &tauri::WebviewWindow) {
