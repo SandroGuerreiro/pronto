@@ -8,21 +8,25 @@ Built with [Tauri](https://tauri.app) (Rust) and Vanilla TypeScript.
 
 - **Tray icon widget** -- lives in your menu bar, not the dock
 - **Open PRs at a glance** -- see title, repo, review status, comments, and CI checks
+- **Draft PR indicators** -- visual distinction for draft PRs
 - **Recently merged** -- shows PRs merged in a configurable time window (12h / 24h / 48h), in a separate tab
 - **Recently closed** -- shows unmerged closed PRs in a configurable time window (12h / 24h / 48h), disabled by default
-- **Needs attention notifications** -- tray icon badge + native macOS notification when a PR's status changes (reviews, comments, CI, merge queue transitions); per-category notification preferences configurable per event type; followed PRs notify when owned threads are replied to; own PR notifications active by default
+- **Needs attention notifications** -- tray icon badge + notification when a PR's status changes (reviews, comments, CI, merge queue transitions); per-category notification preferences configurable per event type; followed PRs notify when owned threads are replied to; own PR notifications active by default
 - **Notification actions** -- notification title is the PR name, body describes what changed; clicking the notification opens the PR and clears its attention status
 - **Dismiss on hover** -- hovering over a highlighted PR card for ~800ms acknowledges it; once all are dismissed, the tray badge clears
 - **Tab attention badges** -- the Open and Recently Merged tabs show a count of PRs needing attention
-- **Organized by org & repo** -- PRs are grouped into nested accordions (organization > repository), or displayed as a flat date-sorted list (configurable)
+- **Organized by org & repo** -- PRs are grouped into nested accordions (organization > repository), or displayed as a flat date-sorted list (configurable); click org/repo names to open them on GitHub
 - **Favorites** -- star organizations and repositories to pin them to the top of the list
 - **Hide orgs & repos** -- hide organizations or repositories so they stop being fetched; hidden items remain visible (greyed out) for easy unhiding
 - **Hide individual PRs** -- press `i` on a focused PR to hide it; unhide from the settings blacklist
-- **Workflow monitor** -- track the status of a GitHub Actions workflow in the header; triggers attention when the status changes between success and failure
+- **Workflow monitor** -- track the status of a GitHub Actions workflow in the header; badge auto-dismisses when popup opens
 - **Configurable polling** -- 1 / 2 / 5 / 10 minute intervals
 - **Follow PRs from anywhere** -- copy a PR URL, press the global follow shortcut, and it's added to your followed list without leaving your current app
 - **Global shortcuts** -- toggle the popup, reload, or follow a PR from anywhere on your Mac
-- **Full keyboard navigation** -- browse PRs, expand/collapse accordions, switch tabs, and dismiss attention without touching the mouse
+- **Full keyboard navigation** -- browse PRs, expand/collapse accordions, switch tabs, and dismiss attention without touching the mouse; improved accessibility across sidebar and settings
+- **Release notes** -- click the version in the footer to view release notes
+- **User profile picture** -- shows your GitHub avatar for quick account identification
+- **Multi-monitor support** -- popup appears on the correct screen (primary or active monitor)
 - **Settings search** -- quickly filter settings with a search bar
 - **Two auth methods** -- GitHub OAuth (Device Flow) or Personal Access Token
 - **Secure storage** -- tokens are stored in the macOS Keychain
@@ -169,8 +173,10 @@ pronto/
 │   ├── renderer.ts         # PR card and accordion rendering
 │   ├── prefs.ts            # User preferences and favorites
 │   ├── tabs.ts             # Tab switching and content rendering
-│   ├── settings.ts         # Settings modal UI
+│   ├── settings.ts         # Settings UI
+│   ├── settings-nav.ts     # Settings sidebar navigation
 │   ├── auth.ts             # Login and authentication UI
+│   ├── release-notes.ts    # Release notes view
 │   └── styles.css          # All popup styling
 ├── index.html              # Popup HTML shell
 ├── public/
@@ -181,7 +187,10 @@ pronto/
 │   │   ├── lib.rs          # Tauri setup, commands, polling, workflow monitor
 │   │   ├── github.rs       # GraphQL + REST API client, PR & workflow structs
 │   │   ├── tray.rs         # Tray icon setup, badge rendering, attention logic
-│   │   └── auth.rs         # OAuth Device Flow, PAT validation, Keychain storage
+│   │   ├── auth.rs         # OAuth Device Flow, PAT validation, Keychain storage
+│   │   ├── notification.rs # Notification event builders and routing
+│   │   ├── macos_notify.rs # Native macOS notification fallback
+│   │   └── types.rs        # Settings, notification types, preferences
 │   ├── icons/              # App bundle icons + tray icon
 │   ├── Cargo.toml          # Rust dependencies
 │   └── tauri.conf.json     # Tauri configuration
