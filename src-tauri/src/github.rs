@@ -612,10 +612,12 @@ fn apply_merge_state(pr: &mut PullRequest) {
         return;
     };
     match merge_state {
-        // CLEAN / HAS_HOOKS = all required checks pass → force SUCCESS
+        // CLEAN / HAS_HOOKS = all required checks pass
+        // Only override FAILURE/ERROR (non-required check failed but PR is mergeable).
+        // Never override PENDING — checks are still running even if required ones passed.
         "CLEAN" | "HAS_HOOKS" => {
             if let Some(rollup) = &mut node.commit.status_check_rollup {
-                if rollup.state != "SUCCESS" {
+                if rollup.state == "FAILURE" || rollup.state == "ERROR" {
                     rollup.state = "SUCCESS".into();
                 }
             }

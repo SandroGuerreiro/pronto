@@ -330,6 +330,22 @@ fn apply_merge_state_blocked_success_with_review_stays_success() {
 }
 
 #[test]
+fn apply_merge_state_clean_keeps_pending() {
+    let mut pr = with_checks(with_merge_state(make_pr("url"), "CLEAN"), "PENDING");
+    apply_merge_state(&mut pr);
+    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    assert_eq!(state, "PENDING");
+}
+
+#[test]
+fn apply_merge_state_has_hooks_keeps_pending() {
+    let mut pr = with_checks(with_merge_state(make_pr("url"), "HAS_HOOKS"), "PENDING");
+    apply_merge_state(&mut pr);
+    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    assert_eq!(state, "PENDING");
+}
+
+#[test]
 fn apply_merge_state_no_merge_state_noop() {
     let mut pr = with_checks(make_pr("url"), "FAILURE");
     apply_merge_state(&mut pr);
