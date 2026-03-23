@@ -132,6 +132,26 @@ pub(crate) fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
     tray::update_tray_icon(app, attention);
 }
 
+/// Build a lightweight snapshot of PR data for change detection.
+/// Captures fields that affect frontend rendering (draft state, titles, counts, etc.)
+/// so that any visible change triggers a `prs-updated` event.
+fn pr_snapshot(result: &github::FetchResult) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    for pr in result.open.iter().chain(result.followed_open.iter())
+        .chain(result.recently_merged.iter()).chain(result.recently_closed.iter())
+        .chain(result.followed_recently_merged.iter()).chain(result.followed_recently_closed.iter())
+    {
+        let _ = write!(
+            s, "{}|{}|{}|{}|{}|{}\n",
+            pr.url, pr.state, pr.is_draft, pr.merged,
+            pr.review_decision.as_deref().unwrap_or(""),
+            pr.merge_queue_entry.is_some(),
+        );
+    }
+    s
+}
+
 fn process_result(
     app: &tauri::AppHandle,
     mut result: github::FetchResult,
@@ -139,12 +159,12 @@ fn process_result(
 ) -> (github::FetchResult, bool) {
     let mut changed = true;
     if let Some(state) = app.try_state::<AppState>() {
-        let (prev_attention, prev_open_len) = {
+        let (prev_attention, prev_pr_snapshot) = {
             let cache = state.cached_prs.lock().unwrap();
             let prev = cache.as_ref();
             (
                 prev.map(|r| r.attention_urls.clone()).unwrap_or_default(),
-                prev.map(|r| r.open.len()).unwrap_or(0),
+                prev.map(|r| pr_snapshot(r)).unwrap_or_default(),
             )
         };
 
@@ -185,7 +205,7 @@ fn process_result(
         // Always show popup notifications; only send macOS native if enabled
         send_attention_notification(app, &result, notify);
 
-        changed = result.attention_urls != prev_attention || result.open.len() != prev_open_len;
+        changed = result.attention_urls != prev_attention || pr_snapshot(&result) != prev_pr_snapshot;
         set_tray_attention(app, !result.attention_urls.is_empty());
 
         let mut cache = state.cached_prs.lock().unwrap();
