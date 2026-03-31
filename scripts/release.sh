@@ -350,7 +350,7 @@ Only make changes that are necessary. Keep the existing structure and style of e
             # Clean dist folder to ensure fresh frontend build
             rm -rf "$PROJECT_ROOT/dist"
             if ! pnpm tauri build --bundles app; then
-                log_error "Build failed. Resume with: $0 $new_version '$release_notes' --force-from-step 3"
+                log_error "Build failed. Resume with: $0 $new_version --force-from-step 3"
                 exit 1
             fi
             log_success "Build completed"
@@ -385,7 +385,7 @@ Only make changes that are necessary. Keep the existing structure and style of e
             if ! hdiutil create -volname "Pronto" -srcfolder "$staging_dir" -ov -format UDZO "$dmg_path"; then
                 rm -rf "$staging_dir"
                 log_error "Failed to create DMG"
-                log_error "Resume with: $0 $new_version '$release_notes' --force-from-step 4"
+                log_error "Resume with: $0 $new_version --force-from-step 4"
                 exit 1
             fi
             rm -rf "$staging_dir"
@@ -424,7 +424,7 @@ Only make changes that are necessary. Keep the existing structure and style of e
                 --title "Pronto v$new_version" \
                 --notes "$release_notes" 2>/dev/null; then
                 log_error "Failed to create GitHub release"
-                log_error "Resume with: $0 $new_version '$release_notes' --force-from-step 6"
+                log_error "Resume with: $0 $new_version --force-from-step 6"
                 exit 1
             fi
             log_success "GitHub release created"
