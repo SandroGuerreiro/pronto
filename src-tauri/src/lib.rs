@@ -420,7 +420,16 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         &fs.followed_prs,
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        let msg = e.to_string();
+        if msg.starts_with("auth_expired") {
+            let mut cache = state.cached_token.lock().unwrap();
+            *cache = None;
+            "auth_expired".to_string()
+        } else {
+            msg
+        }
+    })?;
 
     cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
     result = filter_hidden_prs(result, &fs.hidden_prs);
@@ -1044,7 +1053,13 @@ async fn poll_prs(app: tauri::AppHandle) {
                 }
             }
             Err(e) => {
-                eprintln!("[pronto] Poll failed: {}", e);
+                let msg = e.to_string();
+                eprintln!("[pronto] Poll failed: {}", msg);
+                if msg.starts_with("auth_expired") {
+                    let mut cache = state.cached_token.lock().unwrap();
+                    *cache = None;
+                    let _ = app.emit("auth-expired", ());
+                }
             }
         }
         let _ = app.emit("polling-complete", ());

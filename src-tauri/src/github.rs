@@ -426,7 +426,11 @@ async fn fetch_prs_for_author(
     let raw = http_response.text().await?;
 
     if !status.is_success() {
-        let msg = format!("GitHub API returned {status}: {raw}");
+        let msg = if status == reqwest::StatusCode::UNAUTHORIZED {
+            format!("auth_expired: GitHub API returned {status}: {raw}")
+        } else {
+            format!("GitHub API returned {status}: {raw}")
+        };
         eprintln!("[pronto] {msg}");
         return Err(msg.into());
     }

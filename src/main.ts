@@ -55,7 +55,7 @@ export async function loadPrs() {
     const result = await invoke<FetchResult>("fetch_all_prs");
     renderPrView(result);
   } catch (e: unknown) {
-    if (typeof e === "string" && e.includes("not_authenticated")) {
+    if (typeof e === "string" && (e.includes("not_authenticated") || e.includes("auth_expired"))) {
       showLogin();
     } else {
       content.innerHTML = `<div class="empty">Failed to load PRs</div>`;
@@ -525,6 +525,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     } else {
       loadPrs();
     }
+  });
+
+  // Token expired during background polling — redirect to login
+  await listen("auth-expired", () => {
+    showLogin();
   });
 
   // Polling event listeners
