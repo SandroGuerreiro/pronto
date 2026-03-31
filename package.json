@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.8.3",
   "type": "module",
+  "packageManager": "pnpm@10.30.2",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -19,7 +20,7 @@
     "@tauri-apps/plugin-opener": "2.5.3",
     "@tauri-apps/plugin-process": "2.3.1",
     "dompurify": "3.3.3",
-    "marked": "17.0.4"
+    "marked": "17.0.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.10.1",
