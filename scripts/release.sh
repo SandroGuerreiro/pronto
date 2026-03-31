@@ -319,7 +319,7 @@ Please update the following files:
 
 Only make changes that are necessary. Keep the existing structure and style of each file. Do not remove existing content unless it's outdated."
 
-                    echo "$docs_prompt" | claude
+                    echo "$docs_prompt" | claude -p
                     log_success "Documentation updated"
                 fi
             else
