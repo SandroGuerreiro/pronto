@@ -837,7 +837,6 @@ window.addEventListener("DOMContentLoaded", async () => {
         clearSidebarFocus();
         setPopoverFocus(0);
       } else {
-        clearSidebarFocus();
         document.getElementById("quit-btn")?.click();
       }
       return;
