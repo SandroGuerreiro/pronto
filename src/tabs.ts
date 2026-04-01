@@ -534,7 +534,9 @@ export function bindContentEvents(container: HTMLElement) {
 
 export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   const content = document.getElementById("content")!;
-  const items = [...content.querySelectorAll("summary.accordion-header, .pr-card")];
+  const items = [...content.querySelectorAll(
+    "#pr-search-input, .follow-filter-btn[data-filter], summary.accordion-header, .pr-card"
+  )];
   if (focusIndex < 0 || focusIndex >= items.length) return false;
 
   const el = items[focusIndex];
@@ -549,13 +551,11 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
 
   await new Promise<void>((resolve) => {
     setTimeout(() => {
-      const isDirectFollow = followedPrs.has(url);
-
-      if (isDirectFollow) {
+      const wasDirectFollow = followedPrs.has(url);
+      if (wasDirectFollow) {
         followedPrs.delete(url);
-      } else {
-        hiddenPrs.set(url, title);
       }
+      hiddenPrs.set(url, title);
 
       if (currentResult) {
         currentResult.open = currentResult.open.filter((pr) => pr.url !== url);
@@ -571,12 +571,8 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   });
 
   const current = await invoke<import("./types").Settings>("get_settings");
-  const isDirectFollow = !hiddenPrs.has(url) && !followedPrs.has(url);
-  if (isDirectFollow) {
-    current.followed_prs = [...followedPrs];
-  } else {
-    current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
-  }
+  current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
+  current.followed_prs = [...followedPrs];
   await invoke("update_settings", { settings: current });
 
   return true;
