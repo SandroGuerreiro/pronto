@@ -352,3 +352,64 @@ fn apply_merge_state_no_merge_state_noop() {
     let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
     assert_eq!(state, "FAILURE");
 }
+
+// ── build_exclusions ─────────────────────────────────────────────────────────
+
+#[test]
+fn build_exclusions_empty_lists() {
+    assert_eq!(build_exclusions(&[], &[]), "");
+}
+
+#[test]
+fn build_exclusions_one_org() {
+    let result = build_exclusions(&["myorg".to_string()], &[]);
+    assert_eq!(result, " -org:myorg");
+}
+
+#[test]
+fn build_exclusions_multiple_orgs_and_repos() {
+    let result = build_exclusions(
+        &["org1".to_string(), "org2".to_string()],
+        &["owner/repo1".to_string(), "owner/repo2".to_string()],
+    );
+    assert_eq!(result, " -org:org1 -org:org2 -repo:owner/repo1 -repo:owner/repo2");
+}
+
+// ── is_pr_older_than_48h ─────────────────────────────────────────────────────
+
+#[test]
+fn older_than_48h_no_timestamps() {
+    let pr = make_pr("url");
+    assert!(!is_pr_older_than_48h(&pr));
+}
+
+#[test]
+fn older_than_48h_merged_24h_ago() {
+    let mut pr = make_pr("url");
+    let ts = (chrono::Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
+    pr.merged_at = Some(ts);
+    assert!(!is_pr_older_than_48h(&pr));
+}
+
+#[test]
+fn older_than_48h_merged_72h_ago() {
+    let mut pr = make_pr("url");
+    let ts = (chrono::Utc::now() - chrono::Duration::hours(72)).to_rfc3339();
+    pr.merged_at = Some(ts);
+    assert!(is_pr_older_than_48h(&pr));
+}
+
+#[test]
+fn older_than_48h_closed_72h_ago() {
+    let mut pr = make_pr("url");
+    let ts = (chrono::Utc::now() - chrono::Duration::hours(72)).to_rfc3339();
+    pr.closed_at = Some(ts);
+    assert!(is_pr_older_than_48h(&pr));
+}
+
+#[test]
+fn older_than_48h_invalid_date_string() {
+    let mut pr = make_pr("url");
+    pr.merged_at = Some("not-a-date".to_string());
+    assert!(!is_pr_older_than_48h(&pr));
+}

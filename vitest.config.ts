@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.test.ts", "src/main.ts"],
+      exclude: ["src/**/*.test.ts", "src/main.ts", "src/dev-states.ts", "src/vite-env.d.ts"],
     },
   },
 });
