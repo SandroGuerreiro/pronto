@@ -142,12 +142,25 @@ fn pr_snapshot(result: &github::FetchResult) -> String {
         .chain(result.recently_merged.iter()).chain(result.recently_closed.iter())
         .chain(result.followed_recently_merged.iter()).chain(result.followed_recently_closed.iter())
     {
+        let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
+        let resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
+        let thread_comments: i32 = pr.review_threads.nodes.iter()
+            .map(|t| t.comments.total_count)
+            .sum();
+        let checks_state = pr.commits.nodes.last()
+            .and_then(|c| c.commit.status_check_rollup.as_ref())
+            .map(|s| s.state.as_str())
+            .unwrap_or("");
         let _ = write!(
-            s, "{}|{}|{}|{}|{}|{}\n",
+            s, "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
             pr.url, pr.state, pr.is_draft, pr.merged,
             pr.review_decision.as_deref().unwrap_or(""),
             pr.merge_queue_entry.is_some(),
+            pr.reviews.total_count, pr.comments.total_count,
+            unresolved, resolved,
+            thread_comments,
         );
+        let _ = write!(s, "{}:checks={}\n", pr.url, checks_state);
     }
     s
 }
