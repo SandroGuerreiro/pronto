@@ -944,7 +944,8 @@ details[open] > .accordion-header .accordion-chevron::before {
   transition: border-color var(--duration-fast), background-color var(--duration-fast);
 }
 
-.search-input:focus-visible {
+.search-input:focus-visible,
+.search-input.kb-focus {
   outline: 1px solid rgba(56, 139, 253, 0.5);
   outline-offset: -1px;
   border-color: var(--border-strong);
@@ -1040,11 +1041,23 @@ details[open] > .accordion-header .accordion-chevron::before {
   color: var(--text-primary);
 }
 
+.follow-filter-btn.kb-focus:not(.active) {
+  background: var(--surface-active);
+  color: var(--text-primary);
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
+}
+
 .follow-filter-btn.active {
   background: rgba(56, 139, 253, 0.25);
   border-color: rgba(56, 139, 253, 0.45);
   color: var(--text-primary);
   font-weight: 500;
+}
+
+.follow-filter-btn.active.kb-focus {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
 }
 
 .follow-filter-dropdown-wrapper {

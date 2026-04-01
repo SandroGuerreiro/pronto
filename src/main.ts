@@ -236,7 +236,11 @@ function updateBrewIndicator(status: HomebrewStatus | null) {
 
 function getFocusables(): Element[] {
   const content = document.getElementById("content")!;
-  return [...content.querySelectorAll("summary.accordion-header, .pr-card")];
+  return [
+    ...content.querySelectorAll(
+      "#pr-search-input, .follow-filter-btn[data-filter], summary.accordion-header, .pr-card"
+    ),
+  ];
 }
 
 function clearKbDismiss() {
@@ -297,6 +301,12 @@ function setFocus(index: number) {
   const el = items[newIndex];
   el.classList.add("kb-focus");
   el.scrollIntoView({ block: "nearest" });
+
+  // Auto-focus the search input so typing works immediately
+  if (el instanceof HTMLInputElement) {
+    el.focus();
+    return;
+  }
 
   if (el.classList.contains("pr-card")) {
     const url = el.getAttribute("data-url");
@@ -794,6 +804,23 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     if (devStatesOpen || !currentResult) return;
 
+    // While a search input has focus, let the browser handle most keys.
+    // Arrow up/down and Escape exit the input back to keyboard navigation.
+    const focused = document.activeElement;
+    const inSearchInput = focused instanceof HTMLInputElement && focused.type === "text";
+    if (inSearchInput) {
+      const isExit = e.key === "Escape"
+        || e.key === "ArrowDown"
+        || e.key === "ArrowUp";
+      if (isExit) {
+        e.preventDefault();
+        (focused as HTMLElement).blur();
+        // Fall through to normal keyboard navigation
+      } else if (e.key !== "Tab") {
+        return;
+      }
+    }
+
     const items = getFocusables();
     const tabKeys = [keybindings.tab_owned, keybindings.tab_followed];
     if (showRecentlyMerged) tabKeys.push(keybindings.tab_merged);
@@ -825,19 +852,57 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // Navigate down
+    // Navigate down — skip over sibling filter buttons; land on active when entering filter bar
     if (e.key === keybindings.navigate_down || e.key === "ArrowDown") {
       e.preventDefault();
       clearSidebarFocus();
-      setFocus(focusIndex + 1);
+      let next = focusIndex + 1;
+      if (focusIndex >= 0 && items[focusIndex]?.classList.contains("follow-filter-btn")) {
+        // Already on a filter → skip past all filters
+        while (next < items.length && items[next]?.classList.contains("follow-filter-btn")) next++;
+      } else if (items[next]?.classList.contains("follow-filter-btn")) {
+        // Entering filter bar → land on the active filter
+        const active = items.findIndex((el) => el.classList.contains("follow-filter-btn") && el.classList.contains("active"));
+        if (active >= 0) next = active;
+      }
+      setFocus(next);
       return;
     }
 
-    // Navigate up
+    // Navigate up — skip over sibling filter buttons; land on active when entering filter bar
     if (e.key === keybindings.navigate_up || e.key === "ArrowUp") {
       e.preventDefault();
       clearSidebarFocus();
-      setFocus(focusIndex - 1);
+      let prev = focusIndex - 1;
+      if (focusIndex >= 0 && items[focusIndex]?.classList.contains("follow-filter-btn")) {
+        // Already on a filter → skip past all filters
+        while (prev >= 0 && items[prev]?.classList.contains("follow-filter-btn")) prev--;
+      } else if (prev >= 0 && items[prev]?.classList.contains("follow-filter-btn")) {
+        // Entering filter bar from below → land on the active filter
+        const active = items.findIndex((el) => el.classList.contains("follow-filter-btn") && el.classList.contains("active"));
+        if (active >= 0) prev = active;
+      }
+      setFocus(prev);
+      return;
+    }
+
+    // Left/right on filter buttons → navigate between filters
+    if ((e.key === keybindings.collapse || e.key === "ArrowLeft"
+      || e.key === keybindings.expand || e.key === "ArrowRight")
+      && focusIndex >= 0 && items[focusIndex]?.classList.contains("follow-filter-btn")) {
+      e.preventDefault();
+      const dir = (e.key === keybindings.expand || e.key === "ArrowRight") ? 1 : -1;
+      const next = focusIndex + dir;
+      if (next >= 0 && next < items.length && items[next]?.classList.contains("follow-filter-btn")) {
+        const filter = items[next].getAttribute("data-filter");
+        (items[next] as HTMLElement).click();
+        // Re-render destroys DOM; restore kb-focus to the active filter button
+        const refreshed = getFocusables();
+        const restored = refreshed.findIndex(
+          (el) => el.classList.contains("follow-filter-btn") && el.getAttribute("data-filter") === filter
+        );
+        if (restored >= 0) setFocus(restored);
+      }
       return;
     }
 
@@ -867,12 +932,16 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // Open PR
+    // Open PR / activate focused element
     if (e.key === keybindings.open_pr) {
       e.preventDefault();
       if (focusIndex < 0) return;
       const el = items[focusIndex];
-      if (el.classList.contains("pr-card")) {
+      if (el instanceof HTMLInputElement) {
+        el.focus();
+      } else if (el.classList.contains("follow-filter-btn")) {
+        (el as HTMLElement).click();
+      } else if (el.classList.contains("pr-card")) {
         const url = el.getAttribute("data-url");
         if (url) openUrl(url);
       } else if (el.tagName === "SUMMARY") {
