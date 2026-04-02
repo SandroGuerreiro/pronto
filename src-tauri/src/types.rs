@@ -60,6 +60,10 @@ pub fn default_true() -> bool {
     true
 }
 
+fn default_volume() -> f64 {
+    0.35
+}
+
 fn default_poll_interval() -> u64 {
     60
 }
@@ -150,6 +154,10 @@ pub struct Settings {
     pub homebrew_check_interval_secs: u64,
     #[serde(default = "default_popup_screen")]
     pub popup_screen: String,
+    #[serde(default = "default_true")]
+    pub notification_sound: bool,
+    #[serde(default = "default_volume")]
+    pub notification_volume: f64,
     #[serde(default)]
     pub last_seen_version: Option<String>,
 }
@@ -190,6 +198,8 @@ impl Default for Settings {
             homebrew_check_enabled: true,
             homebrew_check_interval_secs: 14400,
             popup_screen: default_popup_screen(),
+            notification_sound: true,
+            notification_volume: 0.35,
             last_seen_version: None,
         }
     }
@@ -200,4 +210,69 @@ pub struct NotifyData {
     pub kind: String,
     pub title: String,
     pub message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_without_notification_sound_defaults_to_true() {
+        // Existing users upgrading: their settings JSON won't have the field.
+        // It must default to true so they get sounds immediately.
+        let json = r#"{"poll_interval_secs": 60}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(settings.notification_sound);
+    }
+
+    #[test]
+    fn settings_with_notification_sound_false_is_preserved() {
+        let json = r#"{"notification_sound": false}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(!settings.notification_sound);
+    }
+
+    #[test]
+    fn settings_default_has_notification_sound_true() {
+        let settings = Settings::default();
+        assert!(settings.notification_sound);
+    }
+
+    #[test]
+    fn settings_notification_sound_round_trips() {
+        let mut settings = Settings::default();
+        settings.notification_sound = false;
+        let json = serde_json::to_string(&settings).unwrap();
+        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        assert!(!deserialized.notification_sound);
+    }
+
+    #[test]
+    fn settings_without_notification_volume_defaults_to_1() {
+        let json = r#"{"poll_interval_secs": 60}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!((settings.notification_volume - 0.35).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn settings_with_notification_volume_is_preserved() {
+        let json = r#"{"notification_volume": 0.5}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!((settings.notification_volume - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn settings_default_has_notification_volume_1() {
+        let settings = Settings::default();
+        assert!((settings.notification_volume - 0.35).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn settings_notification_volume_round_trips() {
+        let mut settings = Settings::default();
+        settings.notification_volume = 0.3;
+        let json = serde_json::to_string(&settings).unwrap();
+        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        assert!((deserialized.notification_volume - 0.3).abs() < f64::EPSILON);
+    }
 }

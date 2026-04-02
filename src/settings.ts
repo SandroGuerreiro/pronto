@@ -39,6 +39,8 @@ const defaultNotifPrefs = (): NotificationPreferences => ({
   new_comment_participated: false,
 });
 
+let _notificationSound: boolean = true;
+let _notificationVolume: number = 0.35;
 let _notificationsEnabled: boolean = true;
 let _notifPrefsOwned: NotificationPreferences = defaultNotifPrefs();
 let _notifPrefsFollowed: NotificationPreferences = defaultNotifPrefs();
@@ -53,6 +55,8 @@ let _brewCheckIntervalSecs: number = 14400;
 let _popupScreen: string = "primary";
 
 export function loadNotifPrefsFromSettings(s: Settings) {
+  _notificationSound = s.notification_sound ?? true;
+  _notificationVolume = s.notification_volume ?? 0.35;
   _notificationsEnabled = s.notifications_enabled ?? true;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
   _notifPrefsFollowed = { ...defaultNotifPrefs(), ...s.notification_prefs_followed };
@@ -126,6 +130,8 @@ export async function autoSaveSettings() {
     homebrew_check_enabled: _brewCheckEnabled,
     homebrew_check_interval_secs: _brewCheckIntervalSecs,
     popup_screen: _popupScreen,
+    notification_sound: _notificationSound,
+    notification_volume: _notificationVolume,
   };
 
   setGroupByRepository(updated.group_by_repository);
@@ -334,6 +340,20 @@ export async function showSettings() {
         contentArea.innerHTML = `
           <div class="notif-master-row">
             <div>
+              <div class="notif-master-label">Notification sound</div>
+              <div class="notif-master-hint">Play a sound when notifications arrive</div>
+            </div>
+            <input type="checkbox" id="notif-sound" class="settings-toggle notif-master-toggle"${_notificationSound ? " checked" : ""} />
+          </div>
+
+          <div class="notif-volume-row${_notificationSound ? "" : " disabled"}" id="notif-volume-row">
+            <label class="notif-volume-label" for="notif-volume">Volume</label>
+            <input type="range" id="notif-volume" class="notif-volume-slider" min="0" max="100" value="${Math.round(_notificationVolume * 100)}" />
+            <button id="notif-volume-preview" class="notif-volume-preview" title="Preview sound">&#9654;</button>
+          </div>
+
+          <div class="notif-master-row">
+            <div>
               <div class="notif-master-label">macOS notifications</div>
               <div class="notif-master-hint">Also deliver native macOS notifications</div>
             </div>
@@ -465,6 +485,38 @@ export async function showSettings() {
             </div>
           </div>
         `;
+
+        // Wire up notification sound toggle
+        const soundEl = document.getElementById("notif-sound") as HTMLInputElement | null;
+        const volumeRow = document.getElementById("notif-volume-row");
+        if (soundEl) {
+          soundEl.addEventListener("change", () => {
+            _notificationSound = soundEl.checked;
+            volumeRow?.classList.toggle("disabled", !soundEl.checked);
+            autoSaveSettings();
+          });
+        }
+
+        // Wire up volume slider
+        const volumeEl = document.getElementById("notif-volume") as HTMLInputElement | null;
+        if (volumeEl) {
+          volumeEl.addEventListener("input", () => {
+            _notificationVolume = parseInt(volumeEl.value) / 100;
+          });
+          volumeEl.addEventListener("change", () => {
+            _notificationVolume = parseInt(volumeEl.value) / 100;
+            autoSaveSettings();
+          });
+        }
+
+        // Wire up volume preview button
+        const previewBtn = document.getElementById("notif-volume-preview");
+        if (previewBtn) {
+          previewBtn.addEventListener("click", async () => {
+            await autoSaveSettings();
+            await invoke("play_sound");
+          });
+        }
 
         // Wire up macOS notifications toggle
         const masterEl = document.getElementById("notif-master") as HTMLInputElement | null;

@@ -413,3 +413,30 @@ fn older_than_48h_invalid_date_string() {
     pr.merged_at = Some("not-a-date".to_string());
     assert!(!is_pr_older_than_48h(&pr));
 }
+
+// ── sound_kind ───────────────────────────────────────────────────────────────
+
+#[test]
+fn sound_kind_checks_failed() {
+    let changes = PrElementChanges {
+        checks_failed: true,
+        became_changes_requested: true,
+        ..Default::default()
+    };
+    assert_eq!(changes.sound_kind(), "checks_failed");
+}
+
+#[test]
+fn sound_kind_default_attention() {
+    let changes = PrElementChanges {
+        became_changes_requested: true,
+        ..Default::default()
+    };
+    assert_eq!(changes.sound_kind(), "attention");
+}
+
+#[test]
+fn sound_kind_empty_changes() {
+    let changes = PrElementChanges::default();
+    assert_eq!(changes.sound_kind(), "attention");
+}

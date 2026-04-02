@@ -144,6 +144,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     homebrew_check_enabled: false,
     homebrew_check_interval_secs: 14400,
     popup_screen: "primary",
+    notification_sound: true,
     ...overrides,
   };
 }

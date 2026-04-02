@@ -206,6 +206,15 @@ export function renderDevStates(): string {
     </div>
   `, { replayable: true });
 
+  html += section("notification-sound", "Notification Sounds", `
+    <div style="display: flex; gap: 8px; padding: 8px; align-items: center; flex-wrap: wrap;">
+      <button class="dev-play-sound" data-kind="attention" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Pluck</button>
+      <button class="dev-play-sound" data-kind="checks_failed" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Pebble</button>
+      <button class="dev-play-sound" data-kind="workflow_success" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Funky</button>
+      <span style="font-size: 11px; color: #52525b;">Attention / Checks failed / Workflow success</span>
+    </div>
+  `);
+
   html += section("workflows", "Workflow Indicators", `
     <div style="display: flex; gap: 8px; padding: 8px; flex-wrap: wrap;">
       <span class="workflow-indicator wf-success"><span class="wf-dot"></span><span class="wf-label">Success</span></span>
@@ -243,6 +252,16 @@ export function bindDevStateEvents(container: HTMLElement) {
       }
     }, true);
   }
+
+  // Play notification sound buttons
+  container.querySelectorAll<HTMLButtonElement>(".dev-play-sound").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const kind = btn.getAttribute("data-kind") ?? "attention";
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("play_sound", { kind });
+    });
+  });
 
   // Replay all button
   const replayAllBtn = container.querySelector<HTMLButtonElement>("#dev-replay-all");

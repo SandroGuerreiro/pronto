@@ -80,6 +80,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     notify_on_closed: false,
     homebrew_check_enabled: false,
     homebrew_check_interval_secs: 3600,
+    notification_sound: true,
     ...overrides,
   };
 }

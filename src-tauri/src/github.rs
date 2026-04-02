@@ -267,6 +267,16 @@ impl PrElementChanges {
             parts.join(", ")
         }
     }
+
+    /// Returns the sound kind for the most important change.
+    /// Priority: checks_failed > everything else (default "attention").
+    pub fn sound_kind(&self) -> &'static str {
+        if self.checks_failed {
+            "checks_failed"
+        } else {
+            "attention"
+        }
+    }
 }
 
 #[derive(Serialize, Clone)]

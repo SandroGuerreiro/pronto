@@ -110,8 +110,14 @@ fn send_attention_notification(
         }
     }
 
+    // Determine sound kind from the dominant element change
+    let sound_kind = result.element_changes.values()
+        .find(|c| c.checks_failed)
+        .map(|c| c.sound_kind())
+        .unwrap_or("attention");
+
     // Always show popup notification
-    show_tray_notification(app, "attention", &info.title, &info.body);
+    show_tray_notification(app, "attention", sound_kind, &info.title, &info.body);
 
     // Only send macOS native notification if enabled
     if send_native {
@@ -537,8 +543,15 @@ fn check_workflow_attention(
             Some(&new_status.html_url),
         );
 
+        // Determine sound kind from workflow conclusion
+        let sound_kind = if new_status.conclusion == "success" {
+            "workflow_success"
+        } else {
+            "workflow_failure"
+        };
+
         // Always show popup notification
-        show_tray_notification(app, "workflow", &info.title, &info.body);
+        show_tray_notification(app, "workflow", sound_kind, &info.title, &info.body);
 
         // Only send macOS native notification if enabled
         if notify {
@@ -752,7 +765,41 @@ fn render_notify_js(data: &NotifyData) -> String {
     )
 }
 
-fn show_tray_notification(app: &tauri::AppHandle, kind: &str, title: &str, message: &str) {
+/// Pick the macOS system sound name for a notification kind.
+fn sound_for_kind(kind: &str) -> &'static str {
+    match kind {
+        "checks_failed" | "workflow_failure" => "Pebble",
+        "workflow_success" => "Funky",
+        _ => "Pluck", // changes_requested, new_reviews, merge_queue, etc.
+    }
+}
+
+/// Play a macOS system sound on the main thread at the given volume (0.0–1.0).
+#[cfg(target_os = "macos")]
+fn play_system_sound(app: &tauri::AppHandle, sound_name: &str, volume: f32) {
+    let name_owned = sound_name.to_string();
+    let _ = app.run_on_main_thread(move || {
+        use objc2_app_kit::NSSound;
+        use objc2_foundation::NSString;
+
+        let name = NSString::from_str(&name_owned);
+        if let Some(sound) = NSSound::soundNamed(&name) {
+            sound.setVolume(volume);
+            sound.play();
+        }
+    });
+}
+
+fn show_tray_notification(app: &tauri::AppHandle, kind: &str, sound_kind: &str, title: &str, message: &str) {
+    // Play sound if enabled in settings
+    if let Some(state) = app.try_state::<AppState>() {
+        let settings = state.settings.lock().unwrap();
+        if settings.notification_sound {
+            let sound_name = sound_for_kind(sound_kind);
+            play_system_sound(app, sound_name, settings.notification_volume as f32);
+        }
+    }
+
     let data = NotifyData {
         kind: kind.to_string(),
         title: title.to_string(),
@@ -787,6 +834,16 @@ fn get_notification_data(app: tauri::AppHandle) -> Vec<NotifyData> {
     app.try_state::<AppState>()
         .map(|s| std::mem::take(&mut *s.pending_notifications.lock().unwrap()))
         .unwrap_or_default()
+}
+
+#[tauri::command]
+fn play_sound(app: tauri::AppHandle, kind: Option<String>) {
+    let volume = app
+        .try_state::<AppState>()
+        .map(|s| s.settings.lock().unwrap().notification_volume as f32)
+        .unwrap_or(0.35);
+    let sound_name = sound_for_kind(kind.as_deref().unwrap_or("attention"));
+    play_system_sound(&app, sound_name, volume);
 }
 
 #[tauri::command]
@@ -860,7 +917,7 @@ fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(false);
     if !main_visible {
-        show_tray_notification(app, kind, title, &short);
+        show_tray_notification(app, kind, "attention", title, &short);
     }
 }
 
@@ -986,14 +1043,14 @@ fn update_global_shortcuts(
                             match normalize_github_pr_url(trimmed) {
                                 Some(pr_url) => toggle_followed_pr(&h2, pr_url),
                                 None => show_tray_notification(
-                                    &h2, "error",
+                                    &h2, "error", "attention",
                                     "Not a PR URL",
                                     "Copy a GitHub PR URL and try again",
                                 ),
                             }
                         }
                         None => show_tray_notification(
-                            &h2, "error",
+                            &h2, "error", "attention",
                             "No URL Found",
                             "Copy a GitHub PR URL first",
                         ),
@@ -1135,6 +1192,7 @@ async fn poll_brew(app: tauri::AppHandle) {
                 show_tray_notification(
                     &app,
                     "brew_update",
+                    "attention",
                     "Homebrew Update Available",
                     &format!("Pronto {} is available", status.latest_version),
                 );
@@ -1186,6 +1244,7 @@ pub fn run() {
             update_brew,
             fetch_releases,
             check_version_update,
+            play_sound,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));
