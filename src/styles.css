@@ -1439,6 +1439,11 @@ details[open] > .section-header .accordion-chevron::before {
   outline: none;
 }
 
+.notif-volume-slider:focus-visible {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: 2px;
+}
+
 .notif-volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -1458,7 +1463,7 @@ details[open] > .section-header .accordion-chevron::before {
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--color-neutral);
-  font-size: 10px;
+  font-size: 11px;
   padding: 2px 8px;
   border-radius: 4px;
   cursor: pointer;

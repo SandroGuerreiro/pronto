@@ -208,9 +208,9 @@ export function renderDevStates(): string {
 
   html += section("notification-sound", "Notification Sounds", `
     <div style="display: flex; gap: 8px; padding: 8px; align-items: center; flex-wrap: wrap;">
-      <button class="dev-play-sound" data-kind="attention" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Pluck</button>
-      <button class="dev-play-sound" data-kind="checks_failed" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Pebble</button>
-      <button class="dev-play-sound" data-kind="workflow_success" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Funky</button>
+      <button class="dev-play-sound" data-kind="attention" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Purr</button>
+      <button class="dev-play-sound" data-kind="checks_failed" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Basso</button>
+      <button class="dev-play-sound" data-kind="workflow_success" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">▶ Funk</button>
       <span style="font-size: 11px; color: #52525b;">Attention / Checks failed / Workflow success</span>
     </div>
   `);

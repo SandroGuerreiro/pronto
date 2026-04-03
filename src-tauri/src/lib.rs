@@ -103,7 +103,7 @@ fn send_attention_notification(
     // Mark these PRs as notified
     if let Some(state) = app.try_state::<AppState>() {
         let mut notified = state.notified_prs.lock().unwrap();
-        for pr in result.open.iter().chain(result.recently_merged.iter()) {
+        for pr in result.open.iter().chain(result.followed_open.iter()).chain(result.recently_merged.iter()).chain(result.followed_recently_merged.iter()) {
             if result.attention_urls.contains(&pr.url) {
                 notified.insert(pr.url.clone());
             }
@@ -768,9 +768,9 @@ fn render_notify_js(data: &NotifyData) -> String {
 /// Pick the macOS system sound name for a notification kind.
 fn sound_for_kind(kind: &str) -> &'static str {
     match kind {
-        "checks_failed" | "workflow_failure" => "Pebble",
-        "workflow_success" => "Funky",
-        _ => "Pluck", // changes_requested, new_reviews, merge_queue, etc.
+        "checks_failed" | "workflow_failure" => "Basso",
+        "workflow_success" => "Funk",
+        _ => "Purr", // changes_requested, new_reviews, merge_queue, etc.
     }
 }
 
