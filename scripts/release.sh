@@ -400,10 +400,12 @@ Only make changes that are necessary. Keep the existing structure and style of e
             xcrun stapler staple "$app_path"
             log_success "Stapled"
 
-            # Create DMG
+            # Create DMG (source must be the directory containing Pronto.app, not the .app itself)
+            local app_dir="$(dirname "$app_path")"
             log_info "Creating DMG..."
             rm -f "$dmg_path"
             rm -f "$dmg_dir"/rw.*.dmg
+            rm -f "$app_dir"/rw.*.dmg
             if ! create-dmg \
                 --volname "Pronto" \
                 --no-internet-enable \
@@ -412,7 +414,7 @@ Only make changes that are necessary. Keep the existing structure and style of e
                 --icon "Pronto.app" 130 150 \
                 --app-drop-link 370 150 \
                 "$dmg_path" \
-                "$app_path"; then
+                "$app_dir"; then
                 log_error "Failed to create DMG"
                 log_error "Resume with: $0 $new_version --force-from-step 4"
                 exit 1
