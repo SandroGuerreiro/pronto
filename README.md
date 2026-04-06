@@ -22,13 +22,6 @@ brew update && brew upgrade --cask pronto
 
 Download the latest `.dmg` from [GitHub Releases](https://github.com/SandroGuerreiro/pronto/releases), open it, and drag `Pronto.app` to your Applications folder.
 
-> **⚠️ Important:** The app is not code-signed. macOS will likely show **"Pronto is damaged and can't be opened."** This is expected — run the following command to fix it:
->
-> ```bash
-> xattr -cr /Applications/Pronto.app
-> ```
->
-> This removes the quarantine attribute that macOS adds to unsigned apps downloaded from the internet. You only need to do this once after each install or update.
 
 ## Features
 

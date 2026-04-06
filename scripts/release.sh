@@ -403,6 +403,7 @@ Only make changes that are necessary. Keep the existing structure and style of e
             # Create DMG
             log_info "Creating DMG..."
             rm -f "$dmg_path"
+            rm -f "$dmg_dir"/rw.*.dmg
             if ! create-dmg \
                 --volname "Pronto" \
                 --no-internet-enable \
@@ -503,6 +504,8 @@ cask "${CASK_NAME}" do
   name "Pronto"
   desc "Native macOS menu bar app for monitoring GitHub Pull Requests"
   homepage "https://github.com/sandroguerreiro/pronto"
+
+  depends_on macos: ">= :catalina"
 
   app "Pronto.app"
 
