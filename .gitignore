@@ -36,5 +36,6 @@ src-tauri/target/
 CLAUDE.md
 .superpowers/
 docs/superpowers/
+.worktrees/
 
 scripts/
