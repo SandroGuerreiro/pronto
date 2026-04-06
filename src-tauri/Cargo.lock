@@ -3382,6 +3382,7 @@ version = "0.9.0"
 dependencies = [
  "block2",
  "chrono",
+ "core-foundation 0.9.4",
  "futures",
  "image",
  "keyring",
@@ -3392,6 +3393,8 @@ dependencies = [
  "objc2-user-notifications",
  "open",
  "reqwest",
+ "security-framework 2.11.1",
+ "security-framework-sys",
  "serde",
  "serde_json",
  "tauri",

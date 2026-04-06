@@ -33,6 +33,9 @@ image = "0.25"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-notification = "2.3.3"
 keyring = { version = "3.6.3", features = ["apple-native"] }
+security-framework = "2"
+security-framework-sys = "2"
+core-foundation = "0.9"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSPanel", "NSResponder", "NSWindow", "NSApplication", "NSRunningApplication", "NSWorkspace", "NSScreen", "NSEvent", "NSSound"] }
 objc2-core-foundation = "0.3"
