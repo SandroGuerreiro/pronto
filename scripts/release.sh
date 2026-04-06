@@ -90,7 +90,7 @@ check_prerequisites() {
     local missing_tools=()
 
     # Check for required tools
-    for tool in git gh pnpm cargo hdiutil; do
+    for tool in git gh pnpm cargo create-dmg xcrun; do
         if ! command -v "$tool" &> /dev/null; then
             missing_tools+=("$tool")
         fi
@@ -100,6 +100,14 @@ check_prerequisites() {
         log_error "Missing required tools: ${missing_tools[*]}"
         exit 1
     fi
+
+    # Check for notarization credentials
+    for var in APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+        if [ -z "${!var}" ]; then
+            log_error "Missing environment variable: $var (required for notarization)"
+            exit 1
+        fi
+    done
 
     log_success "All prerequisites met"
 }
@@ -357,9 +365,8 @@ Only make changes that are necessary. Keep the existing structure and style of e
         fi
     fi
 
-    # Step 4: Create DMG file manually
+    # Step 4: Notarize, staple, and create DMG
     if [ "$from_step" -le 4 ]; then
-        log_info "Step 4/8: Creating DMG with hdiutil..."
         local app_path="$PROJECT_ROOT/src-tauri/target/release/bundle/macos/Pronto.app"
         local dmg_filename="Pronto_${new_version}_aarch64.dmg"
         local dmg_path="$PROJECT_ROOT/src-tauri/target/release/bundle/dmg/$dmg_filename"
@@ -368,27 +375,47 @@ Only make changes that are necessary. Keep the existing structure and style of e
         mkdir -p "$dmg_dir"
 
         if [[ "$completion_status" =~ 4 ]] && [ -z "$force_redo" ]; then
-            log_info "DMG already created, skipping..."
+            log_info "Step 4/8: DMG already created, skipping..."
         else
-            # Remove old DMG if exists to avoid hdiutil issues
+            # Notarize the app
+            log_info "Step 4/8: Notarizing app (this may take a few minutes)..."
+            local zip_path=$(mktemp /tmp/Pronto-notarize.XXXXXX.zip)
+            ditto -c -k --keepParent "$app_path" "$zip_path"
+
+            if ! xcrun notarytool submit "$zip_path" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait; then
+                rm -f "$zip_path"
+                log_error "Notarization failed"
+                log_error "Resume with: $0 $new_version --force-from-step 4"
+                exit 1
+            fi
+            rm -f "$zip_path"
+            log_success "Notarization accepted"
+
+            # Staple the notarization ticket
+            log_info "Stapling notarization ticket..."
+            xcrun stapler staple "$app_path"
+            log_success "Stapled"
+
+            # Create DMG
+            log_info "Creating DMG..."
             rm -f "$dmg_path"
-
-            # Ad-hoc sign the app so macOS doesn't flag it as damaged
-            codesign --force --deep -s - "$app_path"
-            log_success "Ad-hoc signed app"
-
-            # Create a staging directory so the .app appears at the DMG root
-            local staging_dir=$(mktemp -d)
-            cp -R "$app_path" "$staging_dir/Pronto.app"
-            ln -s /Applications "$staging_dir/Applications"
-
-            if ! hdiutil create -volname "Pronto" -srcfolder "$staging_dir" -ov -format UDZO "$dmg_path"; then
-                rm -rf "$staging_dir"
+            if ! create-dmg \
+                --volname "Pronto" \
+                --no-internet-enable \
+                --sandbox-safe \
+                --icon-size 128 \
+                --icon "Pronto.app" 130 150 \
+                --app-drop-link 370 150 \
+                "$dmg_path" \
+                "$app_path"; then
                 log_error "Failed to create DMG"
                 log_error "Resume with: $0 $new_version --force-from-step 4"
                 exit 1
             fi
-            rm -rf "$staging_dir"
             log_success "Created DMG: $dmg_filename"
 
             # Copy DMG to project root
