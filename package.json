@@ -20,7 +20,7 @@
     "@tauri-apps/plugin-opener": "2.5.3",
     "@tauri-apps/plugin-process": "2.3.1",
     "dompurify": "3.3.3",
-    "marked": "17.0.5"
+    "marked": "18.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.10.1",
