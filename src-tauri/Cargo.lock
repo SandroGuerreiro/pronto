@@ -3382,7 +3382,7 @@ version = "0.9.1"
 dependencies = [
  "block2",
  "chrono",
- "core-foundation 0.9.4",
+ "core-foundation 0.10.1",
  "futures",
  "image",
  "keyring",
