@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-HOMEBREW_TAP_URL="https://github.com/sandroguerreiro/homebrew-tap"
+HOMEBREW_TAP_DIR="$HOME/Code/homebrew-tap"
 CASK_NAME="pronto"
 
 # Helper functions
@@ -489,11 +489,16 @@ update_homebrew_tap() {
     local sha256=$3
     local dmg_filename=$4
 
-    local temp_dir=$(mktemp -d)
-    local cask_file="$temp_dir/Casks/${CASK_NAME}.rb"
+    if [ ! -d "$HOMEBREW_TAP_DIR" ]; then
+        log_error "Homebrew tap not found at $HOMEBREW_TAP_DIR"
+        exit 1
+    fi
 
-    log_info "Cloning Homebrew tap..."
-    git clone "$HOMEBREW_TAP_URL" "$temp_dir"
+    local cask_file="$HOMEBREW_TAP_DIR/Casks/${CASK_NAME}.rb"
+
+    # Ensure we're up to date
+    log_info "Pulling latest Homebrew tap..."
+    git -C "$HOMEBREW_TAP_DIR" pull --rebase
 
     # Generate new cask content
     log_info "Updating cask file..."
@@ -511,6 +516,12 @@ cask "${CASK_NAME}" do
 
   app "Pronto.app"
 
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-d", "com.apple.quarantine", "#{appdir}/Pronto.app"],
+                   sudo: false
+  end
+
   zap trash: [
     "~/Library/Application Support/com.pronto.desktop",
     "~/Library/Caches/com.pronto.desktop",
@@ -520,17 +531,11 @@ end
 EOF
 
     # Commit and push
-    cd "$temp_dir"
-    git config user.email "bot@pronto.local"
-    git config user.name "Pronto Release Bot"
-    git add "Casks/${CASK_NAME}.rb"
-    git commit -m "Update Pronto cask to version $version"
-    git push origin master
+    git -C "$HOMEBREW_TAP_DIR" add "Casks/${CASK_NAME}.rb"
+    git -C "$HOMEBREW_TAP_DIR" commit -m "Update Pronto cask to version $version"
+    git -C "$HOMEBREW_TAP_DIR" push origin master
 
     log_success "Homebrew tap updated"
-
-    # Clean up
-    rm -rf "$temp_dir"
 }
 
 # Run main function
