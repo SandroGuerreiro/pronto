@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Prevents the app icon from ever appearing in the Dock or Cmd+Tab switcher.
+         LSUIElement is evaluated at process launch, before AppKit initialises,
+         so it is more reliable than the runtime set_activation_policy call. -->
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
