@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use tauri::{image::Image, tray::TrayIconBuilder, AppHandle, Manager};
+use tauri::{image::Image, menu::{Menu, MenuItemBuilder, PredefinedMenuItem}, tray::TrayIconBuilder, AppHandle, Emitter, Manager};
 #[cfg(not(target_os = "macos"))]
 use tauri_plugin_positioner::{Position, WindowExt};
 
@@ -340,10 +340,70 @@ pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
     Image::new_owned(pixels, width, height)
 }
 
+/// Builds and sets the tray context menu based on current auth state.
+/// Call this after login or logout to keep the menu in sync.
+pub fn rebuild_tray_menu(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+
+    let state = app.state::<crate::AppState>();
+    let is_logged_in = state.cached_token.lock().unwrap().is_some();
+    let viewer_login = state.viewer_login.lock().unwrap().clone();
+
+    let menu = build_tray_menu(app, is_logged_in, &viewer_login);
+    let _ = tray.set_menu(Some(menu));
+}
+
+fn build_tray_menu(app: &AppHandle, is_logged_in: bool, viewer_login: &str) -> Menu<tauri::Wry> {
+    let open = MenuItemBuilder::with_id("open", "Open").build(app).unwrap();
+    let separator = PredefinedMenuItem::separator(app).unwrap();
+    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app).unwrap();
+
+    if is_logged_in && !viewer_login.is_empty() {
+        let profile = MenuItemBuilder::with_id("view_profile", "View Profile").build(app).unwrap();
+        let logout = MenuItemBuilder::with_id("logout", "Log Out").build(app).unwrap();
+        Menu::with_items(app, &[&open, &profile, &logout, &separator, &quit]).unwrap()
+    } else {
+        Menu::with_items(app, &[&open, &separator, &quit]).unwrap()
+    }
+}
+
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let state = app.state::<crate::AppState>();
+    let is_logged_in = state.cached_token.lock().unwrap().is_some();
+    let viewer_login = state.viewer_login.lock().unwrap().clone();
+    let menu = build_tray_menu(app.handle(), is_logged_in, &viewer_login);
+
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(load_tray_icon())
-        .icon_as_template(true);
+        .icon_as_template(true)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "quit" => app.exit(0),
+                "open" => toggle_window(app, ToggleSource::TrayClick),
+                "view_profile" => {
+                    let login = app.state::<crate::AppState>().viewer_login.lock().unwrap().clone();
+                    if !login.is_empty() {
+                        let _ = tauri_plugin_opener::open_url(
+                            format!("https://github.com/{login}"),
+                            None::<&str>,
+                        );
+                    }
+                }
+                "logout" => {
+                    let _ = crate::auth::delete_token();
+                    let state = app.state::<crate::AppState>();
+                    *state.cached_token.lock().unwrap() = None;
+                    *state.viewer_login.lock().unwrap() = String::new();
+                    let _ = app.emit("auth-expired", ());
+                    rebuild_tray_menu(app);
+                }
+                _ => {}
+            }
+        });
 
     if cfg!(debug_assertions) {
         builder = builder.title("DEV");
@@ -355,6 +415,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }));
 
             if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
                 button_state: tauri::tray::MouseButtonState::Up,
                 ..
             } = event

@@ -286,6 +286,8 @@ async fn poll_login(app: tauri::AppHandle, device_code: String) -> Result<bool, 
             let state = app.state::<AppState>();
             let mut cache = state.cached_token.lock().unwrap();
             *cache = Some(token);
+            drop(cache);
+            tray::rebuild_tray_menu(&app);
             Ok(true)
         }
         None => Ok(false),
@@ -299,6 +301,8 @@ async fn login_with_pat(app: tauri::AppHandle, token: String) -> Result<(), Stri
     let state = app.state::<AppState>();
     let mut cache = state.cached_token.lock().unwrap();
     *cache = Some(token);
+    drop(cache);
+    tray::rebuild_tray_menu(&app);
     Ok(())
 }
 
