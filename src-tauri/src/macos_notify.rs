@@ -10,9 +10,7 @@ use block2::Block;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
 use objc2::{msg_send, sel};
-use objc2_foundation::{
-    NSArray, NSDictionary, NSError, NSObject, NSSet, NSString,
-};
+use objc2_foundation::{NSArray, NSDictionary, NSError, NSObject, NSSet, NSString};
 use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotificationAction,
     UNNotificationActionOptions, UNNotificationCategory, UNNotificationCategoryOptions,
@@ -115,7 +113,8 @@ pub fn send(info: &NotificationInfo) {
 fn send_fallback(info: &NotificationInfo) {
     let Some(app) = APP_HANDLE.get() else { return };
     use tauri_plugin_notification::NotificationExt;
-    let _ = app.notification()
+    let _ = app
+        .notification()
         .builder()
         .title(&info.title)
         .body(&info.body)
@@ -158,11 +157,7 @@ fn send_inner(info: &NotificationInfo) {
     }
 
     let id = NSString::from_str(&format!("pronto-{}", unique_id()));
-    let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
-        &id,
-        &content,
-        None,
-    );
+    let request = UNNotificationRequest::requestWithIdentifier_content_trigger(&id, &content, None);
 
     let center = UNUserNotificationCenter::currentNotificationCenter();
     center.addNotificationRequest_withCompletionHandler(&request, None);
@@ -170,7 +165,9 @@ fn send_inner(info: &NotificationInfo) {
 
 fn unique_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     format!("{}-{}", t.as_secs(), t.subsec_nanos())
 }
 
@@ -255,21 +252,21 @@ fn create_delegate() -> Retained<NSObject> {
         let mut builder = ClassBuilder::new(c"ProntoNotificationDelegate", superclass)
             .expect("failed to create ProntoNotificationDelegate class");
 
-        if let Some(protocol) = objc2::runtime::AnyProtocol::get(c"UNUserNotificationCenterDelegate") {
+        if let Some(protocol) =
+            objc2::runtime::AnyProtocol::get(c"UNUserNotificationCenterDelegate")
+        {
             builder.add_protocol(protocol);
         }
 
         unsafe {
             builder.add_method(
                 sel!(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:),
-                did_receive_response
-                    as extern "C-unwind" fn(_, _, _, _, _),
+                did_receive_response as extern "C-unwind" fn(_, _, _, _, _),
             );
 
             builder.add_method(
                 sel!(userNotificationCenter:willPresentNotification:withCompletionHandler:),
-                will_present_notification
-                    as extern "C-unwind" fn(_, _, _, _, _),
+                will_present_notification as extern "C-unwind" fn(_, _, _, _, _),
             );
         }
 

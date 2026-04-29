@@ -12,7 +12,9 @@ pub fn make_pr(url: &str) -> PullRequest {
         is_draft: false,
         repository: Repository {
             name: "repo".to_string(),
-            owner: Owner { login: "org".to_string() },
+            owner: Owner {
+                login: "org".to_string(),
+            },
         },
         merge_queue_entry: None,
         review_decision: None,
@@ -21,10 +23,15 @@ pub fn make_pr(url: &str) -> PullRequest {
         closed_at: None,
         merge_state_status: None,
         reviews: Reviews { total_count: 0 },
-        comments: Comments { total_count: 0, nodes: vec![] },
+        comments: Comments {
+            total_count: 0,
+            nodes: vec![],
+        },
         review_threads: ReviewThreads { nodes: vec![] },
         commits: CommitConnection { nodes: vec![] },
-        author: Owner { login: "author".to_string() },
+        author: Owner {
+            login: "author".to_string(),
+        },
     }
 }
 
@@ -33,7 +40,9 @@ pub fn with_checks(mut pr: PullRequest, state: &str) -> PullRequest {
         nodes: vec![CommitNode {
             commit: Commit {
                 oid: "abc123".to_string(),
-                status_check_rollup: Some(StatusCheckRollup { state: state.to_string() }),
+                status_check_rollup: Some(StatusCheckRollup {
+                    state: state.to_string(),
+                }),
             },
         }],
     };
@@ -72,49 +81,73 @@ fn describe_merged() {
 
 #[test]
 fn describe_approved() {
-    let changes = PrElementChanges { became_approved: true, ..Default::default() };
+    let changes = PrElementChanges {
+        became_approved: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "PR was approved");
 }
 
 #[test]
 fn describe_changes_requested() {
-    let changes = PrElementChanges { became_changes_requested: true, ..Default::default() };
+    let changes = PrElementChanges {
+        became_changes_requested: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "Changes requested");
 }
 
 #[test]
 fn describe_review_required() {
-    let changes = PrElementChanges { became_review_required: true, ..Default::default() };
+    let changes = PrElementChanges {
+        became_review_required: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "Review required");
 }
 
 #[test]
 fn describe_checks_failed() {
-    let changes = PrElementChanges { checks_failed: true, ..Default::default() };
+    let changes = PrElementChanges {
+        checks_failed: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "Checks failed");
 }
 
 #[test]
 fn describe_checks_recovered() {
-    let changes = PrElementChanges { checks_recovered: true, ..Default::default() };
+    let changes = PrElementChanges {
+        checks_recovered: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "Checks passed");
 }
 
 #[test]
 fn describe_kicked_from_queue() {
-    let changes = PrElementChanges { kicked_from_queue: true, ..Default::default() };
+    let changes = PrElementChanges {
+        kicked_from_queue: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "Removed from merge queue");
 }
 
 #[test]
 fn describe_new_comment() {
-    let changes = PrElementChanges { new_comment: true, ..Default::default() };
+    let changes = PrElementChanges {
+        new_comment: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "New comments");
 }
 
 #[test]
 fn describe_new_comment_participated() {
-    let changes = PrElementChanges { new_comment_participated: true, ..Default::default() };
+    let changes = PrElementChanges {
+        new_comment_participated: true,
+        ..Default::default()
+    };
     assert_eq!(changes.describe(false), "Reply to your comment");
 }
 
@@ -229,9 +262,24 @@ fn subtract_bots_removes_bot_count() {
     let mut comments = Comments {
         total_count: 5,
         nodes: vec![
-            CommentNode { author: CommentAuthor { login: "human".to_string(), type_name: "User".to_string() } },
-            CommentNode { author: CommentAuthor { login: "bot".to_string(), type_name: "Bot".to_string() } },
-            CommentNode { author: CommentAuthor { login: "bot2".to_string(), type_name: "Bot".to_string() } },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "human".to_string(),
+                    type_name: "User".to_string(),
+                },
+            },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "bot".to_string(),
+                    type_name: "Bot".to_string(),
+                },
+            },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "bot2".to_string(),
+                    type_name: "Bot".to_string(),
+                },
+            },
         ],
     };
     comments.subtract_bots();
@@ -243,8 +291,18 @@ fn subtract_bots_clamps_to_zero() {
     let mut comments = Comments {
         total_count: 1,
         nodes: vec![
-            CommentNode { author: CommentAuthor { login: "bot".to_string(), type_name: "Bot".to_string() } },
-            CommentNode { author: CommentAuthor { login: "bot2".to_string(), type_name: "Bot".to_string() } },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "bot".to_string(),
+                    type_name: "Bot".to_string(),
+                },
+            },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "bot2".to_string(),
+                    type_name: "Bot".to_string(),
+                },
+            },
         ],
     };
     comments.subtract_bots();
@@ -255,9 +313,12 @@ fn subtract_bots_clamps_to_zero() {
 fn subtract_bots_no_bots_unchanged() {
     let mut comments = Comments {
         total_count: 3,
-        nodes: vec![
-            CommentNode { author: CommentAuthor { login: "human".to_string(), type_name: "User".to_string() } },
-        ],
+        nodes: vec![CommentNode {
+            author: CommentAuthor {
+                login: "human".to_string(),
+                type_name: "User".to_string(),
+            },
+        }],
     };
     comments.subtract_bots();
     assert_eq!(comments.total_count, 3);
@@ -270,8 +331,18 @@ fn last_human_commenter_finds_last_non_bot() {
     let comments = Comments {
         total_count: 2,
         nodes: vec![
-            CommentNode { author: CommentAuthor { login: "alice".to_string(), type_name: "User".to_string() } },
-            CommentNode { author: CommentAuthor { login: "bot".to_string(), type_name: "Bot".to_string() } },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "alice".to_string(),
+                    type_name: "User".to_string(),
+                },
+            },
+            CommentNode {
+                author: CommentAuthor {
+                    login: "bot".to_string(),
+                    type_name: "Bot".to_string(),
+                },
+            },
         ],
     };
     assert_eq!(comments.last_human_commenter(), Some("alice"));
@@ -281,16 +352,22 @@ fn last_human_commenter_finds_last_non_bot() {
 fn last_human_commenter_none_when_all_bots() {
     let comments = Comments {
         total_count: 1,
-        nodes: vec![
-            CommentNode { author: CommentAuthor { login: "bot".to_string(), type_name: "Bot".to_string() } },
-        ],
+        nodes: vec![CommentNode {
+            author: CommentAuthor {
+                login: "bot".to_string(),
+                type_name: "Bot".to_string(),
+            },
+        }],
     };
     assert_eq!(comments.last_human_commenter(), None);
 }
 
 #[test]
 fn last_human_commenter_none_when_empty() {
-    let comments = Comments { total_count: 0, nodes: vec![] };
+    let comments = Comments {
+        total_count: 0,
+        nodes: vec![],
+    };
     assert_eq!(comments.last_human_commenter(), None);
 }
 
@@ -300,7 +377,13 @@ fn last_human_commenter_none_when_empty() {
 fn apply_merge_state_clean_forces_success() {
     let mut pr = with_checks(with_merge_state(make_pr("url"), "CLEAN"), "FAILURE");
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "SUCCESS");
 }
 
@@ -308,7 +391,13 @@ fn apply_merge_state_clean_forces_success() {
 fn apply_merge_state_unstable_converts_failure_to_success() {
     let mut pr = with_checks(with_merge_state(make_pr("url"), "UNSTABLE"), "FAILURE");
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "SUCCESS");
 }
 
@@ -316,7 +405,13 @@ fn apply_merge_state_unstable_converts_failure_to_success() {
 fn apply_merge_state_blocked_success_becomes_pending() {
     let mut pr = with_checks(with_merge_state(make_pr("url"), "BLOCKED"), "SUCCESS");
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "PENDING");
 }
 
@@ -325,7 +420,13 @@ fn apply_merge_state_blocked_success_with_review_stays_success() {
     let mut pr = with_checks(with_merge_state(make_pr("url"), "BLOCKED"), "SUCCESS");
     pr.review_decision = Some("REVIEW_REQUIRED".to_string());
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "SUCCESS");
 }
 
@@ -333,7 +434,13 @@ fn apply_merge_state_blocked_success_with_review_stays_success() {
 fn apply_merge_state_clean_keeps_pending() {
     let mut pr = with_checks(with_merge_state(make_pr("url"), "CLEAN"), "PENDING");
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "PENDING");
 }
 
@@ -341,7 +448,13 @@ fn apply_merge_state_clean_keeps_pending() {
 fn apply_merge_state_has_hooks_keeps_pending() {
     let mut pr = with_checks(with_merge_state(make_pr("url"), "HAS_HOOKS"), "PENDING");
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "PENDING");
 }
 
@@ -349,7 +462,13 @@ fn apply_merge_state_has_hooks_keeps_pending() {
 fn apply_merge_state_no_merge_state_noop() {
     let mut pr = with_checks(make_pr("url"), "FAILURE");
     apply_merge_state(&mut pr);
-    let state = pr.commits.nodes[0].commit.status_check_rollup.as_ref().unwrap().state.as_str();
+    let state = pr.commits.nodes[0]
+        .commit
+        .status_check_rollup
+        .as_ref()
+        .unwrap()
+        .state
+        .as_str();
     assert_eq!(state, "FAILURE");
 }
 
@@ -372,7 +491,10 @@ fn build_exclusions_multiple_orgs_and_repos() {
         &["org1".to_string(), "org2".to_string()],
         &["owner/repo1".to_string(), "owner/repo2".to_string()],
     );
-    assert_eq!(result, " -org:org1 -org:org2 -repo:owner/repo1 -repo:owner/repo2");
+    assert_eq!(
+        result,
+        " -org:org1 -org:org2 -repo:owner/repo1 -repo:owner/repo2"
+    );
 }
 
 // ── is_pr_older_than_48h ─────────────────────────────────────────────────────

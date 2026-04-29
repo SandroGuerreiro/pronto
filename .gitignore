@@ -32,6 +32,9 @@ src-tauri/target/
 # Build artifacts
 *.dmg
 
+# Test coverage reports (generated artifacts)
+coverage/
+
 .claude
 CLAUDE.md
 .superpowers/

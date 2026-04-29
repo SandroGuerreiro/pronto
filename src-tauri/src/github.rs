@@ -114,7 +114,11 @@ impl Comments {
     /// Adjusts `total_count` to exclude bot comments, using the fetched nodes as a sample.
     /// Accurate when all comments fit within the fetch window (last 100); conservative otherwise.
     pub fn subtract_bots(&mut self) {
-        let bot_count = self.nodes.iter().filter(|n| n.author.type_name == "Bot").count() as i32;
+        let bot_count = self
+            .nodes
+            .iter()
+            .filter(|n| n.author.type_name == "Bot")
+            .count() as i32;
         self.total_count = (self.total_count - bot_count).max(0);
     }
 
@@ -249,12 +253,24 @@ impl PrElementChanges {
         }
 
         let mut parts = Vec::new();
-        if self.became_approved { parts.push("PR was approved"); }
-        if self.became_changes_requested { parts.push("Changes requested"); }
-        if self.became_review_required { parts.push("Review required"); }
-        if self.checks_failed { parts.push("Checks failed"); }
-        if self.checks_recovered { parts.push("Checks passed"); }
-        if self.kicked_from_queue { parts.push("Removed from merge queue"); }
+        if self.became_approved {
+            parts.push("PR was approved");
+        }
+        if self.became_changes_requested {
+            parts.push("Changes requested");
+        }
+        if self.became_review_required {
+            parts.push("Review required");
+        }
+        if self.checks_failed {
+            parts.push("Checks failed");
+        }
+        if self.checks_recovered {
+            parts.push("Checks passed");
+        }
+        if self.kicked_from_queue {
+            parts.push("Removed from merge queue");
+        }
         if self.new_comment_participated {
             parts.push("Reply to your comment");
         } else if self.new_comment {
@@ -337,7 +353,13 @@ async fn fetch_prs_for_author(
     show_recently_closed: bool,
     exclusions: &str,
 ) -> Result<
-    (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>, String, String),
+    (
+        Vec<PullRequest>,
+        Vec<PullRequest>,
+        Vec<PullRequest>,
+        String,
+        String,
+    ),
     Box<dyn std::error::Error + Send + Sync>,
 > {
     let merged_cutoff = (chrono::Utc::now() - chrono::Duration::hours(merged_window_hours as i64))
@@ -455,9 +477,9 @@ async fn fetch_prs_for_author(
         eprintln!("[pronto] GraphQL errors: {}", msgs.join("; "));
     }
 
-    let data = response.data.ok_or_else(|| {
-        format!("GitHub GraphQL returned no data: {raw}")
-    })?;
+    let data = response
+        .data
+        .ok_or_else(|| format!("GitHub GraphQL returned no data: {raw}"))?;
 
     let viewer_login = data.viewer.login.clone();
     let viewer_avatar_url = data.viewer.avatar_url.clone();
@@ -473,12 +495,22 @@ async fn fetch_prs_for_author(
         vec![]
     };
 
-    for pr in open.iter_mut().chain(recently_merged.iter_mut()).chain(recently_closed.iter_mut()) {
+    for pr in open
+        .iter_mut()
+        .chain(recently_merged.iter_mut())
+        .chain(recently_closed.iter_mut())
+    {
         pr.comments.subtract_bots();
         apply_merge_state(pr);
     }
 
-    Ok((open, recently_merged, recently_closed, viewer_login, viewer_avatar_url))
+    Ok((
+        open,
+        recently_merged,
+        recently_closed,
+        viewer_login,
+        viewer_avatar_url,
+    ))
 }
 
 const PR_FIELDS: &str = r#"title
@@ -513,7 +545,11 @@ async fn fetch_followed_users_prs(
     (Vec<PullRequest>, Vec<PullRequest>, Vec<PullRequest>),
     Box<dyn std::error::Error + Send + Sync>,
 > {
-    let users: Vec<&str> = users.iter().map(|u| u.trim()).filter(|u| !u.is_empty()).collect();
+    let users: Vec<&str> = users
+        .iter()
+        .map(|u| u.trim())
+        .filter(|u| !u.is_empty())
+        .collect();
     if users.is_empty() {
         return Ok((vec![], vec![], vec![]));
     }
@@ -603,7 +639,11 @@ async fn fetch_followed_users_prs(
         }
     }
 
-    for pr in all_open.iter_mut().chain(all_merged.iter_mut()).chain(all_closed.iter_mut()) {
+    for pr in all_open
+        .iter_mut()
+        .chain(all_merged.iter_mut())
+        .chain(all_closed.iter_mut())
+    {
         pr.comments.subtract_bots();
         apply_merge_state(pr);
     }
@@ -791,7 +831,9 @@ async fn fetch_prs_by_url(
                         pr.comments.subtract_bots();
                         apply_merge_state(&mut pr);
                         match pr.status() {
-                            PrStatus::Open | PrStatus::Draft | PrStatus::InQueue => open_prs.push(pr),
+                            PrStatus::Open | PrStatus::Draft | PrStatus::InQueue => {
+                                open_prs.push(pr)
+                            }
                             PrStatus::Merged => merged_prs.push(pr),
                             PrStatus::Closed => closed_prs.push(pr),
                         }
@@ -819,17 +861,18 @@ pub async fn fetch_all_prs(
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
     // Fetch PRs authored by the current user (also retrieves viewer login).
-    let (my_open, my_recently_merged, my_recently_closed, viewer_login, viewer_avatar_url) = fetch_prs_for_author(
-        &client,
-        token,
-        "@me",
-        merged_window_hours,
-        show_recently_merged,
-        closed_window_hours,
-        show_recently_closed,
-        &exclusions,
-    )
-    .await?;
+    let (my_open, my_recently_merged, my_recently_closed, viewer_login, viewer_avatar_url) =
+        fetch_prs_for_author(
+            &client,
+            token,
+            "@me",
+            merged_window_hours,
+            show_recently_merged,
+            closed_window_hours,
+            show_recently_closed,
+            &exclusions,
+        )
+        .await?;
 
     // Fetch PRs authored by followed users (single batched query).
     let (mut followed_open, mut followed_recently_merged, mut followed_recently_closed) =

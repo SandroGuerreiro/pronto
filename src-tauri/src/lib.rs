@@ -28,7 +28,6 @@ extern "C-unwind" fn pronto_panel_can_become_key(
     objc2::runtime::Bool::YES
 }
 
-
 fn load_settings(path: &PathBuf) -> Settings {
     std::fs::read_to_string(path)
         .ok()
@@ -91,7 +90,8 @@ fn send_attention_notification(
     result: &github::FetchResult,
     send_native: bool,
 ) {
-    let already_notified = app.try_state::<AppState>()
+    let already_notified = app
+        .try_state::<AppState>()
         .map(|state| state.notified_prs.lock().unwrap().clone())
         .unwrap_or_default();
 
@@ -103,7 +103,13 @@ fn send_attention_notification(
     // Mark these PRs as notified
     if let Some(state) = app.try_state::<AppState>() {
         let mut notified = state.notified_prs.lock().unwrap();
-        for pr in result.open.iter().chain(result.followed_open.iter()).chain(result.recently_merged.iter()).chain(result.followed_recently_merged.iter()) {
+        for pr in result
+            .open
+            .iter()
+            .chain(result.followed_open.iter())
+            .chain(result.recently_merged.iter())
+            .chain(result.followed_recently_merged.iter())
+        {
             if result.attention_urls.contains(&pr.url) {
                 notified.insert(pr.url.clone());
             }
@@ -111,7 +117,9 @@ fn send_attention_notification(
     }
 
     // Determine sound kind from the dominant element change
-    let sound_kind = result.element_changes.values()
+    let sound_kind = result
+        .element_changes
+        .values()
         .find(|c| c.checks_failed)
         .map(|c| c.sound_kind())
         .unwrap_or("attention");
@@ -144,26 +152,53 @@ pub(crate) fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
 fn pr_snapshot(result: &github::FetchResult) -> String {
     use std::fmt::Write;
     let mut s = String::new();
-    for pr in result.open.iter().chain(result.followed_open.iter())
-        .chain(result.recently_merged.iter()).chain(result.recently_closed.iter())
-        .chain(result.followed_recently_merged.iter()).chain(result.followed_recently_closed.iter())
+    for pr in result
+        .open
+        .iter()
+        .chain(result.followed_open.iter())
+        .chain(result.recently_merged.iter())
+        .chain(result.recently_closed.iter())
+        .chain(result.followed_recently_merged.iter())
+        .chain(result.followed_recently_closed.iter())
     {
-        let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
-        let resolved = pr.review_threads.nodes.iter().filter(|t| t.is_resolved).count();
-        let thread_comments: i32 = pr.review_threads.nodes.iter()
+        let unresolved = pr
+            .review_threads
+            .nodes
+            .iter()
+            .filter(|t| !t.is_resolved)
+            .count();
+        let resolved = pr
+            .review_threads
+            .nodes
+            .iter()
+            .filter(|t| t.is_resolved)
+            .count();
+        let thread_comments: i32 = pr
+            .review_threads
+            .nodes
+            .iter()
             .map(|t| t.comments.total_count)
             .sum();
-        let checks_state = pr.commits.nodes.last()
+        let checks_state = pr
+            .commits
+            .nodes
+            .last()
             .and_then(|c| c.commit.status_check_rollup.as_ref())
             .map(|s| s.state.as_str())
             .unwrap_or("");
         let _ = write!(
-            s, "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
-            pr.url, pr.state, pr.is_draft, pr.merged,
+            s,
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
+            pr.url,
+            pr.state,
+            pr.is_draft,
+            pr.merged,
             pr.review_decision.as_deref().unwrap_or(""),
             pr.merge_queue_entry.is_some(),
-            pr.reviews.total_count, pr.comments.total_count,
-            unresolved, resolved,
+            pr.reviews.total_count,
+            pr.comments.total_count,
+            unresolved,
+            resolved,
             thread_comments,
         );
         let _ = write!(s, "{}:checks={}\n", pr.url, checks_state);
@@ -191,20 +226,24 @@ fn process_result(
             let mut seen = state.seen_prs.lock().unwrap();
             let settings = state.settings.lock().unwrap().clone();
 
+            let mut viewer_became_known = false;
             if !result.viewer_login.is_empty() {
-                *state.viewer_login.lock().unwrap() = result.viewer_login.clone();
+                let mut current = state.viewer_login.lock().unwrap();
+                if current.is_empty() {
+                    viewer_became_known = true;
+                }
+                *current = result.viewer_login.clone();
             }
             if !result.viewer_avatar_url.is_empty() {
                 *state.viewer_avatar_url.lock().unwrap() = result.viewer_avatar_url.clone();
             }
             let viewer_login = state.viewer_login.lock().unwrap().clone();
+            if viewer_became_known {
+                tray::rebuild_tray_menu(app);
+            }
 
-            let (attention, element_changes) = tray::process_attention(
-                &result,
-                &mut seen,
-                &settings,
-                &viewer_login,
-            );
+            let (attention, element_changes) =
+                tray::process_attention(&result, &mut seen, &settings, &viewer_login);
             result.attention_urls = attention;
             result.element_changes = element_changes;
         }
@@ -224,7 +263,8 @@ fn process_result(
         // Always show popup notifications; only send macOS native if enabled
         send_attention_notification(app, &result, notify);
 
-        changed = result.attention_urls != prev_attention || pr_snapshot(&result) != prev_pr_snapshot;
+        changed =
+            result.attention_urls != prev_attention || pr_snapshot(&result) != prev_pr_snapshot;
         set_tray_attention(app, !result.attention_urls.is_empty());
 
         let mut cache = state.cached_prs.lock().unwrap();
@@ -286,6 +326,8 @@ async fn poll_login(app: tauri::AppHandle, device_code: String) -> Result<bool, 
             let state = app.state::<AppState>();
             let mut cache = state.cached_token.lock().unwrap();
             *cache = Some(token);
+            drop(cache);
+            tray::rebuild_tray_menu(&app);
             Ok(true)
         }
         None => Ok(false),
@@ -299,15 +341,14 @@ async fn login_with_pat(app: tauri::AppHandle, token: String) -> Result<(), Stri
     let state = app.state::<AppState>();
     let mut cache = state.cached_token.lock().unwrap();
     *cache = Some(token);
+    drop(cache);
+    tray::rebuild_tray_menu(&app);
     Ok(())
 }
 
 #[tauri::command]
 async fn logout(app: tauri::AppHandle) -> Result<(), String> {
-    auth::delete_token()?;
-    let state = app.state::<AppState>();
-    let mut cache = state.cached_token.lock().unwrap();
-    *cache = None;
+    tray::perform_logout(&app);
     Ok(())
 }
 
@@ -374,11 +415,7 @@ fn snapshot_fetch_settings(settings: &Settings) -> FetchSettings {
 }
 
 /// Remove expired followed PRs from settings and persist to disk.
-fn cleanup_expired_followed_prs(
-    state: &AppState,
-    app: &tauri::AppHandle,
-    expired: &[String],
-) {
+fn cleanup_expired_followed_prs(state: &AppState, app: &tauri::AppHandle, expired: &[String]) {
     if expired.is_empty() {
         return;
     }
@@ -453,7 +490,9 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
     cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
     result = filter_hidden_prs(result, &fs.hidden_prs);
 
-    if let Some(wf) = fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await {
+    if let Some(wf) =
+        fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await
+    {
         check_workflow_attention(&app, &wf, false);
         result.workflow_status = Some(wf);
     }
@@ -486,7 +525,12 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
             .find(|p| p.url == url);
         let Some(pr) = pr_opt else { return };
         let viewer_login = state.viewer_login.lock().unwrap().clone();
-        (is_open, tray::attention_fingerprint(pr, &viewer_login), result.clone(), viewer_login)
+        (
+            is_open,
+            tray::attention_fingerprint(pr, &viewer_login),
+            result.clone(),
+            viewer_login,
+        )
     };
 
     {
@@ -499,7 +543,8 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
             seen.remove(&url);
         }
         let settings = state.settings.lock().unwrap().clone();
-        let has_attention = !tray::attention_urls(&result_clone, &seen, &settings, &viewer_login).is_empty();
+        let has_attention =
+            !tray::attention_urls(&result_clone, &seen, &settings, &viewer_login).is_empty();
         drop(seen);
         set_tray_attention(&app, has_attention);
     }
@@ -656,7 +701,8 @@ fn parse_shortcut_string(s: &str) -> Result<Shortcut, String> {
 fn normalize_github_pr_url(url: &str) -> Option<String> {
     let url = url.trim();
     // Support URLs with or without scheme — Chromium browsers hide "https://" in the address bar
-    let after_domain = url.strip_prefix("https://github.com/")
+    let after_domain = url
+        .strip_prefix("https://github.com/")
         .or_else(|| url.strip_prefix("http://github.com/"))
         .or_else(|| url.strip_prefix("github.com/"))?;
     let parts: Vec<&str> = after_domain.splitn(4, '/').collect();
@@ -675,7 +721,9 @@ fn normalize_github_pr_url(url: &str) -> Option<String> {
 /// Read the clipboard contents. No permissions required.
 fn get_text_for_follow() -> Option<String> {
     use std::process::Command;
-    Command::new("pbpaste").output().ok()
+    Command::new("pbpaste")
+        .output()
+        .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .filter(|s| !s.is_empty())
 }
@@ -730,7 +778,9 @@ fn create_notify_window(app: &tauri::AppHandle) {
 }
 
 fn schedule_notify_close(app: &tauri::AppHandle, timeout_ms: u64) {
-    let Some(state) = app.try_state::<AppState>() else { return };
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
 
     // Cancel any previous timer
     if let Some(tx) = state.notify_close_tx.lock().unwrap().take() {
@@ -790,7 +840,13 @@ fn play_system_sound(app: &tauri::AppHandle, sound_name: &str, volume: f32) {
     });
 }
 
-fn show_tray_notification(app: &tauri::AppHandle, kind: &str, sound_kind: &str, title: &str, message: &str) {
+fn show_tray_notification(
+    app: &tauri::AppHandle,
+    kind: &str,
+    sound_kind: &str,
+    title: &str,
+    message: &str,
+) {
     // Play sound if enabled in settings
     if let Some(state) = app.try_state::<AppState>() {
         let settings = state.settings.lock().unwrap();
@@ -848,21 +904,21 @@ fn play_sound(app: tauri::AppHandle, kind: Option<String>) {
 
 #[tauri::command]
 fn get_brew_status(app: tauri::AppHandle) -> Option<homebrew::HomebrewStatus> {
-    app.try_state::<AppState>()
-        .and_then(|state| {
-            state.last_brew_status.lock()
-                .ok()
-                .map(|guard| guard.clone())
-                .flatten()
-        })
+    app.try_state::<AppState>().and_then(|state| {
+        state
+            .last_brew_status
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .flatten()
+    })
 }
 
 #[tauri::command]
 async fn update_brew(app: tauri::AppHandle) -> Result<(), String> {
     use std::process::Command;
 
-    let brew_path = homebrew::find_brew_binary()
-        .ok_or_else(|| "Homebrew not found".to_string())?;
+    let brew_path = homebrew::find_brew_binary().ok_or_else(|| "Homebrew not found".to_string())?;
 
     Command::new(&brew_path)
         .args(&["update"])
@@ -892,7 +948,9 @@ fn dismiss_notification(app: tauri::AppHandle) {
 }
 
 fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
-    let Some(state) = app.try_state::<AppState>() else { return };
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
     let path = settings_path(app);
 
     let added = {
@@ -908,12 +966,23 @@ fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
         }
     };
 
-    let _ = app.emit("pr-follow-toggled", serde_json::json!({ "url": pr_url, "added": added }));
-    let short = pr_url.strip_prefix("https://github.com/").unwrap_or(&pr_url).to_string();
-    let (title, kind) = if added { ("Following PR", "success") } else { ("Unfollowed PR", "removed") };
+    let _ = app.emit(
+        "pr-follow-toggled",
+        serde_json::json!({ "url": pr_url, "added": added }),
+    );
+    let short = pr_url
+        .strip_prefix("https://github.com/")
+        .unwrap_or(&pr_url)
+        .to_string();
+    let (title, kind) = if added {
+        ("Following PR", "success")
+    } else {
+        ("Unfollowed PR", "removed")
+    };
 
     // Only show tray notification if the main window is not visible
-    let main_visible = app.get_webview_window("main")
+    let main_visible = app
+        .get_webview_window("main")
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(false);
     if !main_visible {
@@ -950,7 +1019,9 @@ fn update_global_shortcuts(
     follow: String,
 ) -> Result<(), String> {
     // Unregister all existing shortcuts
-    app.global_shortcut().unregister_all().map_err(|e| e.to_string())?;
+    app.global_shortcut()
+        .unregister_all()
+        .map_err(|e| e.to_string())?;
 
     // Parse and register toggle shortcut
     let toggle_shortcut = parse_shortcut_string(&toggle)?;
@@ -1007,7 +1078,8 @@ fn update_global_shortcuts(
                     let result = filter_hidden_prs(result, &fs.hidden_prs);
 
                     if let Some(wf) =
-                        fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await
+                        fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings)
+                            .await
                     {
                         let mut result_with_wf = result;
                         result_with_wf.workflow_status = Some(wf.clone());
@@ -1036,25 +1108,27 @@ fn update_global_shortcuts(
             tauri::async_runtime::spawn_blocking(move || {
                 let clipboard_text = get_text_for_follow();
                 let h2 = h.clone();
-                let _ = h.run_on_main_thread(move || {
-                    match clipboard_text {
-                        Some(text) => {
-                            let trimmed = text.trim();
-                            match normalize_github_pr_url(trimmed) {
-                                Some(pr_url) => toggle_followed_pr(&h2, pr_url),
-                                None => show_tray_notification(
-                                    &h2, "error", "attention",
-                                    "Not a PR URL",
-                                    "Copy a GitHub PR URL and try again",
-                                ),
-                            }
+                let _ = h.run_on_main_thread(move || match clipboard_text {
+                    Some(text) => {
+                        let trimmed = text.trim();
+                        match normalize_github_pr_url(trimmed) {
+                            Some(pr_url) => toggle_followed_pr(&h2, pr_url),
+                            None => show_tray_notification(
+                                &h2,
+                                "error",
+                                "attention",
+                                "Not a PR URL",
+                                "Copy a GitHub PR URL and try again",
+                            ),
                         }
-                        None => show_tray_notification(
-                            &h2, "error", "attention",
-                            "No URL Found",
-                            "Copy a GitHub PR URL first",
-                        ),
                     }
+                    None => show_tray_notification(
+                        &h2,
+                        "error",
+                        "attention",
+                        "No URL Found",
+                        "Copy a GitHub PR URL first",
+                    ),
                 });
             });
         })
@@ -1103,7 +1177,8 @@ async fn poll_prs(app: tauri::AppHandle) {
                 result = filter_hidden_prs(result, &fs.hidden_prs);
 
                 let (changed, pr_result) = if let Some(wf) =
-                    fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings).await
+                    fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings)
+                        .await
                 {
                     let wf_attention = check_workflow_attention(&app, &wf, fs.notify);
                     result.workflow_status = Some(wf);
@@ -1151,7 +1226,10 @@ async fn poll_brew(app: tauri::AppHandle) {
             let state = app.try_state::<AppState>();
             let s = state.map(|st| {
                 let settings = st.settings.lock().unwrap();
-                (settings.homebrew_check_enabled, settings.homebrew_check_interval_secs)
+                (
+                    settings.homebrew_check_enabled,
+                    settings.homebrew_check_interval_secs,
+                )
             });
             match s {
                 Some((e, i)) => (e, i),
@@ -1181,7 +1259,10 @@ async fn poll_brew(app: tauri::AppHandle) {
             // Check if we should notify
             let should_notify = {
                 let prev_status = state.last_brew_status.lock().unwrap();
-                let prev_update_available = prev_status.as_ref().map(|s| s.update_available).unwrap_or(false);
+                let prev_update_available = prev_status
+                    .as_ref()
+                    .map(|s| s.update_available)
+                    .unwrap_or(false);
                 let prev_notified = *state.last_notified_brew_update.lock().unwrap();
 
                 // Notify if transitioning from up-to-date to update-available
@@ -1281,30 +1362,27 @@ pub fn run() {
                 if let Ok(ptr) = window.ns_window() {
                     use objc2::runtime::{AnyClass, AnyObject, ClassBuilder};
                     use objc2_app_kit::{
-                        NSFloatingWindowLevel, NSPanel,
-                        NSWindowCollectionBehavior, NSWindowStyleMask,
+                        NSFloatingWindowLevel, NSPanel, NSWindowCollectionBehavior,
+                        NSWindowStyleMask,
                     };
 
                     // Register ProntoPanel (subclass of NSPanel) with
                     // canBecomeKeyWindow → YES so WKWebView receives keyboard events.
                     let panel_superclass =
                         AnyClass::get(c"NSPanel").expect("NSPanel class not found");
-                    let pronto_class =
-                        if let Some(existing) = AnyClass::get(c"ProntoPanel") {
-                            existing
-                        } else {
-                            let mut builder =
-                                ClassBuilder::new(c"ProntoPanel", panel_superclass)
-                                    .expect("failed to create ProntoPanel class");
-                            unsafe {
-                                builder.add_method(
-                                    objc2::sel!(canBecomeKeyWindow),
-                                    pronto_panel_can_become_key
-                                        as extern "C-unwind" fn(_, _) -> _,
-                                );
-                            }
-                            builder.register()
-                        };
+                    let pronto_class = if let Some(existing) = AnyClass::get(c"ProntoPanel") {
+                        existing
+                    } else {
+                        let mut builder = ClassBuilder::new(c"ProntoPanel", panel_superclass)
+                            .expect("failed to create ProntoPanel class");
+                        unsafe {
+                            builder.add_method(
+                                objc2::sel!(canBecomeKeyWindow),
+                                pronto_panel_can_become_key as extern "C-unwind" fn(_, _) -> _,
+                            );
+                        }
+                        builder.register()
+                    };
 
                     // Isa-swap to ProntoPanel.
                     unsafe { AnyObject::set_class(&*ptr.cast::<AnyObject>(), pronto_class) };
@@ -1359,7 +1437,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 match github::fetch_releases_from_github(
                     &releases_handle.state::<AppState>().http_client,
-                ).await {
+                )
+                .await
+                {
                     Ok(releases) => {
                         let state = releases_handle.state::<AppState>();
                         let mut cache = state.cached_releases.lock().unwrap();

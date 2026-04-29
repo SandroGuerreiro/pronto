@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
+use super::*;
 use crate::github::github_tests::{make_fetch_result, make_pr};
 use crate::github::PrElementChanges;
-use super::*;
 
 // ── build_attention_notification ─────────────────────────────────────────────
 
@@ -21,13 +21,19 @@ fn single_pr_returns_title_body_and_url() {
     result.attention_urls = vec!["https://github.com/org/repo/pull/1".to_string()];
     result.element_changes.insert(
         "https://github.com/org/repo/pull/1".to_string(),
-        PrElementChanges { became_approved: true, ..Default::default() },
+        PrElementChanges {
+            became_approved: true,
+            ..Default::default()
+        },
     );
 
     let info = build_attention_notification(&result, &HashSet::new()).unwrap();
     assert_eq!(info.title, "Test PR");
     assert_eq!(info.body, "PR was approved");
-    assert_eq!(info.url, Some("https://github.com/org/repo/pull/1".to_string()));
+    assert_eq!(
+        info.url,
+        Some("https://github.com/org/repo/pull/1".to_string())
+    );
 }
 
 #[test]
@@ -91,7 +97,10 @@ fn single_pr_attention_urls_contains_the_pr() {
     result.attention_urls = vec!["https://github.com/org/repo/pull/1".to_string()];
 
     let info = build_attention_notification(&result, &HashSet::new()).unwrap();
-    assert_eq!(info.attention_urls, vec!["https://github.com/org/repo/pull/1".to_string()]);
+    assert_eq!(
+        info.attention_urls,
+        vec!["https://github.com/org/repo/pull/1".to_string()]
+    );
 }
 
 #[test]
@@ -106,13 +115,18 @@ fn multiple_prs_attention_urls_contains_all() {
 
     let info = build_attention_notification(&result, &HashSet::new()).unwrap();
     assert_eq!(info.attention_urls.len(), 2);
-    assert!(info.attention_urls.contains(&"https://github.com/org/repo/pull/1".to_string()));
-    assert!(info.attention_urls.contains(&"https://github.com/org/repo/pull/2".to_string()));
+    assert!(info
+        .attention_urls
+        .contains(&"https://github.com/org/repo/pull/1".to_string()));
+    assert!(info
+        .attention_urls
+        .contains(&"https://github.com/org/repo/pull/2".to_string()));
 }
 
 #[test]
 fn workflow_notification_has_empty_attention_urls() {
-    let info = build_workflow_notification("org/repo", "CI", "success", Some("https://example.com"));
+    let info =
+        build_workflow_notification("org/repo", "CI", "success", Some("https://example.com"));
     assert!(info.attention_urls.is_empty());
 }
 
@@ -120,10 +134,18 @@ fn workflow_notification_has_empty_attention_urls() {
 
 #[test]
 fn workflow_success_notification() {
-    let info = build_workflow_notification("org/repo", "CI", "success", Some("https://github.com/org/repo/actions/runs/123"));
+    let info = build_workflow_notification(
+        "org/repo",
+        "CI",
+        "success",
+        Some("https://github.com/org/repo/actions/runs/123"),
+    );
     assert_eq!(info.title, "org/repo — CI");
     assert_eq!(info.body, "Workflow succeeded");
-    assert_eq!(info.url, Some("https://github.com/org/repo/actions/runs/123".to_string()));
+    assert_eq!(
+        info.url,
+        Some("https://github.com/org/repo/actions/runs/123".to_string())
+    );
 }
 
 #[test]
@@ -136,6 +158,11 @@ fn workflow_failure_notification() {
 
 #[test]
 fn workflow_notification_with_url() {
-    let info = build_workflow_notification("org/repo", "Deploy", "success", Some("https://example.com/run/1"));
+    let info = build_workflow_notification(
+        "org/repo",
+        "Deploy",
+        "success",
+        Some("https://example.com/run/1"),
+    );
     assert_eq!(info.url, Some("https://example.com/run/1".to_string()));
 }
