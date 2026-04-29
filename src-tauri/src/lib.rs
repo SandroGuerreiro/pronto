@@ -948,10 +948,10 @@ fn get_notification_data(app: tauri::AppHandle) -> Vec<NotifyData> {
         .unwrap_or_default()
 }
 
-/// Dev-only: trigger a sample notification of the given kind so the banner
-/// can be tested without waiting for real PR/workflow events. Wired to the
-/// dev states preview panel and only compiled in debug builds.
-#[cfg(debug_assertions)]
+/// Trigger a sample notification of the given kind so the banner can be
+/// tested without waiting for real PR/workflow events. Wired to the dev
+/// states preview panel; the panel itself is gated by `import.meta.env.DEV`
+/// on the frontend, so this command is unreachable in release UI.
 #[tauri::command]
 fn dev_trigger_notification(app: tauri::AppHandle, kind: Option<String>) {
     let kind = kind.unwrap_or_else(|| "attention".to_string());
