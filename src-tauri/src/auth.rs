@@ -21,6 +21,11 @@ use serde::{Deserialize, Serialize};
 #[link(name = "Security", kind = "framework")]
 extern "C" {
     static kSecAttrAccessible: CFStringRef;
+    // Legacy ACL attribute attached to items created via SecKeychainAddGenericPassword
+    // (the path the `keyring` crate uses on macOS). Not exported by security-framework-sys.
+    // Distinct from kSecAttrAccessControl (modern) — both must be detected to rewrite
+    // legacy items into a no-ACL form that doesn't prompt on dev rebuilds.
+    static kSecAttrAccess: CFStringRef;
 }
 
 const CLIENT_ID: &str = "Ov23ctX89W5ascyt1PIe";
@@ -184,10 +189,11 @@ pub fn save_token(token: &str) -> Result<(), String> {
 ///   4. Nothing stored → return None, callers trigger auth flow.
 pub fn load_token() -> Option<String> {
     if let Some(token) = read_token_from_keychain() {
-        // Items written by older versions carried `kSecAttrAccessControl`, which
-        // pins access to the creating binary's code identity. On unsigned dev
-        // rebuilds and (occasionally) signed updates, that triggers a keychain
-        // password prompt on every launch. Detect and rewrite once.
+        // Items written by older versions carried a legacy ACL (kSecAttrAccess from
+        // SecKeychainAddGenericPassword via the `keyring` crate, or kSecAttrAccessControl
+        // from a brief earlier code path). Either pins access to the creating binary's
+        // code identity and prompts on every dev rebuild and signed update. Detect and
+        // rewrite once into a no-ACL form.
         if keychain_item_has_access_control() {
             if let Err(e) = save_token(&token) {
                 eprintln!("[pronto] keychain rewrite: failed to drop access control ACL: {e}");
@@ -211,9 +217,11 @@ pub fn load_token() -> Option<String> {
     None
 }
 
-/// Returns true if the stored keychain item carries a `kSecAttrAccessControl`
-/// attribute. Items written by the post-fix code path use `kSecAttrAccessible`
-/// instead and return false here. Returns false on any error so we never block
+/// Returns true if the stored keychain item carries a legacy ACL attribute —
+/// either `kSecAttrAccessControl` (modern, set via `SecAccessControl`) or
+/// `kSecAttrAccess` (legacy, set by `SecKeychainAddGenericPassword`, the path
+/// the `keyring` crate uses). Items written by the post-fix code path carry
+/// neither and return false. Returns false on any error so we never block
 /// startup or try to "fix" an item we can't introspect.
 fn keychain_item_has_access_control() -> bool {
     // SAFETY: All CFStringRef statics referenced below are exported by Security.framework
@@ -258,10 +266,12 @@ fn keychain_item_has_access_control() -> bool {
     let attrs: CFDictionary<CFType, CFType> =
         unsafe { CFDictionary::wrap_under_create_rule(result as CFDictionaryRef) };
 
-    // SAFETY: kSecAttrAccessControl is a non-null CFStringRef static.
+    // SAFETY: kSecAttrAccessControl and kSecAttrAccess are non-null CFStringRef statics.
     let access_control_key =
         unsafe { CFString::wrap_under_get_rule(kSecAttrAccessControl).into_CFType() };
-    attrs.contains_key(&access_control_key)
+    let legacy_access_key =
+        unsafe { CFString::wrap_under_get_rule(kSecAttrAccess).into_CFType() };
+    attrs.contains_key(&access_control_key) || attrs.contains_key(&legacy_access_key)
 }
 
 /// Delete the token from both storage locations for a clean logout.
