@@ -517,8 +517,8 @@ cask "${CASK_NAME}" do
   app "Pronto.app"
 
   postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-d", "com.apple.quarantine", "#{appdir}/Pronto.app"],
+    system_command "/bin/sh",
+                   args: ["-c", "/usr/bin/xattr -d com.apple.quarantine '#{appdir}/Pronto.app' 2>/dev/null || true"],
                    sudo: false
   end
 
