@@ -123,6 +123,8 @@ pub struct Settings {
     #[serde(default)]
     pub followed_prs: Vec<String>,
     #[serde(default = "default_true")]
+    pub auto_follow_commented_prs: bool,
+    #[serde(default = "default_true")]
     pub group_by_repository: bool,
     #[serde(default)]
     pub workflow_monitor_enabled: bool,
@@ -179,6 +181,7 @@ impl Default for Settings {
             hidden_prs: vec![],
             followed_users: vec![],
             followed_prs: vec![],
+            auto_follow_commented_prs: true,
             group_by_repository: false,
             workflow_monitor_enabled: false,
             workflow_org: String::new(),
@@ -274,5 +277,27 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let deserialized: Settings = serde_json::from_str(&json).unwrap();
         assert!((deserialized.notification_volume - 0.3).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn settings_default_auto_follow_commented_prs_is_true() {
+        // Default for new users (issue #50).
+        assert!(Settings::default().auto_follow_commented_prs);
+    }
+
+    #[test]
+    fn settings_without_auto_follow_field_defaults_to_true() {
+        // Existing users upgrading: their settings JSON won't have the field —
+        // it must default to true so the feature is on by default.
+        let json = r#"{"poll_interval_secs": 60}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(settings.auto_follow_commented_prs);
+    }
+
+    #[test]
+    fn settings_with_auto_follow_disabled_is_preserved() {
+        let json = r#"{"auto_follow_commented_prs": false}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(!settings.auto_follow_commented_prs);
     }
 }

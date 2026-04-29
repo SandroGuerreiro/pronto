@@ -48,6 +48,9 @@ export let viewerLogin: string = "";
 // ── Search / filter (session-only, never persisted) ───────────────────────────
 export let searchQuery: string = "";
 
+// ── Auto-followed PRs (session-only highlight, cleared on focus/click) ─────────
+export const autoFollowedPrUrls = new Set<string>();
+
 // ── Setters ───────────────────────────────────────────────────────────────────
 export function setCurrentAttentionUrls(urls: string[]) { currentAttentionUrls = urls; }
 export function setCurrentResult(r: FetchResult | null) { currentResult = r; }

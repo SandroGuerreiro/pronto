@@ -66,6 +66,7 @@ pub fn make_fetch_result(open: Vec<PullRequest>) -> FetchResult {
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,
         expired_followed_prs: vec![],
+        commented_pr_urls: vec![],
         viewer_login: "viewer".to_string(),
         viewer_avatar_url: String::new(),
     }

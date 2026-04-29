@@ -144,6 +144,14 @@ export function renderDevStates(): string {
     repo: "acme/db", number: "#15",
   }));
 
+  // ── Auto-followed (issue #50) ──
+  html += section("auto-followed", "Auto-followed — Newly Tracked", mockCard({
+    title: "Refactor cache invalidation logic",
+    statusLabel: "●", statusClass: "open", cardClasses: "auto-followed-new",
+    statusLine: `<span class="needs-reviews">needs reviews</span>${sep}<span class="checks-pass">checks passed</span>${sep}<span class="status-detail">☑ 1</span>${sep}<span class="status-detail">${commentIcon} 3</span>${sep}<span class="status-detail">▣ 0</span>`,
+    repo: "acme/cache", number: "#412", author: "teammate",
+  }), { replayable: true });
+
   // ── In Queue ──
   html += section("in-queue", "In Merge Queue", mockCard({
     title: "Ship new dashboard redesign",

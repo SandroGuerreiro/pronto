@@ -54,6 +54,9 @@ let _brewCheckIntervalSecs: number = 14400;
 // ── Popup screen preference ──────────────────────────────────────────────
 let _popupScreen: string = "primary";
 
+// ── Auto-follow PRs you commented on ──────────────────────────────────────
+let _autoFollowCommentedPrs: boolean = true;
+
 export function loadNotifPrefsFromSettings(s: Settings) {
   _notificationSound = s.notification_sound ?? true;
   _notificationVolume = s.notification_volume ?? 0.35;
@@ -65,6 +68,7 @@ export function loadNotifPrefsFromSettings(s: Settings) {
   _brewCheckEnabled = s.homebrew_check_enabled ?? false;
   _brewCheckIntervalSecs = s.homebrew_check_interval_secs ?? 14400;
   _popupScreen = s.popup_screen ?? "primary";
+  _autoFollowCommentedPrs = s.auto_follow_commented_prs ?? true;
 }
 
 export function initSettings(onClosed: () => void) {
@@ -132,6 +136,7 @@ export async function autoSaveSettings() {
     popup_screen: _popupScreen,
     notification_sound: _notificationSound,
     notification_volume: _notificationVolume,
+    auto_follow_commented_prs: _autoFollowCommentedPrs,
   };
 
   setGroupByRepository(updated.group_by_repository);
@@ -785,6 +790,13 @@ export async function showSettings() {
       <div class="settings-section">
         <div class="settings-section-title">Followed PRs</div>
         <div class="settings-group">
+          <label class="settings-label">
+            <span>Auto-follow PRs you comment on</span>
+            <input type="checkbox" id="setting-auto-follow-commented" class="settings-toggle"${_autoFollowCommentedPrs ? " checked" : ""} />
+          </label>
+          <div class="settings-hint">Adds open PRs you've commented on (and didn't author) so people don't wait for your re-review.</div>
+        </div>
+        <div class="settings-group">
           <label class="settings-label"><span>Add PR URL</span></label>
           <div style="display: flex; gap: 6px;">
             <input type="text" id="follow-pr-input" class="settings-input" placeholder="e.g. https://github.com/owner/repo/pull/123" autocapitalize="off" autocorrect="off" spellcheck="false" />
@@ -847,6 +859,14 @@ export async function showSettings() {
         });
         autoSaveSettings();
       });
+    });
+
+    const autoFollowToggle = contentArea.querySelector(
+      "#setting-auto-follow-commented"
+    ) as HTMLInputElement | null;
+    autoFollowToggle?.addEventListener("change", (e) => {
+      _autoFollowCommentedPrs = (e.target as HTMLInputElement).checked;
+      autoSaveSettings();
     });
 
     // Followed PRs list

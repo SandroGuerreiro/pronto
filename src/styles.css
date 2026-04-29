@@ -444,6 +444,7 @@ body {
   transition: background-color var(--duration-fast), border-left-color 0.5s ease, box-shadow 0.5s ease;
   border-left: 3px solid transparent;
   animation: card-slide-in var(--duration-normal) ease-out both;
+  position: relative;
 }
 
 @keyframes card-slide-in {
@@ -495,6 +496,37 @@ body {
 @keyframes attention-glow {
   0%, 100% { box-shadow: inset 2px 0 8px rgba(212, 160, 23, 0.06); }
   50%      { box-shadow: inset 2px 0 12px rgba(212, 160, 23, 0.18); }
+}
+
+.pr-card.auto-followed-new {
+  border-left-color: var(--color-info);
+  box-shadow: inset 2px 0 8px var(--color-info-bg);
+  animation: auto-followed-glow 2.4s ease-in-out infinite;
+  transition: border-left-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.pr-card.auto-followed-new::after {
+  content: "auto";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  pointer-events: none;
+  opacity: 0.95;
+}
+
+@keyframes auto-followed-glow {
+  0%, 100% { box-shadow: inset 2px 0 8px rgba(56, 139, 253, 0.08); }
+  50%      { box-shadow: inset 2px 0 12px rgba(56, 139, 253, 0.22); }
 }
 
 .pr-card.kb-focus {
