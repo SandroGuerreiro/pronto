@@ -32,11 +32,24 @@ pub struct Data {
     pub recently_merged: SearchResult,
     #[serde(rename = "recentlyClosed")]
     pub recently_closed: SearchResult,
+    #[serde(default)]
+    pub commented: Option<UrlSearchResult>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SearchResult {
     pub nodes: Vec<PullRequest>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct UrlSearchResult {
+    pub nodes: Vec<UrlNode>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UrlNode {
+    #[serde(default)]
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -307,6 +320,7 @@ pub struct FetchResult {
     pub element_changes: std::collections::HashMap<String, PrElementChanges>,
     pub workflow_status: Option<WorkflowStatus>,
     pub expired_followed_prs: Vec<String>,
+    pub commented_pr_urls: Vec<String>,
     pub viewer_login: String,
     pub viewer_avatar_url: String,
 }
@@ -357,6 +371,7 @@ async fn fetch_prs_for_author(
         Vec<PullRequest>,
         Vec<PullRequest>,
         Vec<PullRequest>,
+        Vec<String>,
         String,
         String,
     ),
@@ -442,6 +457,9 @@ async fn fetch_prs_for_author(
       }}
     }}
   }}
+  commented: search(query: "commenter:{author} type:pr state:open -author:{author}{exclusions}", type: ISSUE, first: 50) {{
+    nodes {{ ... on PullRequest {{ url }} }}
+  }}
 }}"#
         ),
     };
@@ -504,10 +522,22 @@ async fn fetch_prs_for_author(
         apply_merge_state(pr);
     }
 
+    let commented_urls: Vec<String> = data
+        .commented
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .map(|n| n.url)
+                .filter(|u| !u.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
     Ok((
         open,
         recently_merged,
         recently_closed,
+        commented_urls,
         viewer_login,
         viewer_avatar_url,
     ))
@@ -861,18 +891,24 @@ pub async fn fetch_all_prs(
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
     // Fetch PRs authored by the current user (also retrieves viewer login).
-    let (my_open, my_recently_merged, my_recently_closed, viewer_login, viewer_avatar_url) =
-        fetch_prs_for_author(
-            &client,
-            token,
-            "@me",
-            merged_window_hours,
-            show_recently_merged,
-            closed_window_hours,
-            show_recently_closed,
-            &exclusions,
-        )
-        .await?;
+    let (
+        my_open,
+        my_recently_merged,
+        my_recently_closed,
+        commented_pr_urls,
+        viewer_login,
+        viewer_avatar_url,
+    ) = fetch_prs_for_author(
+        &client,
+        token,
+        "@me",
+        merged_window_hours,
+        show_recently_merged,
+        closed_window_hours,
+        show_recently_closed,
+        &exclusions,
+    )
+    .await?;
 
     // Fetch PRs authored by followed users (single batched query).
     let (mut followed_open, mut followed_recently_merged, mut followed_recently_closed) =
@@ -918,6 +954,7 @@ pub async fn fetch_all_prs(
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,
         expired_followed_prs,
+        commented_pr_urls,
         viewer_login,
         viewer_avatar_url,
     })

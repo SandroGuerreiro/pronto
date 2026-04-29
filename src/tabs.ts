@@ -20,6 +20,7 @@ import {
   searchQuery,
   setSearchQuery,
   setFocusIndex,
+  autoFollowedPrUrls,
 } from "./state";
 import {
   filterPrs,
@@ -406,6 +407,10 @@ export function bindContentEvents(container: HTMLElement) {
     card.addEventListener("click", () => {
       const url = card.getAttribute("data-url");
       if (url) openUrl(url);
+      if (url && autoFollowedPrUrls.has(url)) {
+        autoFollowedPrUrls.delete(url);
+        card.classList.remove("auto-followed-new");
+      }
       if (card.classList.contains("attention")) {
         if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
         card.classList.remove("attention");
@@ -464,6 +469,11 @@ export function bindContentEvents(container: HTMLElement) {
       // Remove highlight classes after hover — color fades via transition on .status-detail
       if (hoverActive) {
         hoverActive = false;
+        const url = card.getAttribute("data-url");
+        if (url && autoFollowedPrUrls.has(url)) {
+          autoFollowedPrUrls.delete(url);
+          card.classList.remove("auto-followed-new");
+        }
         card.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
           .forEach((el) => el.classList.remove("highlight-attention"));
         card.querySelectorAll<HTMLElement>(".highlight-changed")

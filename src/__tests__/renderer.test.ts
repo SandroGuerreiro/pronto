@@ -14,6 +14,7 @@ const mockState = vi.hoisted(() => ({
   collapsedAccordions: new Set<string>(),
   pendingUnhideOrgs: new Set<string>(),
   pendingUnhideRepos: new Set<string>(),
+  autoFollowedPrUrls: new Set<string>(),
 }));
 
 vi.mock("../state", () => ({
@@ -28,6 +29,7 @@ vi.mock("../state", () => ({
   get collapsedAccordions() { return mockState.collapsedAccordions; },
   get pendingUnhideOrgs() { return mockState.pendingUnhideOrgs; },
   get pendingUnhideRepos() { return mockState.pendingUnhideRepos; },
+  get autoFollowedPrUrls() { return mockState.autoFollowedPrUrls; },
 }));
 
 import {

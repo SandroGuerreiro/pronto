@@ -426,6 +426,50 @@ fn cleanup_expired_followed_prs(state: &AppState, app: &tauri::AppHandle, expire
     let _ = save_settings(&settings_path(app), &settings_to_save);
 }
 
+/// Pure filter: given commented-PR candidates plus the user's current followed
+/// and hidden URLs, returns the subset that should be newly auto-followed.
+/// Drops empty strings, anything already followed, and anything explicitly
+/// hidden by the user. Extracted so the dedup rules are unit-testable.
+fn compute_new_auto_follows(
+    candidates: &[String],
+    existing: &[String],
+    hidden: &[String],
+) -> Vec<String> {
+    let existing_set: HashSet<&str> = existing.iter().map(String::as_str).collect();
+    let hidden_set: HashSet<&str> = hidden.iter().map(String::as_str).collect();
+    candidates
+        .iter()
+        .filter(|u| {
+            !u.is_empty() && !existing_set.contains(u.as_str()) && !hidden_set.contains(u.as_str())
+        })
+        .cloned()
+        .collect()
+}
+
+/// Auto-follow PRs the viewer has commented on (issue #50).
+/// Filters out PRs already followed and PRs the viewer has explicitly hidden,
+/// then appends the rest to `settings.followed_prs`, persists, and emits
+/// `prs-auto-followed` so the UI can highlight the newly tracked PRs.
+fn auto_follow_commented_prs(state: &AppState, app: &tauri::AppHandle, candidates: &[String]) {
+    if candidates.is_empty() {
+        return;
+    }
+    let mut settings = state.settings.lock().unwrap();
+    if !settings.auto_follow_commented_prs {
+        return;
+    }
+    let hidden: Vec<String> = settings.hidden_prs.iter().map(|h| h.url.clone()).collect();
+    let new_urls = compute_new_auto_follows(candidates, &settings.followed_prs, &hidden);
+    if new_urls.is_empty() {
+        return;
+    }
+    settings.followed_prs.extend(new_urls.clone());
+    let settings_to_save = settings.clone();
+    drop(settings);
+    let _ = save_settings(&settings_path(app), &settings_to_save);
+    let _ = app.emit("prs-auto-followed", new_urls);
+}
+
 fn filter_hidden_prs(
     mut result: github::FetchResult,
     hidden_prs: &[HiddenPr],
@@ -488,6 +532,7 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
     })?;
 
     cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
+    auto_follow_commented_prs(&state, &app, &result.commented_pr_urls);
     result = filter_hidden_prs(result, &fs.hidden_prs);
 
     if let Some(wf) =
@@ -1103,6 +1148,7 @@ fn update_global_shortcuts(
                 .await;
                 if let Ok(result) = pr_fetch {
                     cleanup_expired_followed_prs(&state, &h, &result.expired_followed_prs);
+                    auto_follow_commented_prs(&state, &h, &result.commented_pr_urls);
                     let result = filter_hidden_prs(result, &fs.hidden_prs);
 
                     if let Some(wf) =
@@ -1221,6 +1267,7 @@ async fn poll_prs(app: tauri::AppHandle) {
                 .await;
                 if let Ok(mut result) = pr_fetch {
                     cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
+                    auto_follow_commented_prs(&state, &app, &result.commented_pr_urls);
                     result = filter_hidden_prs(result, &fs.hidden_prs);
                     if let Some(wf) =
                         fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings)
@@ -1286,6 +1333,7 @@ async fn poll_prs(app: tauri::AppHandle) {
         match pr_fetch {
             Ok(mut result) => {
                 cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
+                auto_follow_commented_prs(&state, &app, &result.commented_pr_urls);
                 result = filter_hidden_prs(result, &fs.hidden_prs);
 
                 let (changed, pr_result) = if let Some(wf) =
@@ -1578,4 +1626,66 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod auto_follow_tests {
+    use super::compute_new_auto_follows;
+
+    fn s(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| v.to_string()).collect()
+    }
+
+    #[test]
+    fn empty_candidates_returns_empty() {
+        let out = compute_new_auto_follows(&[], &s(&["x"]), &s(&["y"]));
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn drops_already_followed() {
+        let candidates = s(&["a", "b", "c"]);
+        let existing = s(&["b"]);
+        let out = compute_new_auto_follows(&candidates, &existing, &[]);
+        assert_eq!(out, s(&["a", "c"]));
+    }
+
+    #[test]
+    fn drops_hidden() {
+        let candidates = s(&["a", "b", "c"]);
+        let hidden = s(&["c"]);
+        let out = compute_new_auto_follows(&candidates, &[], &hidden);
+        assert_eq!(out, s(&["a", "b"]));
+    }
+
+    #[test]
+    fn drops_empty_url_strings() {
+        let candidates = s(&["", "a", ""]);
+        let out = compute_new_auto_follows(&candidates, &[], &[]);
+        assert_eq!(out, s(&["a"]));
+    }
+
+    #[test]
+    fn applies_followed_and_hidden_together() {
+        let candidates = s(&["a", "b", "c", "d"]);
+        let existing = s(&["a"]);
+        let hidden = s(&["d"]);
+        let out = compute_new_auto_follows(&candidates, &existing, &hidden);
+        assert_eq!(out, s(&["b", "c"]));
+    }
+
+    #[test]
+    fn preserves_input_order() {
+        let candidates = s(&["c", "a", "b"]);
+        let out = compute_new_auto_follows(&candidates, &[], &[]);
+        assert_eq!(out, s(&["c", "a", "b"]));
+    }
+
+    #[test]
+    fn no_new_when_all_are_already_followed() {
+        let candidates = s(&["a", "b"]);
+        let existing = s(&["a", "b"]);
+        let out = compute_new_auto_follows(&candidates, &existing, &[]);
+        assert!(out.is_empty());
+    }
 }

@@ -33,6 +33,7 @@ const { mockState } = vi.hoisted(() => {
     favoriteRepos: new Set<string>(),
     pendingUnhideOrgs: new Set<string>(),
     pendingUnhideRepos: new Set<string>(),
+    autoFollowedPrUrls: new Set<string>(),
     searchQuery: "",
     focusIndex: -1,
     setCurrentAttentionUrls: vi.fn((urls: string[]) => { mockState.currentAttentionUrls = urls; }),

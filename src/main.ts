@@ -36,6 +36,7 @@ import {
   releaseNotesOpen,
   isAuthenticated,
   setIsAuthenticated,
+  autoFollowedPrUrls,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -317,6 +318,8 @@ function setFocus(index: number) {
     if (url && currentResult?.element_changes) {
       delete currentResult.element_changes[url];
     }
+    if (url) autoFollowedPrUrls.delete(url);
+    el.classList.remove("auto-followed-new");
     el.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
       .forEach((e) => e.classList.remove("highlight-attention"));
     el.querySelectorAll<HTMLElement>(".highlight-changed")
@@ -542,6 +545,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     } else {
       loadPrs();
     }
+  });
+
+  await listen<string[]>("prs-auto-followed", async (event) => {
+    const urls = event.payload ?? [];
+    if (urls.length === 0) return;
+    urls.forEach((url) => autoFollowedPrUrls.add(url));
+    await loadUserPrefs();
+    loadPrs();
   });
 
   // Token expired during background polling — redirect to login

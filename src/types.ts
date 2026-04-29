@@ -157,6 +157,7 @@ export interface Settings {
   hidden_prs: HiddenPr[];
   followed_users: string[];
   followed_prs: string[];
+  auto_follow_commented_prs: boolean;
   group_by_repository: boolean;
   workflow_monitor_enabled: boolean;
   workflow_org: string;
