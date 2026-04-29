@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { DeviceCodeResponse } from "./types";
+import { setIsAuthenticated } from "./state";
 
 // Injected callback: called on successful login (wired in main.ts)
 let _onLoginSuccess: () => void = () => {};
@@ -12,6 +13,7 @@ export function initAuth(onSuccess: () => void) {
 // ── Login view ────────────────────────────────────────────────────────────────
 
 export function showLogin() {
+  setIsAuthenticated(false);
   const content = document.getElementById("content")!;
   document.getElementById("signout-btn")!.style.display = "none";
   document.getElementById("main-nav")!.style.display = "none";

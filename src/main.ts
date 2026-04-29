@@ -34,6 +34,8 @@ import {
   settingsGroupIndex,
   setSettingsGroupIndex,
   releaseNotesOpen,
+  isAuthenticated,
+  setIsAuthenticated,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -65,6 +67,7 @@ export async function loadPrs() {
 }
 
 function renderPrView(result: FetchResult) {
+  setIsAuthenticated(true);
   document.getElementById("signout-btn")!.style.display = "";
   document.getElementById("main-nav")!.style.display = "";
 
@@ -449,7 +452,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
   initAuth(() => loadPrs());
   initReleaseNotes(() => {
-    renderActiveTab();
+    if (isAuthenticated) {
+      renderActiveTab();
+    } else {
+      showLogin();
+    }
   });
 
   await loadUserPrefs();

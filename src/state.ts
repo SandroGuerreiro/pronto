@@ -39,6 +39,9 @@ export let followedPrs = new Set<string>();
 export let pendingUnhideOrgs = new Set<string>();
 export let pendingUnhideRepos = new Set<string>();
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+export let isAuthenticated: boolean = false;
+
 // ── Viewer (logged-in user) ──────────────────────────────────────────────────
 export let viewerLogin: string = "";
 
@@ -65,6 +68,7 @@ export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbD
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
 export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }
 export function setFollowedUsers(users: string[]) { followedUsers = users; }
+export function setIsAuthenticated(v: boolean) { isAuthenticated = v; }
 export function setViewerLogin(v: string) { viewerLogin = v; }
 export function setSearchQuery(q: string) { searchQuery = q; }
 export function clearPendingUnhide() {
