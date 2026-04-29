@@ -2284,7 +2284,7 @@ checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
  "log",
  "security-framework 2.11.1",
- "security-framework 3.4.0",
+ "security-framework 3.7.0",
  "zeroize",
 ]
 
@@ -3393,7 +3393,7 @@ dependencies = [
  "objc2-user-notifications",
  "open",
  "reqwest",
- "security-framework 3.4.0",
+ "security-framework 3.7.0",
  "security-framework-sys",
  "serde",
  "serde_json",
@@ -3889,7 +3889,7 @@ dependencies = [
  "openssl-probe",
  "rustls-pki-types",
  "schannel",
- "security-framework 3.4.0",
+ "security-framework 3.7.0",
 ]
 
 [[package]]
@@ -3917,7 +3917,7 @@ dependencies = [
  "rustls-native-certs",
  "rustls-platform-verifier-android",
  "rustls-webpki",
- "security-framework 3.4.0",
+ "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
  "windows-sys 0.59.0",
@@ -4037,9 +4037,9 @@ dependencies = [
 
 [[package]]
 name = "security-framework"
-version = "3.4.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b369d18893388b345804dc0007963c99b7d665ae71d275812d828c6f089640"
+checksum = "b7f4bc775c73d9a02cde8bf7b2ec4c9d12743edf609006c7facc23998404cd1d"
 dependencies = [
  "bitflags 2.11.0",
  "core-foundation 0.10.1",
