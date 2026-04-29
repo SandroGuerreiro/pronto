@@ -4,11 +4,11 @@ use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HomebrewStatus {
-    pub available: bool,         // false = brew binary not found
-    pub update_available: bool,  // true = pronto cask is outdated
+    pub available: bool,        // false = brew binary not found
+    pub update_available: bool, // true = pronto cask is outdated
     pub installed_version: String,
     pub latest_version: String,
-    pub checked_at: String,      // RFC3339
+    pub checked_at: String, // RFC3339
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,10 +25,7 @@ struct BrewCaskInfo {
 
 /// Find brew binary in standard locations
 pub fn find_brew_binary() -> Option<PathBuf> {
-    let paths = [
-        "/opt/homebrew/bin/brew",
-        "/usr/local/bin/brew",
-    ];
+    let paths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"];
 
     for path in &paths {
         let p = PathBuf::from(path);
@@ -85,9 +82,8 @@ pub fn check_pronto_update_sync() -> HomebrewStatus {
             match serde_json::from_slice::<BrewOutdatedResponse>(&out.stdout) {
                 Ok(resp) => {
                     if let Some(cask) = resp.casks.iter().find(|c| c.name == "pronto") {
-                        let installed = cask.installed_versions.first()
-                            .cloned()
-                            .unwrap_or_default();
+                        let installed =
+                            cask.installed_versions.first().cloned().unwrap_or_default();
                         HomebrewStatus {
                             available: true,
                             update_available: true,
@@ -106,25 +102,21 @@ pub fn check_pronto_update_sync() -> HomebrewStatus {
                         }
                     }
                 }
-                Err(_) => {
-                    HomebrewStatus {
-                        available: true,
-                        update_available: false,
-                        installed_version: String::new(),
-                        latest_version: String::new(),
-                        checked_at: chrono::Utc::now().to_rfc3339(),
-                    }
-                }
+                Err(_) => HomebrewStatus {
+                    available: true,
+                    update_available: false,
+                    installed_version: String::new(),
+                    latest_version: String::new(),
+                    checked_at: chrono::Utc::now().to_rfc3339(),
+                },
             }
         }
-        Err(_) => {
-            HomebrewStatus {
-                available: true,
-                update_available: false,
-                installed_version: String::new(),
-                latest_version: String::new(),
-                checked_at: chrono::Utc::now().to_rfc3339(),
-            }
-        }
+        Err(_) => HomebrewStatus {
+            available: true,
+            update_available: false,
+            installed_version: String::new(),
+            latest_version: String::new(),
+            checked_at: chrono::Utc::now().to_rfc3339(),
+        },
     }
 }

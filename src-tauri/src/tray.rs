@@ -1,7 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use tauri::{image::Image, menu::{Menu, MenuItemBuilder, PredefinedMenuItem}, tray::TrayIconBuilder, AppHandle, Emitter, Manager};
+use tauri::{
+    image::Image,
+    menu::{Menu, MenuItemBuilder, PredefinedMenuItem},
+    tray::TrayIconBuilder,
+    AppHandle, Emitter, Manager,
+};
 #[cfg(not(target_os = "macos"))]
 use tauri_plugin_positioner::{Position, WindowExt};
 
@@ -65,25 +70,36 @@ fn load_tray_icon_inverted() -> Image<'static> {
 
 /// Sum comment counts from threads where the last commenter is NOT the viewer.
 fn thread_comments_by_others(threads: &[ReviewThread], viewer_login: &str) -> i32 {
-    threads.iter()
-        .filter(|t| t.comments.nodes.last()
-            .and_then(|c| c.author.as_ref())
-            .map(|a| a.login != viewer_login)
-            .unwrap_or(true))
+    threads
+        .iter()
+        .filter(|t| {
+            t.comments
+                .nodes
+                .last()
+                .and_then(|c| c.author.as_ref())
+                .map(|a| a.login != viewer_login)
+                .unwrap_or(true)
+        })
         .map(|t| t.comments.total_count)
         .sum()
 }
 
 /// Sum comment counts from threads the viewer started AND someone else replied to.
 fn thread_comments_by_others_participated(threads: &[ReviewThread], viewer_login: &str) -> i32 {
-    threads.iter()
+    threads
+        .iter()
         .filter(|t| {
-            let viewer_started = t.first_comment.as_ref()
+            let viewer_started = t
+                .first_comment
+                .as_ref()
                 .and_then(|fc| fc.nodes.first())
                 .and_then(|c| c.author.as_ref())
                 .map(|a| a.login == viewer_login)
                 .unwrap_or(false);
-            let other_replied = t.comments.nodes.last()
+            let other_replied = t
+                .comments
+                .nodes
+                .last()
                 .and_then(|c| c.author.as_ref())
                 .map(|a| a.login != viewer_login)
                 .unwrap_or(true);
@@ -103,18 +119,44 @@ pub fn attention_fingerprint(pr: &PullRequest, viewer_login: &str) -> String {
         .map(|r| r.state.as_str())
         .unwrap_or("");
     let oid = head.map(|n| n.commit.oid.as_str()).unwrap_or("");
-    let unresolved = pr.review_threads.nodes.iter().filter(|t| !t.is_resolved).count();
-    let thread_comments: i32 = pr.review_threads.nodes.iter().map(|t| t.comments.total_count).sum();
+    let unresolved = pr
+        .review_threads
+        .nodes
+        .iter()
+        .filter(|t| !t.is_resolved)
+        .count();
+    let thread_comments: i32 = pr
+        .review_threads
+        .nodes
+        .iter()
+        .map(|t| t.comments.total_count)
+        .sum();
     let by_others = thread_comments_by_others(&pr.review_threads.nodes, viewer_login);
-    let by_others_participated = thread_comments_by_others_participated(&pr.review_threads.nodes, viewer_login);
+    let by_others_participated =
+        thread_comments_by_others_participated(&pr.review_threads.nodes, viewer_login);
     let in_queue = pr.merge_queue_entry.is_some();
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    format!("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", review, checks, pr.comments.total_count, unresolved, in_queue, last_human_commenter, oid, thread_comments, by_others, by_others_participated)
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        review,
+        checks,
+        pr.comments.total_count,
+        unresolved,
+        in_queue,
+        last_human_commenter,
+        oid,
+        thread_comments,
+        by_others,
+        by_others_participated
+    )
 }
 
-
 /// Computes which individual elements changed on a PR by comparing against the old fingerprint.
-pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &str) -> PrElementChanges {
+pub fn compute_element_changes(
+    pr: &PullRequest,
+    old_fp: &str,
+    viewer_login: &str,
+) -> PrElementChanges {
     let parts: Vec<&str> = old_fp.split('|').collect();
     if parts.len() < 5 {
         return PrElementChanges::default();
@@ -123,7 +165,10 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
     let old_checks = parts[1];
     let old_comment_count = parts[2].parse::<i32>().unwrap_or(0);
     let old_in_queue = parts[4] == "true";
-    let old_thread_comments_by_others = parts.get(8).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let old_thread_comments_by_others = parts
+        .get(8)
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(0);
 
     let new_review = pr.review_decision.as_deref().unwrap_or("");
     let new_checks = pr
@@ -138,21 +183,27 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
     let new_by_others = thread_comments_by_others(&pr.review_threads.nodes, viewer_login);
     let has_new_thread_comment_by_other = new_by_others > old_thread_comments_by_others;
 
-    let old_by_others_participated = parts.get(9).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
-    let new_by_others_participated = thread_comments_by_others_participated(&pr.review_threads.nodes, viewer_login);
+    let old_by_others_participated = parts
+        .get(9)
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(0);
+    let new_by_others_participated =
+        thread_comments_by_others_participated(&pr.review_threads.nodes, viewer_login);
     let has_new_comment_participated = new_by_others_participated > old_by_others_participated;
 
     // Only notify when new non-bot comments exist and the last human commenter is not the viewer.
     // total_count is already bot-free (adjusted at fetch time), so no bot check needed here.
     let last_human_commenter = pr.comments.last_human_commenter().unwrap_or("");
-    let has_new_comment = pr.comments.total_count > old_comment_count
-        && last_human_commenter != viewer_login;
+    let has_new_comment =
+        pr.comments.total_count > old_comment_count && last_human_commenter != viewer_login;
 
     PrElementChanges {
         became_review_required: old_review != "REVIEW_REQUIRED" && new_review == "REVIEW_REQUIRED",
-        became_changes_requested: old_review != "CHANGES_REQUESTED" && new_review == "CHANGES_REQUESTED",
+        became_changes_requested: old_review != "CHANGES_REQUESTED"
+            && new_review == "CHANGES_REQUESTED",
         became_approved: old_review != "APPROVED" && new_review == "APPROVED",
-        checks_failed: !matches!(old_checks, "FAILURE" | "ERROR") && matches!(new_checks, "FAILURE" | "ERROR"),
+        checks_failed: !matches!(old_checks, "FAILURE" | "ERROR")
+            && matches!(new_checks, "FAILURE" | "ERROR"),
         checks_recovered: old_checks != "SUCCESS" && new_checks == "SUCCESS",
         kicked_from_queue: old_in_queue && !new_in_queue,
         new_comment: has_new_comment || has_new_thread_comment_by_other,
@@ -161,10 +212,7 @@ pub fn compute_element_changes(pr: &PullRequest, old_fp: &str, viewer_login: &st
 }
 
 /// Check if element changes match the notification preferences.
-fn should_notify_for_changes(
-    changes: &PrElementChanges,
-    prefs: &NotificationPreferences,
-) -> bool {
+fn should_notify_for_changes(changes: &PrElementChanges, prefs: &NotificationPreferences) -> bool {
     (changes.became_review_required && prefs.review_required)
         || (changes.became_changes_requested && prefs.changes_requested)
         || (changes.became_approved && prefs.approved)
@@ -260,7 +308,10 @@ pub fn process_attention(
         .filter_map(|url| {
             let old_fp = seen.get(url)?;
             let pr = all_prs.iter().find(|p| &p.url == url)?;
-            Some((url.clone(), compute_element_changes(pr, old_fp, viewer_login)))
+            Some((
+                url.clone(),
+                compute_element_changes(pr, old_fp, viewer_login),
+            ))
         })
         .collect();
 
@@ -340,6 +391,18 @@ pub fn generate_badge_icon(base: &Image<'_>) -> Image<'static> {
     Image::new_owned(pixels, width, height)
 }
 
+/// Clears auth state, deletes the stored token, notifies the frontend, and
+/// rebuilds the tray menu. Used by both the `logout` Tauri command and the
+/// tray's "Sign Out" menu item so they cannot drift apart.
+pub fn perform_logout(app: &AppHandle) {
+    let _ = crate::auth::delete_token();
+    let state = app.state::<crate::AppState>();
+    *state.cached_token.lock().unwrap() = None;
+    *state.viewer_login.lock().unwrap() = String::new();
+    let _ = app.emit("auth-expired", ());
+    rebuild_tray_menu(app);
+}
+
 /// Builds and sets the tray context menu based on current auth state.
 /// Call this after login or logout to keep the menu in sync.
 pub fn rebuild_tray_menu(app: &AppHandle) {
@@ -351,21 +414,26 @@ pub fn rebuild_tray_menu(app: &AppHandle) {
     let is_logged_in = state.cached_token.lock().unwrap().is_some();
     let viewer_login = state.viewer_login.lock().unwrap().clone();
 
-    let menu = build_tray_menu(app, is_logged_in, &viewer_login);
-    let _ = tray.set_menu(Some(menu));
+    if let Ok(menu) = build_tray_menu(app, is_logged_in, &viewer_login) {
+        let _ = tray.set_menu(Some(menu));
+    }
 }
 
-fn build_tray_menu(app: &AppHandle, is_logged_in: bool, viewer_login: &str) -> Menu<tauri::Wry> {
-    let open = MenuItemBuilder::with_id("open", "Open").build(app).unwrap();
-    let separator = PredefinedMenuItem::separator(app).unwrap();
-    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app).unwrap();
+fn build_tray_menu(
+    app: &AppHandle,
+    is_logged_in: bool,
+    viewer_login: &str,
+) -> Result<Menu<tauri::Wry>, tauri::Error> {
+    let open = MenuItemBuilder::with_id("open", "Open").build(app)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
     if is_logged_in && !viewer_login.is_empty() {
-        let profile = MenuItemBuilder::with_id("view_profile", "View Profile").build(app).unwrap();
-        let logout = MenuItemBuilder::with_id("logout", "Log Out").build(app).unwrap();
-        Menu::with_items(app, &[&open, &profile, &logout, &separator, &quit]).unwrap()
+        let profile = MenuItemBuilder::with_id("view_profile", "View Profile").build(app)?;
+        let logout = MenuItemBuilder::with_id("logout", "Sign Out").build(app)?;
+        Menu::with_items(app, &[&open, &profile, &logout, &separator, &quit])
     } else {
-        Menu::with_items(app, &[&open, &separator, &quit]).unwrap()
+        Menu::with_items(app, &[&open, &separator, &quit])
     }
 }
 
@@ -373,43 +441,40 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let state = app.state::<crate::AppState>();
     let is_logged_in = state.cached_token.lock().unwrap().is_some();
     let viewer_login = state.viewer_login.lock().unwrap().clone();
-    let menu = build_tray_menu(app.handle(), is_logged_in, &viewer_login);
+    let menu = build_tray_menu(app.handle(), is_logged_in, &viewer_login)?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(load_tray_icon())
         .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "quit" => app.exit(0),
-                "open" => toggle_window(app, ToggleSource::TrayClick),
-                "view_profile" => {
-                    let login = app.state::<crate::AppState>().viewer_login.lock().unwrap().clone();
-                    if !login.is_empty() {
-                        let _ = tauri_plugin_opener::open_url(
-                            format!("https://github.com/{login}"),
-                            None::<&str>,
-                        );
-                    }
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "quit" => app.exit(0),
+            "open" => toggle_window(app, ToggleSource::TrayClick),
+            "view_profile" => {
+                let login = app
+                    .state::<crate::AppState>()
+                    .viewer_login
+                    .lock()
+                    .unwrap()
+                    .clone();
+                if !login.is_empty() {
+                    let _ = tauri_plugin_opener::open_url(
+                        format!("https://github.com/{login}"),
+                        None::<&str>,
+                    );
                 }
-                "logout" => {
-                    let _ = crate::auth::delete_token();
-                    let state = app.state::<crate::AppState>();
-                    *state.cached_token.lock().unwrap() = None;
-                    *state.viewer_login.lock().unwrap() = String::new();
-                    let _ = app.emit("auth-expired", ());
-                    rebuild_tray_menu(app);
-                }
-                _ => {}
             }
+            "logout" => perform_logout(app),
+            _ => {}
         });
 
     if cfg!(debug_assertions) {
         builder = builder.title("DEV");
     }
 
-    builder.on_tray_icon_event(|tray_handle, event| {
+    builder
+        .on_tray_icon_event(|tray_handle, event| {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
             }));

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use super::{attention_fingerprint, attention_urls, compute_element_changes, process_attention};
 use crate::github::github_tests::{make_fetch_result, make_pr, with_checks};
 use crate::github::{MergeQueueEntry, PrElementChanges};
 use crate::types::{NotificationPreferences, Settings};
-use super::{attention_fingerprint, attention_urls, compute_element_changes, process_attention};
 
 fn all_prefs() -> NotificationPreferences {
     NotificationPreferences {
@@ -137,7 +137,10 @@ fn no_changes_when_fingerprint_same() {
 fn short_fingerprint_returns_default() {
     let pr = make_pr("url");
     let changes = compute_element_changes(&pr, "bad|fp", "viewer");
-    assert_eq!(changes.became_approved, PrElementChanges::default().became_approved);
+    assert_eq!(
+        changes.became_approved,
+        PrElementChanges::default().became_approved
+    );
 }
 
 // ── attention_urls ────────────────────────────────────────────────────────────
@@ -195,7 +198,10 @@ fn pref_disabled_blocks_notification() {
     let mut seen = HashMap::new();
     seen.insert("https://github.com/org/repo/pull/1".to_string(), fp);
 
-    let prefs = NotificationPreferences { approved: false, ..all_prefs() };
+    let prefs = NotificationPreferences {
+        approved: false,
+        ..all_prefs()
+    };
     let settings = settings_with_prefs(prefs);
     let urls = attention_urls(&result, &seen, &settings, "viewer");
     assert!(urls.is_empty());
@@ -208,7 +214,10 @@ fn merged_pr_gets_attention_when_setting_enabled() {
     result.recently_merged = vec![pr];
 
     let mut seen = HashMap::new();
-    seen.insert("https://github.com/org/repo/pull/1".to_string(), "old_fp".to_string());
+    seen.insert(
+        "https://github.com/org/repo/pull/1".to_string(),
+        "old_fp".to_string(),
+    );
 
     let mut settings = settings_with_prefs(all_prefs());
     settings.notify_on_merged = true;
@@ -223,7 +232,10 @@ fn merged_pr_no_attention_when_setting_disabled() {
     result.recently_merged = vec![pr];
 
     let mut seen = HashMap::new();
-    seen.insert("https://github.com/org/repo/pull/1".to_string(), "old_fp".to_string());
+    seen.insert(
+        "https://github.com/org/repo/pull/1".to_string(),
+        "old_fp".to_string(),
+    );
 
     let mut settings = settings_with_prefs(all_prefs());
     settings.notify_on_merged = false;
@@ -238,7 +250,10 @@ fn process_attention_updates_fingerprints_for_unchanged_prs() {
     let pr = make_pr("https://github.com/org/repo/pull/1");
     let result = make_fetch_result(vec![pr.clone()]);
     let mut seen = HashMap::new();
-    seen.insert("https://github.com/org/repo/pull/1".to_string(), "old_fp".to_string());
+    seen.insert(
+        "https://github.com/org/repo/pull/1".to_string(),
+        "old_fp".to_string(),
+    );
 
     let settings = settings_with_prefs(all_prefs());
     let (attention, _) = process_attention(&result, &mut seen, &settings, "viewer");
@@ -253,7 +268,10 @@ fn process_attention_removes_merged_from_seen() {
     result.recently_merged = vec![pr];
 
     let mut seen = HashMap::new();
-    seen.insert("https://github.com/org/repo/pull/1".to_string(), "fp".to_string());
+    seen.insert(
+        "https://github.com/org/repo/pull/1".to_string(),
+        "fp".to_string(),
+    );
 
     let mut settings = settings_with_prefs(all_prefs());
     settings.notify_on_merged = true;
@@ -264,7 +282,10 @@ fn process_attention_removes_merged_from_seen() {
 #[test]
 fn process_attention_removes_stale_entries() {
     let mut seen = HashMap::new();
-    seen.insert("https://github.com/org/repo/pull/999".to_string(), "fp".to_string());
+    seen.insert(
+        "https://github.com/org/repo/pull/999".to_string(),
+        "fp".to_string(),
+    );
 
     let result = make_fetch_result(vec![]);
     let settings = settings_with_prefs(all_prefs());
@@ -306,15 +327,21 @@ fn make_review_thread(
         comments: ReviewThreadComments {
             total_count,
             nodes: last_author
-                .map(|login| vec![ReviewThreadComment {
-                    author: Some(Owner { login: login.to_string() }),
-                }])
+                .map(|login| {
+                    vec![ReviewThreadComment {
+                        author: Some(Owner {
+                            login: login.to_string(),
+                        }),
+                    }]
+                })
                 .unwrap_or_default(),
         },
         first_comment: first_author.map(|login| ReviewThreadComments {
             total_count: 1,
             nodes: vec![ReviewThreadComment {
-                author: Some(Owner { login: login.to_string() }),
+                author: Some(Owner {
+                    login: login.to_string(),
+                }),
             }],
         }),
     }
@@ -342,9 +369,9 @@ fn thread_comments_by_others_last_comment_by_other() {
 #[test]
 fn thread_comments_by_others_mixed_authors() {
     let threads = vec![
-        make_review_thread(3, Some("viewer"), None),  // viewer last → excluded
-        make_review_thread(4, Some("alice"), None),    // other last → included
-        make_review_thread(2, Some("bob"), None),      // other last → included
+        make_review_thread(3, Some("viewer"), None), // viewer last → excluded
+        make_review_thread(4, Some("alice"), None),  // other last → included
+        make_review_thread(2, Some("bob"), None),    // other last → included
     ];
     assert_eq!(super::thread_comments_by_others(&threads, "viewer"), 6);
 }
@@ -367,45 +394,63 @@ fn thread_comments_by_others_no_author_on_last_comment() {
 
 #[test]
 fn participated_empty_threads() {
-    assert_eq!(super::thread_comments_by_others_participated(&[], "viewer"), 0);
+    assert_eq!(
+        super::thread_comments_by_others_participated(&[], "viewer"),
+        0
+    );
 }
 
 #[test]
 fn participated_viewer_started_other_replied() {
     let threads = vec![make_review_thread(5, Some("alice"), Some("viewer"))];
-    assert_eq!(super::thread_comments_by_others_participated(&threads, "viewer"), 5);
+    assert_eq!(
+        super::thread_comments_by_others_participated(&threads, "viewer"),
+        5
+    );
 }
 
 #[test]
 fn participated_viewer_started_viewer_replied_last() {
     let threads = vec![make_review_thread(3, Some("viewer"), Some("viewer"))];
     // viewer is last commenter → other_replied = false
-    assert_eq!(super::thread_comments_by_others_participated(&threads, "viewer"), 0);
+    assert_eq!(
+        super::thread_comments_by_others_participated(&threads, "viewer"),
+        0
+    );
 }
 
 #[test]
 fn participated_other_started_other_replied() {
     let threads = vec![make_review_thread(4, Some("bob"), Some("alice"))];
     // viewer didn't start → viewer_started = false
-    assert_eq!(super::thread_comments_by_others_participated(&threads, "viewer"), 0);
+    assert_eq!(
+        super::thread_comments_by_others_participated(&threads, "viewer"),
+        0
+    );
 }
 
 #[test]
 fn participated_no_first_comment() {
     let threads = vec![make_review_thread(2, Some("alice"), None)];
     // no first_comment → viewer_started = false
-    assert_eq!(super::thread_comments_by_others_participated(&threads, "viewer"), 0);
+    assert_eq!(
+        super::thread_comments_by_others_participated(&threads, "viewer"),
+        0
+    );
 }
 
 #[test]
 fn participated_mixed_threads() {
     let threads = vec![
-        make_review_thread(3, Some("alice"), Some("viewer")),  // match: viewer started, alice replied
+        make_review_thread(3, Some("alice"), Some("viewer")), // match: viewer started, alice replied
         make_review_thread(2, Some("viewer"), Some("viewer")), // no: viewer replied last
-        make_review_thread(4, Some("bob"), Some("alice")),     // no: viewer didn't start
-        make_review_thread(6, Some("charlie"), Some("viewer")),// match: viewer started, charlie replied
+        make_review_thread(4, Some("bob"), Some("alice")),    // no: viewer didn't start
+        make_review_thread(6, Some("charlie"), Some("viewer")), // match: viewer started, charlie replied
     ];
-    assert_eq!(super::thread_comments_by_others_participated(&threads, "viewer"), 9);
+    assert_eq!(
+        super::thread_comments_by_others_participated(&threads, "viewer"),
+        9
+    );
 }
 
 // ── should_notify_for_changes with new_comment_participated ──────────────────
@@ -459,9 +504,7 @@ fn notify_only_participated_pref_enabled() {
 fn compute_changes_detects_new_comment_participated() {
     // Build a PR where viewer started a thread and someone else replied
     let mut pr = make_pr("url");
-    pr.review_threads.nodes = vec![
-        make_review_thread(3, Some("alice"), Some("viewer")),
-    ];
+    pr.review_threads.nodes = vec![make_review_thread(3, Some("alice"), Some("viewer"))];
 
     // Old fingerprint had 0 participated comments
     let mut base_pr = make_pr("url");
@@ -476,9 +519,7 @@ fn compute_changes_detects_new_comment_participated() {
 fn compute_changes_no_new_comment_participated_when_unchanged() {
     // Both old and new have the same thread state
     let mut pr = make_pr("url");
-    pr.review_threads.nodes = vec![
-        make_review_thread(3, Some("alice"), Some("viewer")),
-    ];
+    pr.review_threads.nodes = vec![make_review_thread(3, Some("alice"), Some("viewer"))];
 
     let fp = attention_fingerprint(&pr, "viewer");
     let changes = compute_element_changes(&pr, &fp, "viewer");
