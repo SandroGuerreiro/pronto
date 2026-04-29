@@ -1,16 +1,17 @@
-use core_foundation::base::{CFType, TCFType};
+use core_foundation::base::{CFType, CFTypeRef, TCFType};
+use core_foundation::boolean::CFBoolean;
 use core_foundation::data::CFData;
-use core_foundation::dictionary::CFDictionary;
-use core_foundation::string::CFString;
-use core_foundation::string::CFStringRef;
+use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+use core_foundation::string::{CFString, CFStringRef};
 use reqwest::header::{ACCEPT, USER_AGENT};
 use security_framework::passwords;
 use security_framework_sys::access_control::kSecAttrAccessibleAfterFirstUnlock;
 use security_framework_sys::base::errSecSuccess;
 use security_framework_sys::item::{
-    kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecValueData,
+    kSecAttrAccessControl, kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword,
+    kSecReturnAttributes, kSecValueData,
 };
-use security_framework_sys::keychain_item::SecItemAdd;
+use security_framework_sys::keychain_item::{SecItemAdd, SecItemCopyMatching};
 use serde::{Deserialize, Serialize};
 
 // Not exported by security-framework-sys 2.x. Declared here so we can set
@@ -172,16 +173,26 @@ pub fn save_token(token: &str) -> Result<(), String> {
     }
 }
 
-/// Load the token, transparently migrating from the old keyring-managed item
-/// if the new item is not found. This handles users who skip versions.
+/// Load the token, transparently migrating from older storage formats.
 ///
-/// Migration path:
-///   1. Try reading via security_framework::passwords (new item)
-///   2. If not found, try reading via keyring (old item)
-///   3. If found via keyring: save with new path, delete old item, return token
-///   4. If neither found: return None → triggers auth flow
+/// Migration paths handled:
+///   1. New item already in the desired format (kSecAttrAccessible) → return as-is.
+///   2. Item exists but was created under the old kSecAttrAccessControl path →
+///      rewrite it without the access-control ACL so future launches stop prompting.
+///   3. No new-format item, but legacy `keyring`-managed item exists → re-save via
+///      `save_token`, delete legacy entry, return token.
+///   4. Nothing stored → return None, callers trigger auth flow.
 pub fn load_token() -> Option<String> {
     if let Some(token) = read_token_from_keychain() {
+        // Items written by older versions carried `kSecAttrAccessControl`, which
+        // pins access to the creating binary's code identity. On unsigned dev
+        // rebuilds and (occasionally) signed updates, that triggers a keychain
+        // password prompt on every launch. Detect and rewrite once.
+        if keychain_item_has_access_control() {
+            if let Err(e) = save_token(&token) {
+                eprintln!("[pronto] keychain rewrite: failed to drop access control ACL: {e}");
+            }
+        }
         return Some(token);
     }
 
@@ -198,6 +209,59 @@ pub fn load_token() -> Option<String> {
     }
 
     None
+}
+
+/// Returns true if the stored keychain item carries a `kSecAttrAccessControl`
+/// attribute. Items written by the post-fix code path use `kSecAttrAccessible`
+/// instead and return false here. Returns false on any error so we never block
+/// startup or try to "fix" an item we can't introspect.
+fn keychain_item_has_access_control() -> bool {
+    // SAFETY: All CFStringRef statics referenced below are exported by Security.framework
+    // (or linked directly via the extern block at the top of this file) and are valid for
+    // the lifetime of the process. wrap_under_get_rule does not transfer ownership. The
+    // CFDictionary owns its keys/values for the call's duration.
+    let pairs: Vec<(CFType, CFType)> = unsafe {
+        vec![
+            (
+                CFString::wrap_under_get_rule(kSecClass).into_CFType(),
+                CFString::wrap_under_get_rule(kSecClassGenericPassword).into_CFType(),
+            ),
+            (
+                CFString::wrap_under_get_rule(kSecAttrService).into_CFType(),
+                CFString::new(KEYCHAIN_SERVICE).into_CFType(),
+            ),
+            (
+                CFString::wrap_under_get_rule(kSecAttrAccount).into_CFType(),
+                CFString::new(KEYCHAIN_USER).into_CFType(),
+            ),
+            (
+                CFString::wrap_under_get_rule(kSecReturnAttributes).into_CFType(),
+                CFBoolean::true_value().into_CFType(),
+            ),
+        ]
+    };
+
+    let query: CFDictionary<CFType, CFType> = CFDictionary::from_CFType_pairs(&pairs);
+    let mut result: CFTypeRef = std::ptr::null();
+    // SAFETY: `query` lives through the call; `result` is a valid out-pointer; we only
+    // read it on errSecSuccess and wrap the returned reference (Create rule) to manage
+    // its retain count.
+    let status =
+        unsafe { SecItemCopyMatching(query.as_concrete_TypeRef() as _, &mut result) };
+    if status != errSecSuccess || result.is_null() {
+        return false;
+    }
+
+    // SAFETY: SecItemCopyMatching returns a CFDictionaryRef under the Create rule when
+    // kSecReturnAttributes is true. wrap_under_create_rule takes ownership of the +1
+    // retain so the dictionary is released when `attrs` drops.
+    let attrs: CFDictionary<CFType, CFType> =
+        unsafe { CFDictionary::wrap_under_create_rule(result as CFDictionaryRef) };
+
+    // SAFETY: kSecAttrAccessControl is a non-null CFStringRef static.
+    let access_control_key =
+        unsafe { CFString::wrap_under_get_rule(kSecAttrAccessControl).into_CFType() };
+    attrs.contains_key(&access_control_key)
 }
 
 /// Delete the token from both storage locations for a clean logout.
