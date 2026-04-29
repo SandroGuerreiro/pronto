@@ -2,16 +2,25 @@ use core_foundation::base::{CFType, TCFType};
 use core_foundation::data::CFData;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
+use core_foundation::string::CFStringRef;
 use reqwest::header::{ACCEPT, USER_AGENT};
-use security_framework::access_control::{ProtectionMode, SecAccessControl};
 use security_framework::passwords;
+use security_framework_sys::access_control::kSecAttrAccessibleAfterFirstUnlock;
 use security_framework_sys::base::errSecSuccess;
 use security_framework_sys::item::{
-    kSecAttrAccessControl, kSecAttrAccount, kSecAttrService, kSecClass,
-    kSecClassGenericPassword, kSecValueData,
+    kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecValueData,
 };
 use security_framework_sys::keychain_item::SecItemAdd;
 use serde::{Deserialize, Serialize};
+
+// Not exported by security-framework-sys 2.x. Declared here so we can set
+// per-item accessibility without using kSecAttrAccessControl, which requires
+// a keychain-access-groups entitlement and fails on unsigned/dev builds with
+// errSecMissingEntitlement (-34018).
+#[link(name = "Security", kind = "framework")]
+extern "C" {
+    static kSecAttrAccessible: CFStringRef;
+}
 
 const CLIENT_ID: &str = "Ov23ctX89W5ascyt1PIe";
 const KEYCHAIN_SERVICE: &str = "com.pronto.desktop";
@@ -122,17 +131,12 @@ pub fn save_token(token: &str) -> Result<(), String> {
     // Ignore errors — the item may not exist yet.
     let _ = passwords::delete_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_USER);
 
-    let access_control = SecAccessControl::create_with_protection(
-        Some(ProtectionMode::AccessibleAfterFirstUnlock),
-        0,
-    )
-    .map_err(|e| e.to_string())?;
-
-    // SAFETY: kSecClass, kSecAttrService, kSecAttrAccount, kSecAttrAccessControl, and
-    // kSecValueData are non-null CFStringRefs exported as statics by security_framework_sys
-    // and are valid for the lifetime of the process. wrap_under_get_rule does not transfer
-    // ownership. CFData::from_buffer copies the token bytes, so the &str reference is not
-    // retained past this block. All values are moved into the CFDictionary before SecItemAdd.
+    // SAFETY: kSecClass, kSecAttrService, kSecAttrAccount, kSecAttrAccessible,
+    // kSecAttrAccessibleAfterFirstUnlock, and kSecValueData are non-null CFStringRefs
+    // exported as statics by Security.framework and are valid for the lifetime of
+    // the process. wrap_under_get_rule does not transfer ownership. CFData::from_buffer
+    // copies the token bytes, so the &str reference is not retained past this block.
+    // All values are moved into the CFDictionary before SecItemAdd.
     let pairs: Vec<(CFType, CFType)> = unsafe {
         vec![
             (
@@ -148,8 +152,8 @@ pub fn save_token(token: &str) -> Result<(), String> {
                 CFString::new(KEYCHAIN_USER).into_CFType(),
             ),
             (
-                CFString::wrap_under_get_rule(kSecAttrAccessControl).into_CFType(),
-                access_control.into_CFType(),
+                CFString::wrap_under_get_rule(kSecAttrAccessible).into_CFType(),
+                CFString::wrap_under_get_rule(kSecAttrAccessibleAfterFirstUnlock).into_CFType(),
             ),
             (
                 CFString::wrap_under_get_rule(kSecValueData).into_CFType(),
@@ -159,8 +163,7 @@ pub fn save_token(token: &str) -> Result<(), String> {
     };
 
     let dict: CFDictionary<CFType, CFType> = CFDictionary::from_CFType_pairs(&pairs);
-    let status: i32 =
-        unsafe { SecItemAdd(dict.as_concrete_TypeRef() as _, std::ptr::null_mut()) };
+    let status: i32 = unsafe { SecItemAdd(dict.as_concrete_TypeRef() as _, std::ptr::null_mut()) };
 
     if status == errSecSuccess {
         Ok(())
@@ -221,7 +224,81 @@ fn read_token_from_keyring() -> Option<String> {
 }
 
 fn delete_token_from_keyring() -> Result<(), String> {
-    let entry =
-        keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER).map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER).map_err(|e| e.to_string())?;
     entry.delete_credential().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod auth_keychain_tests {
+    use super::*;
+
+    // Use a test-only service so we don't clobber a real user token.
+    // Each test passes a distinct suffix so parallel runs don't share state.
+    fn with_test_service<R>(suffix: &str, f: impl FnOnce(&str, &str) -> R) -> R {
+        let service = format!("com.pronto.desktop.test.{suffix}");
+        let user = format!("github-token-test-{suffix}");
+        let _ = passwords::delete_generic_password(&service, &user);
+        let r = f(&service, &user);
+        let _ = passwords::delete_generic_password(&service, &user);
+        r
+    }
+
+    /// Mirror save_token() but against a test-only keychain item, to verify
+    /// the SecItemAdd dictionary shape works on unsigned/dev builds.
+    fn save_test_token(service: &str, user: &str, token: &str) -> Result<(), String> {
+        let _ = passwords::delete_generic_password(service, user);
+        let pairs: Vec<(CFType, CFType)> = unsafe {
+            vec![
+                (
+                    CFString::wrap_under_get_rule(kSecClass).into_CFType(),
+                    CFString::wrap_under_get_rule(kSecClassGenericPassword).into_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrService).into_CFType(),
+                    CFString::new(service).into_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrAccount).into_CFType(),
+                    CFString::new(user).into_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrAccessible).into_CFType(),
+                    CFString::wrap_under_get_rule(kSecAttrAccessibleAfterFirstUnlock).into_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecValueData).into_CFType(),
+                    CFData::from_buffer(token.as_bytes()).into_CFType(),
+                ),
+            ]
+        };
+        let dict: CFDictionary<CFType, CFType> = CFDictionary::from_CFType_pairs(&pairs);
+        let status: i32 =
+            unsafe { SecItemAdd(dict.as_concrete_TypeRef() as _, std::ptr::null_mut()) };
+        if status == errSecSuccess {
+            Ok(())
+        } else {
+            Err(format!("SecItemAdd failed with status {status}"))
+        }
+    }
+
+    #[test]
+    fn save_with_accessible_succeeds_on_unsigned_builds() {
+        with_test_service("save_basic", |service, user| {
+            save_test_token(service, user, "hello").expect("save should succeed");
+            let read = passwords::get_generic_password(service, user).expect("read after save");
+            assert_eq!(read, b"hello");
+        });
+    }
+
+    #[test]
+    fn save_overwrites_existing_item() {
+        with_test_service("save_overwrite", |service, user| {
+            save_test_token(service, user, "first").expect("first save");
+            save_test_token(service, user, "second")
+                .expect("second save should overwrite, not duplicate");
+            let read =
+                passwords::get_generic_password(service, user).expect("read after overwrite");
+            assert_eq!(read, b"second");
+        });
+    }
 }
