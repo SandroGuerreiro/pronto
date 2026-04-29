@@ -215,6 +215,16 @@ export function renderDevStates(): string {
     </div>
   `);
 
+  html += section("notification-trigger", "Trigger Notification Banner", `
+    <div style="display: flex; gap: 8px; padding: 8px; align-items: center; flex-wrap: wrap;">
+      <button class="dev-trigger-notif" data-kind="attention" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">PR attention</button>
+      <button class="dev-trigger-notif" data-kind="workflow" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Workflow</button>
+      <button class="dev-trigger-notif" data-kind="error" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Error</button>
+      <button class="dev-trigger-notif" data-kind="brew_update" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Update</button>
+      <button class="dev-trigger-notif" data-kind="follow" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Follow</button>
+    </div>
+  `);
+
   html += section("workflows", "Workflow Indicators", `
     <div style="display: flex; gap: 8px; padding: 8px; flex-wrap: wrap;">
       <span class="workflow-indicator wf-success"><span class="wf-dot"></span><span class="wf-label">Success</span></span>
@@ -260,6 +270,16 @@ export function bindDevStateEvents(container: HTMLElement) {
       const kind = btn.getAttribute("data-kind") ?? "attention";
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("play_sound", { kind });
+    });
+  });
+
+  // Trigger notification banner buttons (dev only)
+  container.querySelectorAll<HTMLButtonElement>(".dev-trigger-notif").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const kind = btn.getAttribute("data-kind") ?? "attention";
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("dev_trigger_notification", { kind });
     });
   });
 

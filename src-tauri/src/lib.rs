@@ -755,18 +755,25 @@ fn create_notify_window(app: &tauri::AppHandle) {
         .build();
 
     if let Ok(win) = win {
-        use tauri_plugin_positioner::{Position, WindowExt};
-        // Try to position at tray; if tray not ready, fall back to top-right
-        let old_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {})); // Suppress panic output
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            win.move_window(Position::TrayBottomCenter)
-        }));
-        std::panic::set_hook(old_hook); // Restore original hook
+        // On macOS, position natively below the tray icon on the screen
+        // chosen by the `popup_screen` setting (so the notification appears
+        // on the same display as the popup, including secondary monitors).
+        #[cfg(target_os = "macos")]
+        crate::tray::position_notify_window(app, &win);
 
-        if result.is_err() {
-            // Tray position not available (e.g., after restart), use top-right fallback
-            let _ = win.move_window(Position::TopRight);
+        #[cfg(not(target_os = "macos"))]
+        {
+            use tauri_plugin_positioner::{Position, WindowExt};
+            let old_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                win.move_window(Position::TrayBottomCenter)
+            }));
+            std::panic::set_hook(old_hook);
+
+            if result.is_err() {
+                let _ = win.move_window(Position::TopRight);
+            }
         }
 
         #[cfg(target_os = "macos")]
@@ -870,6 +877,10 @@ fn show_tray_notification(
 
     // If the window already exists, just update its content in place
     if let Some(win) = app.get_webview_window("notify") {
+        // Reposition in case the popup_screen target moved (e.g. cursor on
+        // a different display since the last notification).
+        #[cfg(target_os = "macos")]
+        crate::tray::position_notify_window(app, &win);
         let _ = win.eval(&render_notify_js(&data));
         schedule_notify_close(app, timeout_ms);
         return;
@@ -890,6 +901,23 @@ fn get_notification_data(app: tauri::AppHandle) -> Vec<NotifyData> {
     app.try_state::<AppState>()
         .map(|s| std::mem::take(&mut *s.pending_notifications.lock().unwrap()))
         .unwrap_or_default()
+}
+
+/// Dev-only: trigger a sample notification of the given kind so the banner
+/// can be tested without waiting for real PR/workflow events. Wired to the
+/// dev states preview panel and only compiled in debug builds.
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn dev_trigger_notification(app: tauri::AppHandle, kind: Option<String>) {
+    let kind = kind.unwrap_or_else(|| "attention".to_string());
+    let (title, message): (&str, &str) = match kind.as_str() {
+        "workflow" => ("Workflow failed", "ci.yml on main — build step exited 1"),
+        "error" => ("Something went wrong", "Could not refresh PRs (sample error)"),
+        "brew_update" => ("Update available", "Pronto v9.9.9 — click to update"),
+        "follow" => ("Now following", "octocat/hello-world#1"),
+        _ => ("PR needs attention", "octocat/hello-world#42 — 2 review comments"),
+    };
+    show_tray_notification(&app, &kind, "attention", title, message);
 }
 
 #[tauri::command]
@@ -1133,6 +1161,34 @@ fn update_global_shortcuts(
             });
         })
         .map_err(|e| e.to_string())?;
+
+    // Dev-only: cycle through sample notification kinds with a global shortcut
+    // (Cmd+Ctrl+N on macOS / Ctrl+Alt+N elsewhere) so the banner can be tested
+    // with the popup closed.
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(target_os = "macos")]
+        let dev_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::CONTROL), Code::KeyN);
+        #[cfg(not(target_os = "macos"))]
+        let dev_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyN);
+
+        let handle = app.clone();
+        let counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        app.global_shortcut()
+            .on_shortcut(dev_shortcut, move |_app, _shortcut, event| {
+                if event.state != ShortcutState::Pressed {
+                    return;
+                }
+                let kinds = ["attention", "workflow", "error", "brew_update", "follow"];
+                let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % kinds.len();
+                let kind = kinds[idx].to_string();
+                let h = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    dev_trigger_notification(h, Some(kind));
+                });
+            })
+            .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }
@@ -1382,6 +1438,7 @@ pub fn run() {
             fetch_releases,
             check_version_update,
             play_sound,
+            dev_trigger_notification,
         ])
         .setup(|app| {
             let settings = load_settings(&settings_path(app.handle()));

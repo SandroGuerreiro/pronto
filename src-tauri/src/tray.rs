@@ -695,6 +695,42 @@ fn position_on_screen(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str
     }
 }
 
+/// Position the notification banner below the tray icon on the screen
+/// chosen by the `popup_screen` setting (matches the popup's screen).
+#[cfg(target_os = "macos")]
+pub fn position_notify_window(app: &AppHandle, window: &tauri::WebviewWindow) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSScreen;
+
+    let mode = {
+        let state = app.state::<crate::AppState>();
+        let settings = state.settings.lock().unwrap();
+        settings.popup_screen.clone()
+    };
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let screens = NSScreen::screens(mtm);
+    if screens.is_empty() {
+        return;
+    }
+
+    let target_screen_idx = if mode == "active" {
+        find_cursor_screen(&screens)
+    } else {
+        0
+    };
+    let target_screen = screens.objectAtIndex(target_screen_idx);
+
+    let Some(tray_frame) = read_tray_frame_on_screen(mtm, &target_screen) else {
+        return;
+    };
+
+    // 6pt gap so the banner doesn't sit flush against the menu bar.
+    set_frame_below_tray_sized_with_gap(window, tray_frame, 340.0, 80.0, 6.0);
+}
+
 /// Find which screen the mouse cursor is on. Returns the screen index.
 #[cfg(target_os = "macos")]
 fn find_cursor_screen(
@@ -752,15 +788,37 @@ fn position_on_secondary(
 /// points (bottom-left origin) from the tray icon's NSStatusBarWindow.
 #[cfg(target_os = "macos")]
 fn set_frame_below_tray(window: &tauri::WebviewWindow, tray_frame: (f64, f64, f64, f64)) {
+    set_frame_below_tray_sized(window, tray_frame, 480.0, 520.0);
+}
+
+/// Like `set_frame_below_tray` but with caller-provided window dimensions.
+#[cfg(target_os = "macos")]
+fn set_frame_below_tray_sized(
+    window: &tauri::WebviewWindow,
+    tray_frame: (f64, f64, f64, f64),
+    win_w: f64,
+    win_h: f64,
+) {
+    set_frame_below_tray_sized_with_gap(window, tray_frame, win_w, win_h, 0.0);
+}
+
+/// Like `set_frame_below_tray_sized` with an extra vertical gap (in points)
+/// between the bottom of the tray icon and the top of the window.
+#[cfg(target_os = "macos")]
+fn set_frame_below_tray_sized_with_gap(
+    window: &tauri::WebviewWindow,
+    tray_frame: (f64, f64, f64, f64),
+    win_w: f64,
+    win_h: f64,
+    top_gap: f64,
+) {
     let (tray_x, tray_y, tray_w, _) = tray_frame;
-    let win_w = 480.0_f64;
-    let win_h = 520.0_f64;
 
     let popup_x = tray_x + tray_w / 2.0 - win_w / 2.0;
     // In AppKit coords, tray_y is the bottom of the tray window.
-    // The popup's top should be at tray_y (just below the tray icon),
-    // so its origin (bottom-left) is at tray_y - win_h.
-    let popup_y_origin = tray_y - win_h;
+    // The window's top should be at tray_y - top_gap, so its origin
+    // (bottom-left) is at tray_y - top_gap - win_h.
+    let popup_y_origin = tray_y - top_gap - win_h;
 
     let Ok(ptr) = window.ns_window() else { return };
     use objc2_core_foundation::{CGPoint, CGRect, CGSize};
