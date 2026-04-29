@@ -1138,6 +1138,62 @@ fn update_global_shortcuts(
 }
 
 async fn poll_prs(app: tauri::AppHandle) {
+    // Fetch immediately on startup so data is available before the first interval elapses.
+    let _ = app.emit("polling-started", ());
+    let initial_fetch = {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let fs = {
+            let s = state.settings.lock().unwrap();
+            snapshot_fetch_settings(&s)
+        };
+        match get_token(&state) {
+            Ok(token) => {
+                let pr_fetch = github::fetch_all_prs(
+                    &state.http_client,
+                    &token,
+                    fs.merged_hours,
+                    fs.show_merged,
+                    fs.closed_hours,
+                    fs.show_closed,
+                    &fs.hidden_orgs,
+                    &fs.hidden_repos,
+                    &fs.followed_users,
+                    &fs.followed_prs,
+                )
+                .await;
+                if let Ok(mut result) = pr_fetch {
+                    cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
+                    result = filter_hidden_prs(result, &fs.hidden_prs);
+                    if let Some(wf) =
+                        fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings)
+                            .await
+                    {
+                        let wf_attention = check_workflow_attention(&app, &wf, false);
+                        result.workflow_status = Some(wf);
+                        let (pr_result, changed) = process_result(&app, result, false);
+                        if wf_attention && pr_result.attention_urls.is_empty() {
+                            set_tray_attention(&app, true);
+                        }
+                        if changed || wf_attention {
+                            let _ = app.emit("prs-updated", pr_result);
+                        }
+                    } else {
+                        let (pr_result, changed) = process_result(&app, result, false);
+                        if changed {
+                            let _ = app.emit("prs-updated", pr_result);
+                        }
+                    }
+                }
+                Some(token)
+            }
+            Err(_) => None,
+        }
+    };
+    drop(initial_fetch);
+    let _ = app.emit("polling-complete", ());
+
     loop {
         let interval = app
             .try_state::<AppState>()
