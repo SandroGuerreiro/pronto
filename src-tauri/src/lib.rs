@@ -931,19 +931,18 @@ fn show_tray_notification(
     // `poll_prs` calls us from for PR/workflow notifications).  Without
     // this hop the banner ends up at Tauri's default location (centered).
     let app_handle = app.clone();
-    let data_for_main = data.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(win) = app_handle.get_webview_window("notify") {
             #[cfg(target_os = "macos")]
             crate::tray::position_notify_window(&app_handle, &win);
-            let _ = win.eval(&render_notify_js(&data_for_main));
+            let _ = win.eval(&render_notify_js(&data));
             schedule_notify_close(&app_handle, timeout_ms);
             return;
         }
 
         if let Some(state) = app_handle.try_state::<AppState>() {
             state.pending_notifications.lock().unwrap().clear();
-            state.pending_notifications.lock().unwrap().push(data_for_main);
+            state.pending_notifications.lock().unwrap().push(data);
         }
 
         create_notify_window(&app_handle);
