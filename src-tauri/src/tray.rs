@@ -609,7 +609,9 @@ fn position_on_tray_click(app: &AppHandle, window: &tauri::WebviewWindow) {
     let clicked_screen_idx = find_cursor_screen(&screens);
     let clicked_screen = screens.objectAtIndex(clicked_screen_idx);
 
-    let Some(tray_frame) = read_tray_frame_on_screen(mtm, &clicked_screen) else {
+    let Some(tray_frame) =
+        read_or_cached_tray_frame(app, mtm, &clicked_screen, clicked_screen_idx)
+    else {
         return;
     };
 
@@ -684,7 +686,8 @@ fn position_on_screen(app: &AppHandle, window: &tauri::WebviewWindow, mode: &str
     };
     let target_screen = screens.objectAtIndex(target_screen_idx);
 
-    let Some(tray_frame) = read_tray_frame_on_screen(mtm, &target_screen) else {
+    let Some(tray_frame) = read_or_cached_tray_frame(app, mtm, &target_screen, target_screen_idx)
+    else {
         return;
     };
 
@@ -723,12 +726,79 @@ pub fn position_notify_window(app: &AppHandle, window: &tauri::WebviewWindow) {
     };
     let target_screen = screens.objectAtIndex(target_screen_idx);
 
-    let Some(tray_frame) = read_tray_frame_on_screen(mtm, &target_screen) else {
+    if let Some(tray_frame) =
+        read_or_cached_tray_frame(app, mtm, &target_screen, target_screen_idx)
+    {
+        // 6pt gap so the banner doesn't sit flush against the menu bar.
+        set_frame_below_tray_sized_with_gap(window, tray_frame, 340.0, 80.0, 6.0);
+        return;
+    }
+
+    // Cold cache and live read both missed: anchor the banner to the
+    // top-right corner of the target screen so it never lands centered.
+    set_frame_top_right_of_screen(window, &target_screen, 340.0, 80.0);
+}
+
+/// Place a window at the top-right of `screen` with a small inset, accounting
+/// for the menu bar via `visibleFrame`.
+#[cfg(target_os = "macos")]
+fn set_frame_top_right_of_screen(
+    window: &tauri::WebviewWindow,
+    screen: &objc2_app_kit::NSScreen,
+    win_w: f64,
+    win_h: f64,
+) {
+    const INSET: f64 = 12.0;
+    let visible = screen.visibleFrame();
+    let x = visible.origin.x + visible.size.width - win_w - INSET;
+    let y_origin = visible.origin.y + visible.size.height - win_h - INSET;
+
+    let Ok(ptr) = window.ns_window() else { return };
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    unsafe {
+        let ns_win: &objc2_app_kit::NSWindow = &*ptr.cast();
+        let frame = CGRect::new(CGPoint::new(x, y_origin), CGSize::new(win_w, win_h));
+        ns_win.setFrame_display(frame, true);
+    }
+}
+
+/// Warm the tray-frame cache at startup by running the popup positioning
+/// routine against the hidden main window.
+///
+/// This is the most reliable way to populate the cache for the screen the
+/// user's notifications will appear on: it goes through the same
+/// `read_or_cached_tray_frame` path that powers normal popup positioning,
+/// so the cache is filled with whatever AppKit returns for the configured
+/// `popup_screen`.  The popup stays hidden — `setFrame_display` on a hidden
+/// NSWindow does not show it.
+///
+/// Also opportunistically reads frames for every other screen so multi-monitor
+/// setups with "Displays have separate Spaces" enabled get all entries cached.
+#[cfg(target_os = "macos")]
+pub fn warm_tray_frame_cache(app: &AppHandle) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSScreen;
+    use tauri::Manager;
+
+    let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
 
-    // 6pt gap so the banner doesn't sit flush against the menu bar.
-    set_frame_below_tray_sized_with_gap(window, tray_frame, 340.0, 80.0, 6.0);
+    let popup_screen = {
+        let state = app.state::<crate::AppState>();
+        let settings = state.settings.lock().unwrap();
+        settings.popup_screen.clone()
+    };
+
+    if let Some(window) = app.get_webview_window("main") {
+        position_on_screen(app, &window, &popup_screen);
+    }
+
+    let screens = NSScreen::screens(mtm);
+    for i in 0..screens.len() {
+        let screen = screens.objectAtIndex(i);
+        let _ = read_or_cached_tray_frame(app, mtm, &screen, i);
+    }
 }
 
 /// Find which screen the mouse cursor is on. Returns the screen index.
@@ -839,7 +909,7 @@ fn restore_primary_tray_position(app: &AppHandle, primary: &objc2_app_kit::NSScr
     let Some(mtm) = objc2::MainThreadMarker::new() else {
         return;
     };
-    let Some(tray_frame) = read_tray_frame_on_screen(mtm, primary) else {
+    let Some(tray_frame) = read_or_cached_tray_frame(app, mtm, primary, 0) else {
         return;
     };
     let primary_height = primary.frame().size.height;
@@ -895,6 +965,36 @@ fn inject_tray_position(app: &AppHandle, x: f64, y: f64, w: f64, h: f64) {
 }
 
 // ── AppKit tray icon detection ────────────────────────────────────────────
+
+/// Read the tray frame for `screen_idx`, falling back to the AppState cache
+/// when the live AppKit lookup misses.
+///
+/// On success the cache is refreshed, so subsequent callers (notably the
+/// notification banner, which is created from scratch each time) can recover
+/// a sane position even if macOS has not yet exposed the per-screen
+/// `NSStatusBarWindow` for that display.
+#[cfg(target_os = "macos")]
+fn read_or_cached_tray_frame(
+    app: &AppHandle,
+    mtm: objc2::MainThreadMarker,
+    screen: &objc2_app_kit::NSScreen,
+    screen_idx: usize,
+) -> Option<(f64, f64, f64, f64)> {
+    if let Some(frame) = read_tray_frame_on_screen(mtm, screen) {
+        if let Some(state) = app.try_state::<crate::AppState>() {
+            state
+                .tray_frame_cache
+                .lock()
+                .unwrap()
+                .insert(screen_idx, frame);
+        }
+        return Some(frame);
+    }
+
+    let state = app.try_state::<crate::AppState>()?;
+    let cache = state.tray_frame_cache.lock().unwrap();
+    cache.get(&screen_idx).copied()
+}
 
 /// Read the tray icon's NSStatusBarWindow frame on a specific screen.
 ///

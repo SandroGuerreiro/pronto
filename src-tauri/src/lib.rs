@@ -66,6 +66,11 @@ pub struct AppState {
     pub last_brew_status: Mutex<Option<homebrew::HomebrewStatus>>,
     pub last_notified_brew_update: Mutex<bool>,
     pub cached_releases: Mutex<Option<Vec<github::Release>>>,
+    /// Last-known tray icon frame per screen index, in AppKit logical points
+    /// (bottom-left origin). Populated whenever a positioning lookup succeeds;
+    /// used as a fallback when a later lookup misses (e.g. notification fires
+    /// before macOS has the per-screen status-bar window enumerable).
+    pub tray_frame_cache: Mutex<HashMap<usize, (f64, f64, f64, f64)>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -920,25 +925,30 @@ fn show_tray_notification(
         _ => 3000,
     };
 
-    // If the window already exists, just update its content in place
-    if let Some(win) = app.get_webview_window("notify") {
-        // Reposition in case the popup_screen target moved (e.g. cursor on
-        // a different display since the last notification).
-        #[cfg(target_os = "macos")]
-        crate::tray::position_notify_window(app, &win);
-        let _ = win.eval(&render_notify_js(&data));
-        schedule_notify_close(app, timeout_ms);
-        return;
-    }
+    // Window creation and positioning must happen on the main thread —
+    // the AppKit `setFrame_display` calls used for positioning silently
+    // no-op when invoked from a Tokio worker thread (which is where
+    // `poll_prs` calls us from for PR/workflow notifications).  Without
+    // this hop the banner ends up at Tauri's default location (centered).
+    let app_handle = app.clone();
+    let data_for_main = data.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(win) = app_handle.get_webview_window("notify") {
+            #[cfg(target_os = "macos")]
+            crate::tray::position_notify_window(&app_handle, &win);
+            let _ = win.eval(&render_notify_js(&data_for_main));
+            schedule_notify_close(&app_handle, timeout_ms);
+            return;
+        }
 
-    // Store data for the new window to read on init
-    if let Some(state) = app.try_state::<AppState>() {
-        state.pending_notifications.lock().unwrap().clear();
-        state.pending_notifications.lock().unwrap().push(data);
-    }
+        if let Some(state) = app_handle.try_state::<AppState>() {
+            state.pending_notifications.lock().unwrap().clear();
+            state.pending_notifications.lock().unwrap().push(data_for_main);
+        }
 
-    create_notify_window(app);
-    schedule_notify_close(app, timeout_ms);
+        create_notify_window(&app_handle);
+        schedule_notify_close(&app_handle, timeout_ms);
+    });
 }
 
 #[tauri::command]
@@ -1506,6 +1516,7 @@ pub fn run() {
                 last_brew_status: Mutex::new(None),
                 last_notified_brew_update: Mutex::new(false),
                 cached_releases: Mutex::new(None),
+                tray_frame_cache: Mutex::new(HashMap::new()),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -1513,6 +1524,15 @@ pub fn run() {
             tray::setup_tray(app)?;
             #[cfg(target_os = "macos")]
             macos_notify::init(app.handle());
+
+            // Warm the tray-frame cache synchronously here, before the
+            // polling task is spawned.  v0.10.0 fetches PRs immediately on
+            // startup, so workflow notifications can fire within ~1s — we
+            // need the cache populated before that happens.  setup() runs
+            // on the main thread and `setup_tray` above already created
+            // the NSStatusBarWindow synchronously, so this is safe.
+            #[cfg(target_os = "macos")]
+            tray::warm_tray_frame_cache(app.handle());
 
             if let Some(window) = app.get_webview_window("main") {
                 // Convert the window to NSPanel so it can float above fullscreen apps.
