@@ -129,12 +129,10 @@ fn send_attention_notification(
         .map(|c| c.sound_kind())
         .unwrap_or("attention");
 
-    // Always show popup notification
-    show_tray_notification(app, "attention", sound_kind, &info.title, &info.body);
-
-    // Only send macOS native notification if enabled
     if send_native {
         macos_notify::send(&info);
+    } else {
+        show_tray_notification(app, "attention", sound_kind, &info.title, &info.body);
     }
 }
 
@@ -399,7 +397,7 @@ struct FetchSettings {
 
 fn snapshot_fetch_settings(settings: &Settings) -> FetchSettings {
     FetchSettings {
-        notify: settings.notifications_enabled,
+        notify: settings.use_native_notifications,
         merged_hours: settings.merged_window_hours,
         show_merged: settings.show_recently_merged,
         closed_hours: settings.closed_window_hours,
@@ -645,12 +643,10 @@ fn check_workflow_attention(
             "workflow_failure"
         };
 
-        // Always show popup notification
-        show_tray_notification(app, "workflow", sound_kind, &info.title, &info.body);
-
-        // Only send macOS native notification if enabled
         if notify {
             macos_notify::send(&info);
+        } else {
+            show_tray_notification(app, "workflow", sound_kind, &info.title, &info.body);
         }
     }
 

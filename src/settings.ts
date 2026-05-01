@@ -41,7 +41,7 @@ const defaultNotifPrefs = (): NotificationPreferences => ({
 
 let _notificationSound: boolean = true;
 let _notificationVolume: number = 0.35;
-let _notificationsEnabled: boolean = true;
+let _useNativeNotifications: boolean = true;
 let _notifPrefsOwned: NotificationPreferences = defaultNotifPrefs();
 let _notifPrefsFollowed: NotificationPreferences = defaultNotifPrefs();
 let _notifyOnMerged: boolean = true;
@@ -64,7 +64,7 @@ export function loadNotifPrefsFromSettings(s: Settings) {
   _notificationSound = s.notification_sound ?? true;
   _notificationVolume = s.notification_volume ?? 0.35;
   _notificationDurationSecs = s.notification_duration_secs ?? 8;
-  _notificationsEnabled = s.notifications_enabled ?? true;
+  _useNativeNotifications = s.use_native_notifications ?? false;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
   _notifPrefsFollowed = { ...defaultNotifPrefs(), ...s.notification_prefs_followed };
   _notifyOnMerged = s.notify_on_merged ?? true;
@@ -108,7 +108,7 @@ export async function autoSaveSettings() {
 
   const updated: Settings = {
     poll_interval_secs: pollEl ? parseInt(pollEl.value) : currentSettings.poll_interval_secs,
-    notifications_enabled: _notificationsEnabled,
+    use_native_notifications: _useNativeNotifications,
     show_recently_merged: mergedEl?.checked ?? currentSettings.show_recently_merged,
     merged_window_hours: mergedHoursEl ? parseInt(mergedHoursEl.value) : currentSettings.merged_window_hours,
     show_closed: closedEl?.checked ?? currentSettings.show_closed,
@@ -349,18 +349,22 @@ export async function showSettings() {
       case "notifications":
         contentArea.innerHTML = `
           <div class="settings-section">
-            <div class="settings-section-title">Notification style</div>
-            <div class="settings-group">
-              <label class="settings-label">
-                <span>Sound</span>
-                <input type="checkbox" id="notif-sound" class="settings-toggle"${_notificationSound ? " checked" : ""} />
-              </label>
-            </div>
-            <div class="notif-volume-row${_notificationSound ? "" : " disabled"}" id="notif-volume-row">
-              <label class="notif-volume-label" for="notif-volume">Volume</label>
-              <input type="range" id="notif-volume" class="notif-volume-slider" min="0" max="100" value="${Math.round(_notificationVolume * 100)}" />
-              <button id="notif-volume-preview" class="notif-volume-preview" title="Preview sound">&#9654;</button>
-            </div>
+            <div class="settings-section-title">Notification type</div>
+            <div class="notif-mode-toggle" role="radiogroup" aria-label="Notification mode">
+            <button type="button" class="notif-mode-option${!_useNativeNotifications ? " active" : ""}" id="notif-mode-pronto" role="radio" aria-checked="${!_useNativeNotifications}">
+              <img src="/icon.png" class="notif-mode-icon notif-mode-icon-img" alt="Pronto" />
+              <span class="notif-mode-label">Custom</span>
+            </button>
+            <button type="button" class="notif-mode-option${_useNativeNotifications ? " active" : ""}" id="notif-mode-native" role="radio" aria-checked="${_useNativeNotifications}">
+              <svg class="notif-mode-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C9.24 2 7 4.24 7 7v5l-2 2v1h14v-1l-2-2V7c0-2.76-2.24-5-5-5zm0 20c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2z" fill="currentColor"/>
+              </svg>
+              <span class="notif-mode-label">Native</span>
+            </button>
+          </div>
+          </div>
+
+          <div class="settings-section">
             <div class="settings-group">
               <label class="settings-label">
                 <span>Duration</span>
@@ -375,14 +379,17 @@ export async function showSettings() {
                 </select>
               </label>
             </div>
-          </div>
-
-          <div class="notif-master-row">
-            <div>
-              <div class="notif-master-label">macOS notifications</div>
-              <div class="notif-master-hint">Also deliver native macOS notifications</div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <span>Sound</span>
+                <input type="checkbox" id="notif-sound" class="settings-toggle"${_notificationSound ? " checked" : ""} />
+              </label>
             </div>
-            <input type="checkbox" id="notif-master" class="settings-toggle notif-master-toggle"${_notificationsEnabled ? " checked" : ""} />
+            <div class="notif-volume-row${_notificationSound ? "" : " disabled"}" id="notif-volume-row">
+              <label class="notif-volume-label" for="notif-volume">Volume</label>
+              <input type="range" id="notif-volume" class="notif-volume-slider" min="0" max="100" value="${Math.round(_notificationVolume * 100)}" />
+              <button id="notif-volume-preview" class="notif-volume-preview" title="Preview sound">&#9654;</button>
+            </div>
           </div>
 
           <div class="notif-details" id="notif-details">
@@ -555,14 +562,19 @@ export async function showSettings() {
           });
         }
 
-        // Wire up macOS notifications toggle
-        const masterEl = document.getElementById("notif-master") as HTMLInputElement | null;
-        if (masterEl) {
-          masterEl.addEventListener("change", () => {
-            _notificationsEnabled = masterEl.checked;
-            autoSaveSettings();
-          });
-        }
+        // Wire up notification mode segmented control
+        const setNotifMode = (native: boolean) => {
+          _useNativeNotifications = native;
+          const pronto = document.getElementById("notif-mode-pronto");
+          const nativeBtn = document.getElementById("notif-mode-native");
+          pronto?.classList.toggle("active", !native);
+          pronto?.setAttribute("aria-checked", String(!native));
+          nativeBtn?.classList.toggle("active", native);
+          nativeBtn?.setAttribute("aria-checked", String(native));
+          autoSaveSettings();
+        };
+        document.getElementById("notif-mode-pronto")?.addEventListener("click", () => setNotifMode(false));
+        document.getElementById("notif-mode-native")?.addEventListener("click", () => setNotifMode(true));
 
         // Wire up owned/followed checkboxes
         type NotifKey = keyof NotificationPreferences;

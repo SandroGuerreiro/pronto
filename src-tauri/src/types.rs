@@ -100,8 +100,8 @@ fn default_notification_duration() -> u64 {
 pub struct Settings {
     #[serde(default = "default_poll_interval")]
     pub poll_interval_secs: u64,
-    #[serde(default = "default_true")]
-    pub notifications_enabled: bool,
+    #[serde(default)]
+    pub use_native_notifications: bool,
     #[serde(default = "default_true")]
     pub show_recently_merged: bool,
     #[serde(default = "default_merged_window")]
@@ -174,7 +174,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             poll_interval_secs: 60,
-            notifications_enabled: true,
+            use_native_notifications: false,
             show_recently_merged: true,
             merged_window_hours: 24,
             show_closed: false,

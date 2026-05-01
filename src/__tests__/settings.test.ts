@@ -101,7 +101,7 @@ function makeDefaultNotifPrefs(): NotificationPreferences {
 function makeSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     poll_interval_secs: 120,
-    notifications_enabled: true,
+    use_native_notifications: true,
     show_recently_merged: true,
     merged_window_hours: 24,
     show_closed: false,
@@ -196,7 +196,7 @@ beforeEach(() => {
 describe("loadNotifPrefsFromSettings", () => {
   it("loads all notification preferences from settings", () => {
     const settings = makeSettings({
-      notifications_enabled: false,
+      use_native_notifications: false,
       notification_prefs_owned: {
         ...makeDefaultNotifPrefs(),
         changes_requested: true,
@@ -223,7 +223,7 @@ describe("loadNotifPrefsFromSettings", () => {
     // Create settings with undefined-ish fields via partial
     const settings = {
       ...makeSettings(),
-      notifications_enabled: undefined,
+      use_native_notifications: undefined,
       notify_on_merged: undefined,
       notify_on_closed: undefined,
       homebrew_check_enabled: undefined,
@@ -242,7 +242,7 @@ describe("loadNotifPrefsFromSettings", () => {
     const settings = makeSettings({
       notification_prefs_owned: partialOwned,
       notification_prefs_followed: { approved: true } as NotificationPreferences,
-      notifications_enabled: false,
+      use_native_notifications: false,
       notify_on_merged: false,
       notify_on_closed: true,
       homebrew_check_enabled: true,
@@ -272,7 +272,7 @@ describe("loadNotifPrefsFromSettings", () => {
     expect(savedSettings.notification_prefs_followed.review_required).toBe(false);
 
     // Other module-level state
-    expect(savedSettings.notifications_enabled).toBe(false);
+    expect(savedSettings.use_native_notifications).toBe(false);
     expect(savedSettings.notify_on_merged).toBe(false);
     expect(savedSettings.notify_on_closed).toBe(true);
     expect(savedSettings.homebrew_check_enabled).toBe(true);
@@ -283,7 +283,7 @@ describe("loadNotifPrefsFromSettings", () => {
   it("uses default values for all undefined fields via nullish coalescing", async () => {
     const settings = {
       ...makeSettings(),
-      notifications_enabled: undefined,
+      use_native_notifications: undefined,
       notify_on_merged: undefined,
       notify_on_closed: undefined,
       homebrew_check_enabled: undefined,
@@ -299,7 +299,7 @@ describe("loadNotifPrefsFromSettings", () => {
     )?.[1]?.settings as Settings;
 
     // Defaults from nullish coalescing
-    expect(savedSettings.notifications_enabled).toBe(true);
+    expect(savedSettings.use_native_notifications).toBe(false);
     expect(savedSettings.notify_on_merged).toBe(true);
     expect(savedSettings.notify_on_closed).toBe(false);
     expect(savedSettings.homebrew_check_enabled).toBe(false);
@@ -399,7 +399,7 @@ describe("autoSaveSettings", () => {
 
   it("includes module-level notification state in saved settings", async () => {
     loadNotifPrefsFromSettings(makeSettings({
-      notifications_enabled: false,
+      use_native_notifications: false,
       notification_prefs_owned: {
         ...makeDefaultNotifPrefs(),
         approved: true,
@@ -415,7 +415,7 @@ describe("autoSaveSettings", () => {
       (c) => c[0] === "update_settings"
     )?.[1]?.settings as Settings;
 
-    expect(savedSettings.notifications_enabled).toBe(false);
+    expect(savedSettings.use_native_notifications).toBe(false);
     expect(savedSettings.notification_prefs_owned.approved).toBe(true);
     expect(savedSettings.notification_prefs_owned.checks_failed).toBe(true);
     expect(savedSettings.notify_on_merged).toBe(false);
@@ -428,7 +428,7 @@ describe("autoSaveSettings", () => {
     expect(mockInvoke).toHaveBeenCalledWith("update_settings", {
       settings: expect.objectContaining({
         poll_interval_secs: expect.any(Number),
-        notifications_enabled: expect.any(Boolean),
+        use_native_notifications: expect.any(Boolean),
         favorite_orgs: expect.any(Array),
         followed_users: expect.any(Array),
       }),
@@ -587,7 +587,7 @@ describe("showSettings", () => {
 
   it("notifications tab: renders master toggle and per-category checkboxes", async () => {
     loadNotifPrefsFromSettings(makeSettings({
-      notifications_enabled: true,
+      use_native_notifications: true,
       notification_prefs_owned: {
         ...makeDefaultNotifPrefs(),
         changes_requested: true,
@@ -600,11 +600,10 @@ describe("showSettings", () => {
     const notifTab = document.querySelector('[data-tab="notifications"]') as HTMLElement;
     notifTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("notif-master")).toBeTruthy();
+      expect(document.getElementById("notif-mode-pronto")).toBeTruthy();
     });
 
-    const masterEl = document.getElementById("notif-master") as HTMLInputElement;
-    expect(masterEl.checked).toBe(true);
+    expect(document.getElementById("notif-mode-native")?.classList.contains("active")).toBe(true);
 
     const ownedChanges = document.getElementById("notif-owned-changes_requested") as HTMLInputElement;
     expect(ownedChanges.checked).toBe(true);
@@ -620,7 +619,7 @@ describe("showSettings", () => {
     const notifTab = document.querySelector('[data-tab="notifications"]') as HTMLElement;
     notifTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("notif-master")).toBeTruthy();
+      expect(document.getElementById("notif-mode-pronto")).toBeTruthy();
     });
 
     mockInvoke.mockClear();
@@ -639,13 +638,13 @@ describe("showSettings", () => {
   });
 
   it("notifications tab: toggling master notification toggle auto-saves", async () => {
-    loadNotifPrefsFromSettings(makeSettings({ notifications_enabled: true }));
+    loadNotifPrefsFromSettings(makeSettings({ use_native_notifications: true }));
     await showSettings();
 
     const notifTab = document.querySelector('[data-tab="notifications"]') as HTMLElement;
     notifTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("notif-master")).toBeTruthy();
+      expect(document.getElementById("notif-mode-pronto")).toBeTruthy();
     });
 
     mockInvoke.mockClear();
@@ -654,14 +653,13 @@ describe("showSettings", () => {
       return Promise.resolve(undefined);
     });
 
-    const masterEl = document.getElementById("notif-master") as HTMLInputElement;
-    masterEl.checked = false;
-    masterEl.dispatchEvent(new Event("change"));
+    const prontoBtn = document.getElementById("notif-mode-pronto") as HTMLButtonElement;
+    prontoBtn.click();
 
     await vi.waitFor(() => {
       const updateCall = mockInvoke.mock.calls.find((c) => c[0] === "update_settings");
       expect(updateCall).toBeTruthy();
-      expect((updateCall![1] as { settings: Settings }).settings.notifications_enabled).toBe(false);
+      expect((updateCall![1] as { settings: Settings }).settings.use_native_notifications).toBe(false);
     });
   });
 
@@ -1143,7 +1141,7 @@ describe("showSettings", () => {
     const notifTab = document.querySelector('[data-tab="notifications"]') as HTMLElement;
     notifTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("notif-master")).toBeTruthy();
+      expect(document.getElementById("notif-mode-pronto")).toBeTruthy();
     });
 
     expect(mockState.setSettingsNavIndex).toHaveBeenCalledWith(1);

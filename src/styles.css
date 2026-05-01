@@ -1301,7 +1301,7 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 .settings-group.settings-group-focus,
-.notif-master-row.settings-group-focus {
+.notif-mode-toggle.settings-group-focus {
   outline: 1px solid rgba(56, 139, 253, 0.5);
   outline-offset: 2px;
   border-radius: 4px;
@@ -1453,15 +1453,54 @@ details[open] > .section-header .accordion-chevron::before {
   padding-top: 0;
 }
 
-.notif-master-row {
+.notif-mode-toggle {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  padding: var(--space-5) 14px;
-  margin-bottom: var(--space-3);
+  padding: 4px;
+  gap: 4px;
+}
+
+.notif-mode-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 8px;
+  border-radius: calc(var(--radius-lg) - 2px);
+  border: none;
+  background: transparent;
+  color: var(--color-neutral);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+
+.notif-mode-option.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+.notif-mode-option:focus-visible {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: 2px;
+}
+
+.notif-mode-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.notif-mode-icon-img {
+  border-radius: 5px;
+  object-fit: contain;
+}
+
+.notif-mode-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .notif-volume-row {
@@ -1530,17 +1569,6 @@ details[open] > .section-header .accordion-chevron::before {
   color: var(--text-secondary);
 }
 
-.notif-master-label {
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.notif-master-hint {
-  font-size: var(--text-sm);
-  color: var(--color-neutral);
-  margin-top: var(--space-1);
-}
 
 .notif-inline-select {
   padding: 3px 8px;
@@ -1568,25 +1596,11 @@ details[open] > .section-header .accordion-chevron::before {
   color: var(--text-primary);
 }
 
-.notif-master-toggle {
-  width: 40px;
-  height: 22px;
-  flex-shrink: 0;
-}
-
-.notif-master-toggle::after {
-  width: 18px;
-  height: 18px;
-}
-
-.notif-master-toggle:checked::after {
-  transform: translateX(18px);
-}
 
 .notif-details {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 24px;
   transition: opacity 0.2s;
 }
 

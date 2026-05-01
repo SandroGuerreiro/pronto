@@ -12,24 +12,24 @@ export interface HomebrewStatus {
   checked_at: string;
 }
 
-export interface Reviews {
+interface Reviews {
   totalCount: number;
 }
 
-export interface MergeQueueEntry {
+interface MergeQueueEntry {
   position: number;
 }
 
-export interface Owner {
+interface Owner {
   login: string;
 }
 
-export interface Repository {
+interface Repository {
   name: string;
   owner: Owner;
 }
 
-export interface Comments {
+interface Comments {
   totalCount: number;
 }
 
@@ -45,7 +45,7 @@ interface CommitNode {
   commit: Commit;
 }
 
-export interface CommitConnection {
+interface CommitConnection {
   nodes: CommitNode[];
 }
 
@@ -54,7 +54,7 @@ interface ReviewThread {
   comments: { totalCount: number };
 }
 
-export interface ReviewThreads {
+interface ReviewThreads {
   nodes: ReviewThread[];
 }
 
@@ -126,7 +126,7 @@ export interface DeviceCodeResponse {
   interval: number;
 }
 
-export interface HiddenPr {
+interface HiddenPr {
   url: string;
   title: string;
 }
@@ -144,7 +144,7 @@ export interface NotificationPreferences {
 
 export interface Settings {
   poll_interval_secs: number;
-  notifications_enabled: boolean;
+  use_native_notifications: boolean;
   show_recently_merged: boolean;
   merged_window_hours: number;
   show_closed: boolean;

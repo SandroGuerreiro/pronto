@@ -1,7 +1,7 @@
 // Settings keyboard navigation — pure helpers used by main.ts.
 
 const SETTINGS_TABS = ["general", "notifications", "workflow", "shortcuts", "updates", "subscriptions"] as const;
-export type SettingsTabName = typeof SETTINGS_TABS[number];
+type SettingsTabName = typeof SETTINGS_TABS[number];
 
 /** Map a number key ("1"-"6") to a settings tab name. */
 export function tabForNumber(key: string): SettingsTabName | null {
@@ -22,8 +22,8 @@ export function getVisibleGroups(container: HTMLElement): HTMLElement[] {
   return [...all].filter((el) => el.style.display !== "none");
 }
 
-export type ControlType = "checkbox" | "select" | "input" | "button";
-export interface GroupControl {
+type ControlType = "checkbox" | "select" | "input" | "button";
+interface GroupControl {
   type: ControlType;
   element: HTMLElement;
 }

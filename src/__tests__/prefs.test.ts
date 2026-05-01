@@ -38,7 +38,7 @@ vi.mock("../state", () => mockState);
 function makeSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     poll_interval_secs: 120,
-    notifications_enabled: true,
+    use_native_notifications: true,
     show_recently_merged: true,
     merged_window_hours: 24,
     show_closed: false,
