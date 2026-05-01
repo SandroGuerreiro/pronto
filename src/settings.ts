@@ -57,9 +57,13 @@ let _popupScreen: string = "primary";
 // ── Auto-follow PRs you commented on ──────────────────────────────────────
 let _autoFollowCommentedPrs: boolean = true;
 
+// ── Notification duration ─────────────────────────────────────────────────
+let _notificationDurationSecs: number = 8;
+
 export function loadNotifPrefsFromSettings(s: Settings) {
   _notificationSound = s.notification_sound ?? true;
   _notificationVolume = s.notification_volume ?? 0.35;
+  _notificationDurationSecs = s.notification_duration_secs ?? 8;
   _notificationsEnabled = s.notifications_enabled ?? true;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
   _notifPrefsFollowed = { ...defaultNotifPrefs(), ...s.notification_prefs_followed };
@@ -136,6 +140,7 @@ export async function autoSaveSettings() {
     popup_screen: _popupScreen,
     notification_sound: _notificationSound,
     notification_volume: _notificationVolume,
+    notification_duration_secs: _notificationDurationSecs,
     auto_follow_commented_prs: _autoFollowCommentedPrs,
   };
 
@@ -343,18 +348,33 @@ export async function showSettings() {
 
       case "notifications":
         contentArea.innerHTML = `
-          <div class="notif-master-row">
-            <div>
-              <div class="notif-master-label">Notification sound</div>
-              <div class="notif-master-hint">Play a sound when notifications arrive</div>
+          <div class="settings-section">
+            <div class="settings-section-title">Notification style</div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <span>Sound</span>
+                <input type="checkbox" id="notif-sound" class="settings-toggle"${_notificationSound ? " checked" : ""} />
+              </label>
             </div>
-            <input type="checkbox" id="notif-sound" class="settings-toggle notif-master-toggle"${_notificationSound ? " checked" : ""} />
-          </div>
-
-          <div class="notif-volume-row${_notificationSound ? "" : " disabled"}" id="notif-volume-row">
-            <label class="notif-volume-label" for="notif-volume">Volume</label>
-            <input type="range" id="notif-volume" class="notif-volume-slider" min="0" max="100" value="${Math.round(_notificationVolume * 100)}" />
-            <button id="notif-volume-preview" class="notif-volume-preview" title="Preview sound">&#9654;</button>
+            <div class="notif-volume-row${_notificationSound ? "" : " disabled"}" id="notif-volume-row">
+              <label class="notif-volume-label" for="notif-volume">Volume</label>
+              <input type="range" id="notif-volume" class="notif-volume-slider" min="0" max="100" value="${Math.round(_notificationVolume * 100)}" />
+              <button id="notif-volume-preview" class="notif-volume-preview" title="Preview sound">&#9654;</button>
+            </div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <span>Duration</span>
+                <select id="notif-duration" class="notif-inline-select">
+                  <option value="3"${_notificationDurationSecs === 3 ? " selected" : ""}>3s</option>
+                  <option value="5"${_notificationDurationSecs === 5 ? " selected" : ""}>5s</option>
+                  <option value="8"${_notificationDurationSecs === 8 ? " selected" : ""}>8s</option>
+                  <option value="10"${_notificationDurationSecs === 10 ? " selected" : ""}>10s</option>
+                  <option value="15"${_notificationDurationSecs === 15 ? " selected" : ""}>15s</option>
+                  <option value="20"${_notificationDurationSecs === 20 ? " selected" : ""}>20s</option>
+                  <option value="30"${_notificationDurationSecs === 30 ? " selected" : ""}>30s</option>
+                </select>
+              </label>
+            </div>
           </div>
 
           <div class="notif-master-row">
@@ -511,6 +531,18 @@ export async function showSettings() {
           volumeEl.addEventListener("change", () => {
             _notificationVolume = parseInt(volumeEl.value) / 100;
             autoSaveSettings();
+          });
+        }
+
+        // Wire up duration select
+        const durationEl = document.getElementById("notif-duration") as HTMLSelectElement | null;
+        if (durationEl) {
+          durationEl.addEventListener("change", () => {
+            const parsed = parseInt(durationEl.value, 10);
+            if (!Number.isNaN(parsed)) {
+              _notificationDurationSecs = parsed;
+              autoSaveSettings();
+            }
           });
         }
 

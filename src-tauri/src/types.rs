@@ -92,6 +92,10 @@ fn default_popup_screen() -> String {
     "primary".to_string()
 }
 
+fn default_notification_duration() -> u64 {
+    8
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_poll_interval")]
@@ -160,6 +164,8 @@ pub struct Settings {
     pub notification_sound: bool,
     #[serde(default = "default_volume")]
     pub notification_volume: f64,
+    #[serde(default = "default_notification_duration")]
+    pub notification_duration_secs: u64,
     #[serde(default)]
     pub last_seen_version: Option<String>,
 }
@@ -203,6 +209,7 @@ impl Default for Settings {
             popup_screen: default_popup_screen(),
             notification_sound: true,
             notification_volume: 0.35,
+            notification_duration_secs: 8,
             last_seen_version: None,
         }
     }

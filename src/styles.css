@@ -1542,6 +1542,32 @@ details[open] > .section-header .accordion-chevron::before {
   margin-top: var(--space-1);
 }
 
+.notif-inline-select {
+  padding: 3px 8px;
+  background-color: var(--surface-hover);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: border-color var(--duration-fast);
+}
+
+.notif-inline-select:focus-visible {
+  outline: 1px solid rgba(56, 139, 253, 0.5);
+  outline-offset: -1px;
+  border-color: var(--border-strong);
+}
+
+.notif-inline-select option {
+  background-color: var(--surface-1);
+  color: var(--text-primary);
+}
+
 .notif-master-toggle {
   width: 40px;
   height: 22px;

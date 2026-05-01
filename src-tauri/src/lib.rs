@@ -904,13 +904,17 @@ fn show_tray_notification(
     title: &str,
     message: &str,
 ) {
-    // Play sound if enabled in settings
-    if let Some(state) = app.try_state::<AppState>() {
-        let settings = state.settings.lock().unwrap();
-        if settings.notification_sound {
-            let sound_name = sound_for_kind(sound_kind);
-            play_system_sound(app, sound_name, settings.notification_volume as f32);
-        }
+    let (play_sound, sound_volume, user_duration_ms) = app
+        .try_state::<AppState>()
+        .map(|s| {
+            let g = s.settings.lock().unwrap();
+            (g.notification_sound, g.notification_volume as f32, g.notification_duration_secs * 1000)
+        })
+        .unwrap_or((false, 0.0, 8000));
+
+    if play_sound {
+        let sound_name = sound_for_kind(sound_kind);
+        play_system_sound(app, sound_name, sound_volume);
     }
 
     let data = NotifyData {
@@ -922,7 +926,7 @@ fn show_tray_notification(
     let timeout_ms: u64 = match kind {
         "error" => 7000,
         "brew_update" => 8000,
-        _ => 3000,
+        _ => user_duration_ms,
     };
 
     // Window creation and positioning must happen on the main thread —

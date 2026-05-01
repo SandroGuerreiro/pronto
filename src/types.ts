@@ -176,6 +176,7 @@ export interface Settings {
   popup_screen?: string;
   notification_sound: boolean;
   notification_volume: number;
+  notification_duration_secs: number;
 }
 
 export const DEFAULT_KEYBINDINGS: Record<string, string> = {
