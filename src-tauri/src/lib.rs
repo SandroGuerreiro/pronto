@@ -997,6 +997,42 @@ fn get_brew_status(app: tauri::AppHandle) -> Option<homebrew::HomebrewStatus> {
 }
 
 #[tauri::command]
+async fn check_brew_now(app: tauri::AppHandle) -> Result<homebrew::HomebrewStatus, String> {
+    let status = tokio::task::spawn_blocking(homebrew::check_pronto_update_sync)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(state) = app.try_state::<AppState>() {
+        let should_notify = {
+            let prev_status = state.last_brew_status.lock().unwrap();
+            let prev_update_available = prev_status.as_ref().map(|s| s.update_available).unwrap_or(false);
+            let prev_notified = *state.last_notified_brew_update.lock().unwrap();
+            !prev_notified && status.update_available && !prev_update_available
+        };
+
+        if should_notify {
+            show_tray_notification(
+                &app,
+                "brew_update",
+                "attention",
+                "Homebrew Update Available",
+                &format!("Pronto {} is available", status.latest_version),
+            );
+            *state.last_notified_brew_update.lock().unwrap() = true;
+        }
+
+        if !status.update_available {
+            *state.last_notified_brew_update.lock().unwrap() = false;
+        }
+
+        *state.last_brew_status.lock().unwrap() = Some(status.clone());
+    }
+
+    let _ = app.emit("brew-updated", status.clone());
+    Ok(status)
+}
+
+#[tauri::command]
 async fn update_brew(app: tauri::AppHandle) -> Result<(), String> {
     use std::process::Command;
 
@@ -1491,6 +1527,7 @@ pub fn run() {
             get_notification_data,
             dismiss_notification,
             get_brew_status,
+            check_brew_now,
             update_brew,
             fetch_releases,
             check_version_update,

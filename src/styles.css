@@ -1348,6 +1348,29 @@ details[open] > .section-header .accordion-chevron::before {
   color: var(--text-primary);
 }
 
+.settings-action-btn {
+  flex-shrink: 0;
+  padding: var(--space-2) 12px;
+  background-color: var(--surface-hover);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: background-color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.settings-action-btn:hover:not(:disabled) {
+  background-color: var(--surface-active);
+  border-color: var(--border-strong);
+}
+
+.settings-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .settings-toggle {
   width: 36px;
   height: 20px;

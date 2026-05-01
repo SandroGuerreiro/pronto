@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings, NotificationPreferences } from "./types";
+import type { Settings, NotificationPreferences, HomebrewStatus } from "./types";
 import {
   favoriteOrgs,
   favoriteRepos,
@@ -704,7 +704,16 @@ export async function showSettings() {
                 <option value="86400"${_brewCheckIntervalSecs === 86400 ? " selected" : ""}>24 hours</option>
               </select>
             </div>
-            <div class="settings-group" id="brew-note" style="margin-top: 12px; padding: 8px; background: rgba(107, 114, 128, 0.1); border-radius: 4px; font-size: 12px; color: #888;">
+            <div class="settings-group" style="margin-top: 12px;">
+              <label class="settings-label">
+                <div>
+                  <span>Check now</span>
+                  <div class="settings-hint" id="brew-check-result">Manually check for a new version</div>
+                </div>
+                <button id="btn-check-brew" class="settings-action-btn">Check</button>
+              </label>
+            </div>
+            <div class="settings-group" id="brew-note" style="margin-top: 4px; padding: 8px; background: rgba(107, 114, 128, 0.1); border-radius: 4px; font-size: 12px; color: #888;">
               <div>Requires Homebrew installation. Updates appear in the footer.</div>
             </div>
           </div>
@@ -720,6 +729,42 @@ export async function showSettings() {
           const value = parseInt((e.target as HTMLSelectElement).value);
           _brewCheckIntervalSecs = value;
           autoSaveSettings();
+        });
+        document.getElementById("btn-check-brew")!.addEventListener("click", async () => {
+          const btn = document.getElementById("btn-check-brew") as HTMLButtonElement;
+          const result = document.getElementById("brew-check-result")!;
+
+          if (btn.dataset.action === "install") {
+            btn.disabled = true;
+            btn.textContent = "Installing…";
+            invoke("update_brew").catch(() => {
+              btn.disabled = false;
+              btn.textContent = "Install";
+            });
+            return;
+          }
+
+          btn.disabled = true;
+          btn.textContent = "Checking…";
+          result.textContent = "Checking for updates…";
+          try {
+            const status = await invoke<HomebrewStatus>("check_brew_now");
+            if (!status.available) {
+              result.textContent = "Homebrew not found";
+              btn.textContent = "Check";
+            } else if (status.update_available) {
+              result.textContent = `v${status.latest_version} is available (installed: v${status.installed_version})`;
+              btn.textContent = "Install";
+              btn.dataset.action = "install";
+            } else {
+              result.textContent = "Up to date";
+              btn.textContent = "Check";
+            }
+          } catch {
+            result.textContent = "Check failed — is Homebrew installed?";
+            btn.textContent = "Check";
+          }
+          btn.disabled = false;
         });
         break;
 
