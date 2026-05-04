@@ -133,8 +133,8 @@ export function renderActiveTab() {
     } else {
       setShowAuthorInCards(true);
       const body = groupByRepository
-        ? renderAccordionContent(prs)
-        : renderFlatList(prs);
+        ? renderAccordionContent(prs, false, true)
+        : renderFlatList(prs, true);
       html += body || '<div class="empty">No review requests</div>';
       setShowAuthorInCards(false);
     }

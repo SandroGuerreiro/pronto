@@ -829,7 +829,7 @@ pub async fn fetch_review_requests(
 ) -> Result<Vec<ReviewRequestPr>, Box<dyn std::error::Error + Send + Sync>> {
     let query = GraphQLQuery {
         query: r#"{
-  reviewRequests: search(query: "review-requested:@me is:open is:pr", type: ISSUE, first: 20) {
+  reviewRequests: search(query: "review-requested:@me is:open is:pr -is:draft", type: ISSUE, first: 20) {
     nodes {
       ... on PullRequest {
         title url state merged isDraft createdAt
