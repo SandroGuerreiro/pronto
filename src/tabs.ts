@@ -432,7 +432,7 @@ export function bindContentEvents(container: HTMLElement) {
     card.addEventListener("click", () => {
       const url = card.getAttribute("data-url");
       if (url) openUrl(url);
-      if (url && autoFollowedPrUrls.has(url)) {
+      if (url && card.classList.contains("auto-followed-new")) {
         autoFollowedPrUrls.delete(url);
         card.classList.remove("auto-followed-new");
       }
@@ -497,7 +497,7 @@ export function bindContentEvents(container: HTMLElement) {
       if (hoverActive) {
         hoverActive = false;
         const url = card.getAttribute("data-url");
-        if (url && autoFollowedPrUrls.has(url)) {
+        if (url && card.classList.contains("auto-followed-new")) {
           autoFollowedPrUrls.delete(url);
           card.classList.remove("auto-followed-new");
         }

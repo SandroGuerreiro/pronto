@@ -140,7 +140,7 @@ export function renderPrCard(pr: PullRequest, minimal = false): string {
   }
 
   const isAttention = currentAttentionUrls.includes(pr.url);
-  const autoFollowedClass = autoFollowedPrUrls.has(pr.url) ? " auto-followed-new" : "";
+  const autoFollowedClass = !minimal && autoFollowedPrUrls.has(pr.url) ? " auto-followed-new" : "";
 
   return `
     <div class="pr-card${isAttention ? " attention" : ""}${autoFollowedClass}" data-url="${pr.url}" data-title="${pr.title.replace(/"/g, "&quot;")}">

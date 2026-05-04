@@ -333,7 +333,7 @@ function setFocus(index: number) {
     if (url && currentResult?.element_changes) {
       delete currentResult.element_changes[url];
     }
-    if (url) autoFollowedPrUrls.delete(url);
+    if (url && el.classList.contains("auto-followed-new")) autoFollowedPrUrls.delete(url);
     el.classList.remove("auto-followed-new");
     el.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
       .forEach((e) => e.classList.remove("highlight-attention"));
