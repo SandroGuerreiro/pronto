@@ -420,7 +420,7 @@ body {
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--text-primary);
-  background-color: var(--color-attention);
+  background-color: var(--color-danger);
   border-radius: var(--radius-lg);
   animation: badge-pulse var(--duration-pulse) ease-in-out infinite;
 }
@@ -428,6 +428,14 @@ body {
 @keyframes badge-pulse {
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.1); }
+}
+
+.tab-badge.tab-badge--count {
+  animation: none;
+}
+
+.nav-item.has-unseen-requests {
+  background: var(--color-attention-bg);
 }
 
 /* ============================================================

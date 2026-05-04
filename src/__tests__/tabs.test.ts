@@ -25,6 +25,7 @@ const { mockState } = vi.hoisted(() => {
     pendingUnhideOrgs: new Set<string>(),
     pendingUnhideRepos: new Set<string>(),
     autoFollowedPrUrls: new Set<string>(),
+    unseenRequestUrls: new Set<string>(),
     searchQuery: "",
     focusIndex: -1,
     setCurrentAttentionUrls: vi.fn((urls: string[]) => { mockState.currentAttentionUrls = urls; }),
@@ -50,6 +51,8 @@ const { mockState } = vi.hoisted(() => {
     setViewerLogin: vi.fn(),
     setKeybindings: vi.fn(),
     clearPendingUnhide: vi.fn(),
+    addUnseenRequestUrl: vi.fn((url: string) => { mockState.unseenRequestUrls.add(url); }),
+    removeUnseenRequestUrl: vi.fn((url: string) => { mockState.unseenRequestUrls.delete(url); }),
     showRecentlyMerged: false,
     showClosed: false,
     sidebarFocus: null as string | null,
@@ -120,6 +123,7 @@ function makeFetchResult(overrides: Partial<FetchResult> = {}): FetchResult {
     workflow_status: null,
     viewer_login: "me",
     viewer_avatar_url: "",
+    review_requests: [],
     ...overrides,
   };
 }
@@ -129,6 +133,7 @@ function setupDom() {
     <div id="content"></div>
     <div id="main-nav">
       <button class="nav-item" data-tab="mine"></button>
+      <button class="nav-item" data-tab="requests"></button>
       <button class="nav-item" data-tab="followed"></button>
       <button class="nav-item" data-tab="merged"></button>
       <button class="nav-item" data-tab="closed"></button>
@@ -153,6 +158,7 @@ function resetMockState() {
   mockState.collapsedAccordions.clear();
   mockState.searchQuery = "";
   mockState.focusIndex = -1;
+  mockState.unseenRequestUrls.clear();
 }
 
 /** Query focusable items using the same selector as getFocusables() in main.ts */
@@ -342,6 +348,105 @@ describe("renderActiveTab — closed", () => {
     const html = document.getElementById("content")!.innerHTML;
     expect(html).toContain("Owned");
     expect(html).toContain("Following");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderActiveTab — Requests tab
+// ---------------------------------------------------------------------------
+
+describe("renderActiveTab — requests", () => {
+  it("renders empty state when no review requests", () => {
+    mockState.activeTab = "requests";
+    mockState.currentResult = makeFetchResult();
+    renderActiveTab();
+    expect(document.getElementById("content")!.innerHTML).toContain("No review requests");
+  });
+
+  it("renders PR cards for review requests", () => {
+    const pr = makePr({ url: "https://github.com/org/repo/pull/10" });
+    mockState.activeTab = "requests";
+    mockState.currentResult = makeFetchResult({ review_requests: [pr] });
+    renderActiveTab();
+    const cards = document.querySelectorAll(".pr-card");
+    expect(cards.length).toBe(1);
+  });
+
+  it("filters out review requests that are in followedPrs", () => {
+    const followed = makePr({ url: "https://github.com/org/repo/pull/1" });
+    const unfollowed = makePr({ url: "https://github.com/org/repo/pull/2" });
+    mockState.followedPrs = new Set(["https://github.com/org/repo/pull/1"]);
+    mockState.activeTab = "requests";
+    mockState.currentResult = makeFetchResult({ review_requests: [followed, unfollowed] });
+    renderActiveTab();
+    const cards = document.querySelectorAll(".pr-card");
+    expect(cards.length).toBe(1);
+    expect(cards[0].getAttribute("data-url")).toBe("https://github.com/org/repo/pull/2");
+  });
+
+  it("renders all review requests when none are followed", () => {
+    const prs = [
+      makePr({ url: "https://github.com/org/repo/pull/3" }),
+      makePr({ url: "https://github.com/org/repo/pull/4" }),
+    ];
+    mockState.activeTab = "requests";
+    mockState.currentResult = makeFetchResult({ review_requests: prs });
+    renderActiveTab();
+    expect(document.querySelectorAll(".pr-card").length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateTabBadges — requests tab badge
+// ---------------------------------------------------------------------------
+
+describe("updateTabBadges — requests tab", () => {
+  it("uses tab-badge--count class (no pulse) for requests badge", () => {
+    const pr = makePr({ url: "https://github.com/org/repo/pull/7" });
+    mockState.currentResult = makeFetchResult({ review_requests: [pr] });
+    updateTabBadges();
+    const badge = document.querySelector('[data-tab="requests"] .tab-badge')!;
+    expect(badge).toBeTruthy();
+    expect(badge.classList.contains("tab-badge--count")).toBe(true);
+  });
+
+  it("shows count of non-followed review requests in badge", () => {
+    const prs = [
+      makePr({ url: "https://github.com/org/repo/pull/7" }),
+      makePr({ url: "https://github.com/org/repo/pull/8" }),
+    ];
+    mockState.followedPrs = new Set(["https://github.com/org/repo/pull/8"]);
+    mockState.currentResult = makeFetchResult({ review_requests: prs });
+    updateTabBadges();
+    const badge = document.querySelector('[data-tab="requests"] .tab-badge');
+    expect(badge!.textContent).toBe("1");
+  });
+
+  it("removes badge when all review requests are in followedPrs", () => {
+    const pr = makePr({ url: "https://github.com/org/repo/pull/9" });
+    mockState.followedPrs = new Set(["https://github.com/org/repo/pull/9"]);
+    mockState.currentResult = makeFetchResult({ review_requests: [pr] });
+    updateTabBadges();
+    expect(document.querySelector('[data-tab="requests"] .tab-badge')).toBeNull();
+  });
+
+  it("adds has-unseen-requests class when unseenRequestUrls is non-empty", () => {
+    const pr = makePr({ url: "https://github.com/org/repo/pull/11" });
+    mockState.currentResult = makeFetchResult({ review_requests: [pr] });
+    mockState.unseenRequestUrls = new Set(["https://github.com/org/repo/pull/11"]);
+    updateTabBadges();
+    const btn = document.querySelector('[data-tab="requests"]')!;
+    expect(btn.classList.contains("has-unseen-requests")).toBe(true);
+  });
+
+  it("removes has-unseen-requests class when unseenRequestUrls is empty", () => {
+    const pr = makePr({ url: "https://github.com/org/repo/pull/12" });
+    mockState.currentResult = makeFetchResult({ review_requests: [pr] });
+    mockState.unseenRequestUrls = new Set();
+    const btn = document.querySelector('[data-tab="requests"]')!;
+    btn.classList.add("has-unseen-requests");
+    updateTabBadges();
+    expect(btn.classList.contains("has-unseen-requests")).toBe(false);
   });
 });
 
@@ -1316,5 +1421,30 @@ describe("updateFollowFilterBadges — badge lifecycle", () => {
     // Bob has no attention PRs — no badge
     const bobBtn = document.querySelector('.follow-filter-btn[data-filter="bob"]')!;
     expect(bobBtn.querySelector(".tab-badge")).toBeNull();
+  });
+});
+
+describe("renderActiveTab — requests tab", () => {
+  beforeEach(() => {
+    setupDom();
+    mockState.activeTab = "requests";
+    mockState.currentResult = makeFetchResult({
+      review_requests: [
+        makePr({ url: "https://github.com/org/repo/pull/99", title: "Review me" }),
+      ],
+    });
+  });
+
+  it("renders review request PR cards", () => {
+    renderActiveTab();
+    const content = document.getElementById("content")!;
+    expect(content.innerHTML).toContain("Review me");
+  });
+
+  it("renders empty state when no review requests", () => {
+    mockState.currentResult = makeFetchResult({ review_requests: [] });
+    renderActiveTab();
+    const content = document.getElementById("content")!;
+    expect(content.innerHTML).toContain("No review requests");
   });
 });

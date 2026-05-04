@@ -51,6 +51,11 @@ export let searchQuery: string = "";
 // ── Auto-followed PRs (session-only highlight, cleared on focus/click) ─────────
 export const autoFollowedPrUrls = new Set<string>();
 
+// ── Unseen review requests (session-only highlight, cleared on hover) ────────
+export const unseenRequestUrls = new Set<string>();
+export function addUnseenRequestUrl(url: string) { unseenRequestUrls.add(url); }
+export function removeUnseenRequestUrl(url: string) { unseenRequestUrls.delete(url); }
+
 // ── Setters ───────────────────────────────────────────────────────────────────
 export function setCurrentAttentionUrls(urls: string[]) { currentAttentionUrls = urls; }
 export function setCurrentResult(r: FetchResult | null) { currentResult = r; }

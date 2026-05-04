@@ -97,7 +97,7 @@ pub struct MergeQueueEntry {
     pub position: i32,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct Reviews {
     #[serde(rename = "totalCount")]
     pub total_count: i32,
@@ -115,7 +115,7 @@ pub struct CommentNode {
     pub author: CommentAuthor,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct Comments {
     #[serde(rename = "totalCount")]
     pub total_count: i32,
@@ -145,7 +145,7 @@ impl Comments {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ReviewThreads {
     pub nodes: Vec<ReviewThread>,
 }
@@ -172,7 +172,7 @@ pub struct ReviewThreadComment {
     pub author: Option<Owner>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct CommitConnection {
     pub nodes: Vec<CommitNode>,
 }
@@ -323,6 +323,9 @@ pub struct FetchResult {
     pub commented_pr_urls: Vec<String>,
     pub viewer_login: String,
     pub viewer_avatar_url: String,
+    pub review_requests: Vec<PullRequest>,
+    #[serde(skip)]
+    pub review_requests_raw: Vec<ReviewRequestPr>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -355,6 +358,38 @@ pub struct Release {
     pub body: String,
     pub published_at: String,
     pub html_url: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ViewerReview {
+    pub state: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ReviewRequestPr {
+    pub title: String,
+    pub url: String,
+    pub state: String,
+    pub merged: bool,
+    #[serde(rename = "isDraft")]
+    pub is_draft: bool,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    pub repository: Repository,
+    pub author: Owner,
+    #[serde(rename = "viewerLatestReview")]
+    pub viewer_latest_review: Option<ViewerReview>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ReviewRequestSearchResult {
+    nodes: Vec<ReviewRequestPr>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ReviewRequestData {
+    #[serde(rename = "reviewRequests")]
+    review_requests: ReviewRequestSearchResult,
 }
 
 async fn fetch_prs_for_author(
@@ -766,6 +801,87 @@ fn is_pr_older_than_48h(pr: &PullRequest) -> bool {
     false
 }
 
+fn review_request_to_pr(rr: ReviewRequestPr) -> PullRequest {
+    PullRequest {
+        title: rr.title,
+        url: rr.url,
+        state: rr.state,
+        merged: rr.merged,
+        is_draft: rr.is_draft,
+        repository: rr.repository,
+        merge_queue_entry: None,
+        review_decision: None,
+        created_at: rr.created_at,
+        merged_at: None,
+        closed_at: None,
+        merge_state_status: None,
+        reviews: Reviews::default(),
+        comments: Comments::default(),
+        review_threads: ReviewThreads::default(),
+        commits: CommitConnection::default(),
+        author: rr.author,
+    }
+}
+
+pub async fn fetch_review_requests(
+    client: &reqwest::Client,
+    token: &str,
+) -> Result<Vec<ReviewRequestPr>, Box<dyn std::error::Error + Send + Sync>> {
+    let query = GraphQLQuery {
+        query: r#"{
+  reviewRequests: search(query: "review-requested:@me is:open is:pr", type: ISSUE, first: 20) {
+    nodes {
+      ... on PullRequest {
+        title url state merged isDraft createdAt
+        repository { name owner { login } }
+        author { login }
+        viewerLatestReview { state }
+      }
+    }
+  }
+}"#
+        .to_string(),
+    };
+
+    let http_response = client
+        .post("https://api.github.com/graphql")
+        .bearer_auth(token)
+        .header(USER_AGENT, "pronto")
+        .json(&query)
+        .send()
+        .await?;
+
+    let status = http_response.status();
+    let raw = http_response.text().await?;
+
+    if !status.is_success() {
+        eprintln!("[pronto] Review requests API returned {status}: {raw}");
+        return Err(format!("GitHub API returned {status}").into());
+    }
+
+    let resp: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
+        eprintln!("[pronto] Review requests parse error: {e}\n[pronto] Response body: {raw}");
+        e
+    })?;
+
+    if let Some(errors) = resp.get("errors").and_then(|v| v.as_array()) {
+        let msgs: Vec<String> = errors
+            .iter()
+            .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from))
+            .collect();
+        eprintln!("[pronto] Review requests GraphQL errors: {}", msgs.join("; "));
+    }
+
+    let data: ReviewRequestData = serde_json::from_value(resp["data"].clone()).map_err(|e| {
+        eprintln!(
+            "[pronto] Review requests deserialize error: {e}\n[pronto] data: {}",
+            resp["data"]
+        );
+        e
+    })?;
+    Ok(data.review_requests.nodes)
+}
+
 async fn fetch_prs_by_url(
     client: &reqwest::Client,
     token: &str,
@@ -925,11 +1041,16 @@ pub async fn fetch_all_prs(
         .await
         .unwrap_or_default();
 
-    // Fetch specifically followed PRs
+    // Fetch specifically followed PRs and review requests in parallel
+    let (followed_pr_result, raw_review_requests) = tokio::join!(
+        fetch_prs_by_url(&client, token, followed_prs),
+        fetch_review_requests(&client, token),
+    );
     let (followed_pr_open, followed_pr_merged, followed_pr_closed) =
-        fetch_prs_by_url(&client, token, followed_prs)
-            .await
-            .unwrap_or_default();
+        followed_pr_result.unwrap_or_default();
+    let raw_review_requests = raw_review_requests.unwrap_or_default();
+    let review_requests: Vec<PullRequest> =
+        raw_review_requests.iter().cloned().map(review_request_to_pr).collect();
 
     followed_open.extend(followed_pr_open);
     followed_recently_merged.extend(followed_pr_merged.clone());
@@ -957,6 +1078,8 @@ pub async fn fetch_all_prs(
         commented_pr_urls,
         viewer_login,
         viewer_avatar_url,
+        review_requests,
+        review_requests_raw: raw_review_requests,
     })
 }
 

@@ -21,6 +21,8 @@ import {
   setSearchQuery,
   setFocusIndex,
   autoFollowedPrUrls,
+  unseenRequestUrls,
+  removeUnseenRequestUrl,
 } from "./state";
 import {
   filterPrs,
@@ -120,6 +122,21 @@ export function renderActiveTab() {
         ? renderAccordionContent(filtered, forceExpand)
         : renderFlatList(filtered);
       html += body || '<div class="empty">No open PRs</div>';
+    }
+
+  } else if (activeTab === "requests") {
+    const prs = (currentResult.review_requests || []).filter(
+      (pr) => !followedPrs.has(pr.url)
+    );
+    if (prs.length === 0) {
+      html = '<div class="empty">No review requests</div>';
+    } else {
+      setShowAuthorInCards(true);
+      const body = groupByRepository
+        ? renderAccordionContent(prs)
+        : renderFlatList(prs);
+      html += body || '<div class="empty">No review requests</div>';
+      setShowAuthorInCards(false);
     }
 
   } else if (activeTab === "followed") {
@@ -320,23 +337,31 @@ export function updateTabBadges() {
     ...(currentResult.followed_recently_closed || []),
   ].filter((pr) => currentAttentionUrls.includes(pr.url)).length;
 
-  const counts: Record<string, number> = { mine: mineCount, followed: followedCount, merged: mergedCount, closed: closedCount };
+  const requestsCount = (currentResult.review_requests || []).filter(
+    (pr) => !followedPrs.has(pr.url)
+  ).length;
+  const counts: Record<string, number> = { mine: mineCount, requests: requestsCount, followed: followedCount, merged: mergedCount, closed: closedCount };
 
   document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
     const tab = btn.getAttribute("data-tab")!;
     const count = counts[tab] || 0;
     const badge = btn.querySelector(".tab-badge");
+    const isCount = tab === "requests";
     if (count > 0) {
       if (badge) {
+        badge.classList.toggle("tab-badge--count", isCount);
         badge.textContent = String(count);
       } else {
         const span = document.createElement("span");
-        span.className = "tab-badge";
+        span.className = isCount ? "tab-badge tab-badge--count" : "tab-badge";
         span.textContent = String(count);
         btn.appendChild(span);
       }
     } else if (badge) {
       badge.remove();
+    }
+    if (tab === "requests") {
+      btn.classList.toggle("has-unseen-requests", unseenRequestUrls.size > 0);
     }
   });
 }
@@ -416,6 +441,7 @@ export function bindContentEvents(container: HTMLElement) {
         card.classList.remove("attention");
         if (url) {
           if (currentResult?.element_changes) delete currentResult.element_changes[url];
+          removeUnseenRequestUrl(url);
           setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
           invoke("dismiss_pr", { url });
         }
@@ -453,6 +479,7 @@ export function bindContentEvents(container: HTMLElement) {
         dismissTimer = setTimeout(() => {
           card.classList.remove("attention");
           if (url) {
+            removeUnseenRequestUrl(url);
             setCurrentAttentionUrls(currentAttentionUrls.filter((u) => u !== url));
             invoke("dismiss_pr", { url });
           }

@@ -71,6 +71,7 @@ pub struct AppState {
     /// used as a fallback when a later lookup misses (e.g. notification fires
     /// before macOS has the per-screen status-bar window enumerable).
     pub tray_frame_cache: Mutex<HashMap<usize, (f64, f64, f64, f64)>>,
+    pub last_request_prs: Mutex<HashMap<String, github::ReviewRequestPr>>,
 }
 
 fn get_token(state: &AppState) -> Result<String, String> {
@@ -136,6 +137,43 @@ fn send_attention_notification(
     }
 }
 
+fn send_review_request_notification(
+    app: &tauri::AppHandle,
+    new_prs: &[github::ReviewRequestPr],
+    send_native: bool,
+) {
+    if new_prs.is_empty() {
+        return;
+    }
+    let (title, body) = if new_prs.len() == 1 {
+        (new_prs[0].title.clone(), "Review requested".to_string())
+    } else {
+        (
+            format!("{} review requests", new_prs.len()),
+            new_prs
+                .iter()
+                .map(|pr| pr.title.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    };
+    let info = notification::NotificationInfo {
+        title,
+        body,
+        url: if new_prs.len() == 1 {
+            Some(new_prs[0].url.clone())
+        } else {
+            None
+        },
+        attention_urls: vec![],
+    };
+    if send_native {
+        macos_notify::send(&info);
+    } else {
+        show_tray_notification(app, "attention", "attention", &info.title, &info.body);
+    }
+}
+
 pub(crate) fn set_tray_attention(app: &tauri::AppHandle, attention: bool) {
     if let Some(state) = app.try_state::<AppState>() {
         let mut last = state.last_tray_attention.lock().unwrap();
@@ -163,6 +201,7 @@ fn pr_snapshot(result: &github::FetchResult) -> String {
         .chain(result.recently_closed.iter())
         .chain(result.followed_recently_merged.iter())
         .chain(result.followed_recently_closed.iter())
+        .chain(result.review_requests.iter())
     {
         let unresolved = pr
             .review_threads
@@ -273,6 +312,55 @@ fn process_result(
         let mut cache = state.cached_prs.lock().unwrap();
         *cache = Some(result.clone());
     }
+
+    // ── Review request diffing ────────────────────────────────────────────────
+    if let Some(state) = app.try_state::<AppState>() {
+        let mut last = state.last_request_prs.lock().unwrap();
+        let current_urls: HashSet<String> =
+            result.review_requests_raw.iter().map(|pr| pr.url.clone()).collect();
+
+        // New arrivals — skip on very first poll (last is empty) to avoid startup spam
+        let new_prs: Vec<github::ReviewRequestPr> = if !last.is_empty() {
+            result
+                .review_requests_raw
+                .iter()
+                .filter(|pr| !last.contains_key(&pr.url))
+                .cloned()
+                .collect()
+        } else {
+            vec![]
+        };
+        if !new_prs.is_empty() {
+            send_review_request_notification(app, &new_prs, notify);
+        }
+
+        // Departed with a review → auto-follow
+        let to_follow: Vec<String> = last
+            .values()
+            .filter(|pr| !current_urls.contains(&pr.url) && pr.viewer_latest_review.is_some())
+            .map(|pr| pr.url.clone())
+            .collect();
+
+        if !to_follow.is_empty() {
+            let mut settings = state.settings.lock().unwrap();
+            for url in &to_follow {
+                if !settings.followed_prs.contains(url) {
+                    settings.followed_prs.push(url.clone());
+                }
+            }
+            let updated = settings.clone();
+            drop(settings);
+            let _ = save_settings(&settings_path(app), &updated);
+        }
+
+        // Update last_request_prs for next poll
+        *last = result
+            .review_requests_raw
+            .iter()
+            .map(|pr| (pr.url.clone(), pr.clone()))
+            .collect();
+    }
+
     (result, changed)
 }
 
@@ -1553,6 +1641,7 @@ pub fn run() {
                 last_notified_brew_update: Mutex::new(false),
                 cached_releases: Mutex::new(None),
                 tray_frame_cache: Mutex::new(HashMap::new()),
+                last_request_prs: Mutex::new(HashMap::new()),
             });
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

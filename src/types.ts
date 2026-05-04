@@ -116,6 +116,7 @@ export interface FetchResult {
   workflow_status: WorkflowStatus | null;
   viewer_login: string;
   viewer_avatar_url: string;
+  review_requests: PullRequest[];
 }
 
 export interface DeviceCodeResponse {
@@ -188,12 +189,13 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   hide_pr: "i",
   copy_url: "c",
   tab_owned: "1",
-  tab_followed: "2",
-  tab_merged: "3",
-  tab_closed: "4",
+  tab_requests: "2",
+  tab_followed: "3",
+  tab_merged: "4",
+  tab_closed: "5",
   global_toggle: "Super+Ctrl+P",
   global_reload: "Super+Ctrl+R",
 };
 
-export type TabName = "mine" | "followed" | "merged" | "closed" | "settings";
+export type TabName = "mine" | "requests" | "followed" | "merged" | "closed" | "settings";
 export type FilterType = "all" | "needs-review" | "changes-requested" | "approved" | "failing" | "attention";

@@ -37,6 +37,9 @@ import {
   isAuthenticated,
   setIsAuthenticated,
   autoFollowedPrUrls,
+  unseenRequestUrls,
+  addUnseenRequestUrl,
+  removeUnseenRequestUrl,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
 import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
@@ -119,8 +122,20 @@ function renderPrView(result: FetchResult) {
     }
   }
 
+  // Track newly arrived review requests so their cards highlight until hovered
+  const newRequestUrls = new Set((result.review_requests || []).map((pr) => pr.url));
+  if (currentResult !== null) {
+    const prevRequestUrls = new Set((currentResult.review_requests || []).map((pr) => pr.url));
+    for (const url of newRequestUrls) {
+      if (!prevRequestUrls.has(url)) addUnseenRequestUrl(url);
+    }
+  }
+  for (const url of unseenRequestUrls) {
+    if (!newRequestUrls.has(url)) removeUnseenRequestUrl(url);
+  }
+
   const finishRender = () => {
-    setCurrentAttentionUrls(result.attention_urls);
+    setCurrentAttentionUrls([...result.attention_urls, ...unseenRequestUrls]);
     setCurrentResult(result);
     clearPendingUnhide();
     updateWorkflowIndicator(result.workflow_status);
@@ -840,7 +855,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     const items = getFocusables();
-    const tabKeys = [keybindings.tab_owned, keybindings.tab_followed];
+    const tabKeys = [keybindings.tab_owned, keybindings.tab_requests, keybindings.tab_followed];
     if (showRecentlyMerged) tabKeys.push(keybindings.tab_merged);
     if (showClosed) tabKeys.push(keybindings.tab_closed);
     tabKeys.push("Tab");
@@ -976,6 +991,14 @@ window.addEventListener("DOMContentLoaded", async () => {
       e.preventDefault();
       clearSidebarFocus();
       setActiveTab("mine");
+      return;
+    }
+
+    // Tab: Requests
+    if (e.key === keybindings.tab_requests) {
+      e.preventDefault();
+      clearSidebarFocus();
+      setActiveTab("requests");
       return;
     }
 

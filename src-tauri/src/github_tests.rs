@@ -69,6 +69,8 @@ pub fn make_fetch_result(open: Vec<PullRequest>) -> FetchResult {
         commented_pr_urls: vec![],
         viewer_login: "viewer".to_string(),
         viewer_avatar_url: String::new(),
+        review_requests: vec![],
+        review_requests_raw: vec![],
     }
 }
 
@@ -562,4 +564,104 @@ fn sound_kind_default_attention() {
 fn sound_kind_empty_changes() {
     let changes = PrElementChanges::default();
     assert_eq!(changes.sound_kind(), "attention");
+}
+
+// ── ReviewRequestPr ───────────────────────────────────────────────────────────
+
+pub fn make_review_request_pr(url: &str) -> ReviewRequestPr {
+    ReviewRequestPr {
+        title: "Review me".to_string(),
+        url: url.to_string(),
+        state: "OPEN".to_string(),
+        merged: false,
+        is_draft: false,
+        created_at: "2024-01-01T00:00:00Z".to_string(),
+        repository: Repository {
+            name: "repo".to_string(),
+            owner: Owner { login: "org".to_string() },
+        },
+        author: Owner { login: "alice".to_string() },
+        viewer_latest_review: None,
+    }
+}
+
+#[test]
+fn review_request_pr_deserialises_with_review() {
+    let json = r#"{
+        "title": "Fix bug",
+        "url": "https://github.com/org/repo/pull/1",
+        "state": "OPEN",
+        "merged": false,
+        "isDraft": false,
+        "createdAt": "2024-01-01T00:00:00Z",
+        "repository": { "name": "repo", "owner": { "login": "org" } },
+        "author": { "login": "alice" },
+        "viewerLatestReview": { "state": "APPROVED" }
+    }"#;
+    let pr: ReviewRequestPr = serde_json::from_str(json).unwrap();
+    assert_eq!(pr.url, "https://github.com/org/repo/pull/1");
+    assert_eq!(pr.viewer_latest_review.unwrap().state, "APPROVED");
+}
+
+#[test]
+fn review_request_pr_deserialises_without_review() {
+    let json = r#"{
+        "title": "Fix bug",
+        "url": "https://github.com/org/repo/pull/2",
+        "state": "OPEN",
+        "merged": false,
+        "isDraft": false,
+        "createdAt": "2024-01-01T00:00:00Z",
+        "repository": { "name": "repo", "owner": { "login": "org" } },
+        "author": { "login": "bob" },
+        "viewerLatestReview": null
+    }"#;
+    let pr: ReviewRequestPr = serde_json::from_str(json).unwrap();
+    assert!(pr.viewer_latest_review.is_none());
+}
+
+#[test]
+fn new_request_urls_detected_correctly() {
+    let prev: std::collections::HashMap<String, ReviewRequestPr> =
+        std::collections::HashMap::new();
+    let current = vec![make_review_request_pr("https://github.com/org/repo/pull/10")];
+    let new_urls: Vec<String> = current
+        .iter()
+        .filter(|pr| !prev.contains_key(&pr.url))
+        .map(|pr| pr.url.clone())
+        .collect();
+    assert_eq!(new_urls, vec!["https://github.com/org/repo/pull/10"]);
+}
+
+#[test]
+fn departed_pr_with_review_should_auto_follow() {
+    let mut prev = std::collections::HashMap::new();
+    let mut pr = make_review_request_pr("https://github.com/org/repo/pull/11");
+    pr.viewer_latest_review = Some(ViewerReview { state: "APPROVED".to_string() });
+    prev.insert(pr.url.clone(), pr);
+    let current: Vec<ReviewRequestPr> = vec![];
+    let current_urls: std::collections::HashSet<String> =
+        current.iter().map(|p| p.url.clone()).collect();
+    let to_follow: Vec<String> = prev
+        .values()
+        .filter(|pr| !current_urls.contains(&pr.url) && pr.viewer_latest_review.is_some())
+        .map(|pr| pr.url.clone())
+        .collect();
+    assert_eq!(to_follow, vec!["https://github.com/org/repo/pull/11"]);
+}
+
+#[test]
+fn departed_pr_without_review_should_not_auto_follow() {
+    let mut prev = std::collections::HashMap::new();
+    let pr = make_review_request_pr("https://github.com/org/repo/pull/12");
+    prev.insert(pr.url.clone(), pr);
+    let current: Vec<ReviewRequestPr> = vec![];
+    let current_urls: std::collections::HashSet<String> =
+        current.iter().map(|p| p.url.clone()).collect();
+    let to_follow: Vec<String> = prev
+        .values()
+        .filter(|pr| !current_urls.contains(&pr.url) && pr.viewer_latest_review.is_some())
+        .map(|pr| pr.url.clone())
+        .collect();
+    assert!(to_follow.is_empty());
 }
