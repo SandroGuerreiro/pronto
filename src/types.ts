@@ -176,6 +176,7 @@ export interface Settings {
   homebrew_check_enabled: boolean;
   homebrew_check_interval_secs: number;
   popup_screen?: string;
+  tab_order?: string[];
   notification_sound: boolean;
   notification_volume: number;
   notification_duration_secs: number;

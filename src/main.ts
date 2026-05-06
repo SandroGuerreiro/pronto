@@ -41,7 +41,7 @@ import {
   removeUnseenRequestUrl,
 } from "./state";
 import { loadUserPrefs, initPrefs } from "./prefs";
-import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs } from "./tabs";
+import { renderActiveTab, setActiveTab, updateTabBadges, hideCurrentFocusPr, initTabs, applyTabOrder, initTabDragDrop } from "./tabs";
 import { showSettings, hideSettings, initSettings, loadNotifPrefsFromSettings } from "./settings";
 import { showLogin, initAuth } from "./auth";
 import { showReleaseNotes, hideReleaseNotes, initReleaseNotes, navigateReleaseNotes, openFocusedRelease } from "./release-notes";
@@ -480,6 +480,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Load keybindings and notification prefs from settings
   const settings = await invoke<Settings>("get_settings");
+  applyTabOrder(settings.tab_order ?? []);
+  initTabDragDrop();
   if (settings?.keybindings) {
     setKeybindings(settings.keybindings);
   }

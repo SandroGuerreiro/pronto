@@ -170,6 +170,8 @@ pub struct Settings {
     pub notification_duration_secs: u64,
     #[serde(default)]
     pub last_seen_version: Option<String>,
+    #[serde(default)]
+    pub tab_order: Vec<String>,
 }
 
 impl Default for Settings {
@@ -214,6 +216,7 @@ impl Default for Settings {
             notification_volume: 0.35,
             notification_duration_secs: 8,
             last_seen_version: None,
+            tab_order: vec![],
         }
     }
 }

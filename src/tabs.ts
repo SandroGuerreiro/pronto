@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { TabName } from "./types";
+import type { Settings, TabName } from "./types";
 import {
   currentResult,
   currentAttentionUrls,
@@ -564,6 +564,205 @@ export function bindContentEvents(container: HTMLElement) {
       const key = id.replace(/^(org|repo):/, "");
       if (key) openUrl(`https://github.com/${key}`);
     });
+  });
+}
+
+// ── Tab ordering ─────────────────────────────────────────────────────────────
+
+const DEFAULT_TAB_ORDER = ["mine", "requests", "watched", "merged", "closed"];
+
+export function applyTabOrder(order: string[]) {
+  const nav = document.getElementById("main-nav");
+  const spacer = nav?.querySelector<HTMLElement>(".nav-spacer");
+  if (!nav || !spacer) return;
+
+  const btnMap = new Map<string, HTMLElement>();
+  nav.querySelectorAll<HTMLElement>(".nav-item[data-tab]").forEach((btn) => {
+    const tab = btn.getAttribute("data-tab");
+    if (tab) btnMap.set(tab, btn);
+  });
+
+  // Stored order first, then any tabs missing from it (forward-compat)
+  const effective = order.filter((t) => btnMap.has(t));
+  for (const t of DEFAULT_TAB_ORDER) {
+    if (!effective.includes(t)) effective.push(t);
+  }
+
+  for (const tab of effective) {
+    const btn = btnMap.get(tab);
+    if (btn) nav.insertBefore(btn, spacer);
+  }
+}
+
+export function initTabDragDrop() {
+  const nav = document.getElementById("main-nav");
+  if (!nav) return;
+
+  let dragBtn: HTMLElement | null = null;
+  let ghost: HTMLElement | null = null;
+  let placeholder: HTMLElement | null = null;
+  let offsetY = 0;
+  let startY = 0;
+  let active = false;
+
+  function getInsertRef(clientY: number): Element {
+    for (const b of nav!.querySelectorAll<HTMLElement>(".nav-item[data-tab]")) {
+      if (b === dragBtn) continue;
+      const r = b.getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) return b;
+    }
+    return nav!.querySelector(".nav-spacer")!;
+  }
+
+  function clearTransforms() {
+    nav!.querySelectorAll<HTMLElement>(".nav-item[data-tab]").forEach((b) => {
+      b.style.transition = "";
+      b.style.transform = "";
+    });
+  }
+
+  // FLIP: record positions → move placeholder → invert + animate to new positions
+  function movePlaceholder(clientY: number) {
+    const ref = getInsertRef(clientY);
+    if (placeholder!.nextSibling === ref) return;
+
+    const btns = [...nav!.querySelectorAll<HTMLElement>(".nav-item[data-tab]")]
+      .filter((b) => b !== dragBtn);
+    const before = btns.map((b) => b.getBoundingClientRect().top);
+
+    nav!.insertBefore(placeholder!, ref);
+
+    btns.forEach((b, i) => {
+      const delta = before[i] - b.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) return;
+      b.style.transition = "none";
+      b.style.transform = `translateY(${delta}px)`;
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          b.style.transition = "transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+          b.style.transform = "";
+        })
+      );
+    });
+  }
+
+  nav.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const btn = (e.target as HTMLElement).closest<HTMLElement>(".nav-item[data-tab]");
+    if (!btn) return;
+    dragBtn = btn;
+    startY = e.clientY;
+    offsetY = e.clientY - btn.getBoundingClientRect().top;
+    nav.setPointerCapture(e.pointerId);
+  });
+
+  nav.addEventListener("pointermove", (e) => {
+    if (!dragBtn) return;
+
+    if (!active) {
+      if (Math.abs(e.clientY - startY) < 5) return;
+      active = true;
+
+      const rect = dragBtn.getBoundingClientRect();
+
+      // Clone before hiding so the clone doesn't inherit display:none
+      ghost = dragBtn.cloneNode(true) as HTMLElement;
+
+      placeholder = document.createElement("div");
+      placeholder.className = "tab-drag-placeholder";
+      placeholder.style.height = `${rect.height}px`;
+      nav!.insertBefore(placeholder, dragBtn);
+      dragBtn.style.display = "none";
+      ghost.classList.add("tab-drag-ghost");
+      Object.assign(ghost.style, {
+        position: "fixed",
+        left: `${rect.left}px`,
+        top: `${rect.top}px`,
+        width: `${rect.width}px`,
+        height: `${rect.height}px`,
+        zIndex: "9999",
+        pointerEvents: "none",
+        opacity: "0",
+        transform: "scale(0.95)",
+        transition: "opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease",
+      });
+      document.body.appendChild(ghost);
+      requestAnimationFrame(() => {
+        ghost!.style.opacity = "0.92";
+        ghost!.style.transform = "scale(1.06)";
+      });
+
+      const suppressClick = (ev: Event) => {
+        ev.stopImmediatePropagation();
+        nav!.removeEventListener("click", suppressClick, true);
+      };
+      nav.addEventListener("click", suppressClick, true);
+    }
+
+    ghost!.style.top = `${e.clientY - offsetY}px`;
+    movePlaceholder(e.clientY);
+  });
+
+  nav.addEventListener("pointerup", async (_e) => {
+    if (!dragBtn) return;
+    const btn = dragBtn;
+    const currentGhost = ghost;
+    const currentPlaceholder = placeholder;
+    dragBtn = null;
+    ghost = null;
+    placeholder = null;
+
+    if (!active) return;
+    active = false;
+
+    clearTransforms();
+
+    // Ghost fades out
+    if (currentGhost) {
+      Object.assign(currentGhost.style, {
+        transition: "opacity 0.12s ease, transform 0.12s ease",
+        opacity: "0",
+        transform: "scale(0.92)",
+      });
+      setTimeout(() => currentGhost.remove(), 130);
+    }
+
+    // Button pops in at the placeholder position
+    btn.style.display = "";
+    btn.style.transition = "none";
+    btn.style.transform = "scale(0.88)";
+    btn.style.opacity = "0";
+    nav!.insertBefore(btn, currentPlaceholder!);
+    currentPlaceholder!.remove();
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        btn.style.transition = "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.12s ease";
+        btn.style.transform = "";
+        btn.style.opacity = "";
+        setTimeout(() => {
+          btn.style.transition = "";
+        }, 220);
+      })
+    );
+
+    const order = [...nav!.querySelectorAll<HTMLElement>(".nav-item[data-tab]")]
+      .map((b) => b.getAttribute("data-tab")!);
+    const current = await invoke<Settings>("get_settings");
+    await invoke("update_settings", { settings: { ...current, tab_order: order } });
+  });
+
+  nav.addEventListener("pointercancel", () => {
+    if (!dragBtn) return;
+    if (active) {
+      ghost?.remove();
+      dragBtn.style.display = "";
+      placeholder?.remove();
+      clearTransforms();
+    }
+    dragBtn = null;
+    ghost = null;
+    placeholder = null;
+    active = false;
   });
 }
 
