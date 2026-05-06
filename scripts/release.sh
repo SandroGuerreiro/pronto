@@ -243,10 +243,10 @@ main() {
         log_info "Auto-generated release notes:"
         echo -e "$release_notes"
         echo ""
-        read -p "Use these notes? (Y/n/e=edit) " choice
+        read -p "Use these notes? (Y/n/e=edit) " choice </dev/tty
         case "$choice" in
             n|N)
-                read -p "Enter release notes: " release_notes
+                read -p "Enter release notes: " release_notes </dev/tty
                 ;;
             e|E)
                 local tmpfile=$(mktemp)
@@ -293,7 +293,7 @@ main() {
     # Check git state only if starting from scratch
     if [ "$from_step" -eq 1 ] && [ -z "$force_redo" ]; then
         check_git_state
-        read -p "Press Enter to continue with the release, or Ctrl+C to cancel..."
+        read -p "Press Enter to continue with the release, or Ctrl+C to cancel..." </dev/tty
     fi
 
     # Step 1: Bump versions
@@ -314,7 +314,7 @@ main() {
             local commits=$(git log "${last_tag}..HEAD" --pretty=format:"%s" --no-merges 2>/dev/null)
 
             if command -v claude &> /dev/null; then
-                read -p "Update CLAUDE.md, MEMORY.md, and README.md with Claude? (Y/n) " update_docs
+                read -p "Update CLAUDE.md, MEMORY.md, and README.md with Claude? (Y/n) " update_docs </dev/tty
                 if [[ ! "$update_docs" =~ ^[nN]$ ]]; then
                     local docs_prompt="I just released Pronto v${new_version} (previous: ${last_tag}). Here are the changes since the last release:
 
