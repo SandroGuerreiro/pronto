@@ -237,7 +237,7 @@ pub fn attention_urls(
     let mut urls: Vec<String> = result
         .open
         .iter()
-        .chain(result.followed_open.iter())
+        .chain(result.watched_open.iter())
         .filter(|pr| {
             let fp = attention_fingerprint(pr, viewer_login);
             if let Some(last_fp) = seen.get(&pr.url) {
@@ -247,7 +247,7 @@ pub fn attention_urls(
                     let prefs = if is_owned {
                         &settings.notification_prefs_owned
                     } else {
-                        &settings.notification_prefs_followed
+                        &settings.notification_prefs_watched
                     };
                     should_notify_for_changes(&changes, prefs)
                 } else {
@@ -264,7 +264,7 @@ pub fn attention_urls(
     for pr in result
         .recently_merged
         .iter()
-        .chain(result.followed_recently_merged.iter())
+        .chain(result.watched_recently_merged.iter())
     {
         if seen.contains_key(&pr.url) && settings.notify_on_merged {
             urls.push(pr.url.clone());
@@ -275,7 +275,7 @@ pub fn attention_urls(
     for pr in result
         .recently_closed
         .iter()
-        .chain(result.followed_recently_closed.iter())
+        .chain(result.watched_recently_closed.iter())
     {
         if seen.contains_key(&pr.url) && settings.notify_on_closed {
             urls.push(pr.url.clone());
@@ -300,7 +300,7 @@ pub fn process_attention(
     let all_prs: Vec<&PullRequest> = result
         .open
         .iter()
-        .chain(result.followed_open.iter())
+        .chain(result.watched_open.iter())
         .collect();
 
     let element_changes: HashMap<String, PrElementChanges> = attention
@@ -319,7 +319,7 @@ pub fn process_attention(
     // (e.g. PENDING) for future change detection. Attention PRs keep their old
     // fingerprint until dismissed.
     let attention_set: HashSet<&str> = attention.iter().map(|s| s.as_str()).collect();
-    for pr in result.open.iter().chain(result.followed_open.iter()) {
+    for pr in result.open.iter().chain(result.watched_open.iter()) {
         if !attention_set.contains(pr.url.as_str()) {
             seen.insert(pr.url.clone(), attention_fingerprint(pr, viewer_login));
         }
@@ -329,19 +329,19 @@ pub fn process_attention(
     for pr in result
         .recently_merged
         .iter()
-        .chain(result.followed_recently_merged.iter())
+        .chain(result.watched_recently_merged.iter())
         .chain(result.recently_closed.iter())
-        .chain(result.followed_recently_closed.iter())
+        .chain(result.watched_recently_closed.iter())
     {
         seen.remove(&pr.url);
     }
 
     // Remove stale entries for PRs that are no longer open (hidden, org-hidden,
-    // unfollowed users, etc.) to prevent seen_prs from growing unboundedly.
+    // unwatched users, etc.) to prevent seen_prs from growing unboundedly.
     let current_open_urls: HashSet<&str> = result
         .open
         .iter()
-        .chain(result.followed_open.iter())
+        .chain(result.watched_open.iter())
         .map(|p| p.url.as_str())
         .collect();
     seen.retain(|url, _| current_open_urls.contains(url.as_str()));

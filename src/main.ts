@@ -38,7 +38,7 @@ import {
   releaseNotesOpen,
   isAuthenticated,
   setIsAuthenticated,
-  autoFollowedPrUrls,
+  autoWatchedPrUrls,
   unseenRequestUrls,
   addUnseenRequestUrl,
   removeUnseenRequestUrl,
@@ -99,20 +99,20 @@ function renderPrView(result: FetchResult) {
 
   const newOpenUrls = new Set([
     ...result.open.map((pr) => pr.url),
-    ...result.followed_open.map((pr) => pr.url),
+    ...result.watched_open.map((pr) => pr.url),
   ]);
   const newMergedUrls = new Set([
     ...result.recently_merged.map((pr) => pr.url),
-    ...(result.followed_recently_merged || []).map((pr) => pr.url),
+    ...(result.watched_recently_merged || []).map((pr) => pr.url),
   ]);
   const newClosedUrls = new Set([
     ...result.recently_closed.map((pr) => pr.url),
-    ...(result.followed_recently_closed || []).map((pr) => pr.url),
+    ...(result.watched_recently_closed || []).map((pr) => pr.url),
   ]);
 
   // Find cards that were visible but are no longer open (they got merged or closed)
   const exitingCards: { el: Element; kind: "merged" | "closed" }[] = [];
-  if (activeTab === "mine" || activeTab === "followed") {
+  if (activeTab === "mine" || activeTab === "watched") {
     for (const url of visibleUrls) {
       if (!newOpenUrls.has(url)) {
         const card = content.querySelector(`.pr-card[data-url="${CSS.escape(url)}"]`);
@@ -259,7 +259,7 @@ function getFocusables(): Element[] {
   const content = document.getElementById("content")!;
   return [
     ...content.querySelectorAll(
-      "#pr-search-input, .follow-filter-btn[data-filter], summary.accordion-header, .pr-card"
+      "#pr-search-input, .watch-filter-btn[data-filter], summary.accordion-header, .pr-card"
     ),
   ];
 }
@@ -335,8 +335,8 @@ function setFocus(index: number) {
     if (url && currentResult?.element_changes) {
       delete currentResult.element_changes[url];
     }
-    if (url && el.classList.contains("auto-followed-new")) autoFollowedPrUrls.delete(url);
-    el.classList.remove("auto-followed-new");
+    if (url && el.classList.contains("auto-watched-new")) autoWatchedPrUrls.delete(url);
+    el.classList.remove("auto-watched-new");
     el.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
       .forEach((e) => e.classList.remove("highlight-attention"));
     el.querySelectorAll<HTMLElement>(".highlight-changed")
@@ -414,16 +414,16 @@ async function initNotificationView() {
   });
 }
 
-// ── Follow toast ──────────────────────────────────────────────────────────────
+// ── Watch toast ──────────────────────────────────────────────────────────────
 
-function showFollowToast(prUrl: string, added: boolean) {
-  document.getElementById("follow-toast")?.remove();
+function showWatchToast(prUrl: string, added: boolean) {
+  document.getElementById("watch-toast")?.remove();
   const match = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   const label = match ? `${match[1]}/${match[2]} #${match[3]}` : prUrl;
   const toast = document.createElement("div");
-  toast.id = "follow-toast";
-  toast.className = "follow-toast" + (added ? "" : " follow-toast-removed");
-  toast.textContent = added ? `Following ${label}` : `Unfollowed ${label}`;
+  toast.id = "watch-toast";
+  toast.className = "watch-toast" + (added ? "" : " watch-toast-removed");
+  toast.textContent = added ? `Watching ${label}` : `Unwatched ${label}`;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
 }
@@ -558,10 +558,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     showLogin();
   }
 
-  await listen<{ url: string; added: boolean }>("pr-follow-toggled", async (event) => {
+  await listen<{ url: string; added: boolean }>("pr-watch-toggled", async (event) => {
     await loadUserPrefs();
     loadPrs();
-    showFollowToast(event.payload.url, event.payload.added);
+    showWatchToast(event.payload.url, event.payload.added);
   });
 
   await listen<FetchResult>("prs-updated", (event) => {
@@ -572,10 +572,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  await listen<string[]>("prs-auto-followed", async (event) => {
+  await listen<string[]>("prs-auto-watched", async (event) => {
     const urls = event.payload ?? [];
     if (urls.length === 0) return;
-    urls.forEach((url) => autoFollowedPrUrls.add(url));
+    urls.forEach((url) => autoWatchedPrUrls.add(url));
     await loadUserPrefs();
     loadPrs();
   });
@@ -868,7 +868,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const tabKeys = [
       keybindings.tab_owned,
       ...(showRequests ? [keybindings.tab_requests] : []),
-      keybindings.tab_followed,
+      keybindings.tab_watched,
       ...(showRecentlyMerged ? [keybindings.tab_merged] : []),
       ...(showClosed ? [keybindings.tab_closed] : []),
       "Tab",
@@ -903,12 +903,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       e.preventDefault();
       clearSidebarFocus();
       let next = focusIndex + 1;
-      if (focusIndex >= 0 && items[focusIndex]?.classList.contains("follow-filter-btn")) {
+      if (focusIndex >= 0 && items[focusIndex]?.classList.contains("watch-filter-btn")) {
         // Already on a filter → skip past all filters
-        while (next < items.length && items[next]?.classList.contains("follow-filter-btn")) next++;
-      } else if (items[next]?.classList.contains("follow-filter-btn")) {
+        while (next < items.length && items[next]?.classList.contains("watch-filter-btn")) next++;
+      } else if (items[next]?.classList.contains("watch-filter-btn")) {
         // Entering filter bar → land on the active filter
-        const active = items.findIndex((el) => el.classList.contains("follow-filter-btn") && el.classList.contains("active"));
+        const active = items.findIndex((el) => el.classList.contains("watch-filter-btn") && el.classList.contains("active"));
         if (active >= 0) next = active;
       }
       setFocus(next);
@@ -920,12 +920,12 @@ window.addEventListener("DOMContentLoaded", async () => {
       e.preventDefault();
       clearSidebarFocus();
       let prev = focusIndex - 1;
-      if (focusIndex >= 0 && items[focusIndex]?.classList.contains("follow-filter-btn")) {
+      if (focusIndex >= 0 && items[focusIndex]?.classList.contains("watch-filter-btn")) {
         // Already on a filter → skip past all filters
-        while (prev >= 0 && items[prev]?.classList.contains("follow-filter-btn")) prev--;
-      } else if (prev >= 0 && items[prev]?.classList.contains("follow-filter-btn")) {
+        while (prev >= 0 && items[prev]?.classList.contains("watch-filter-btn")) prev--;
+      } else if (prev >= 0 && items[prev]?.classList.contains("watch-filter-btn")) {
         // Entering filter bar from below → land on the active filter
-        const active = items.findIndex((el) => el.classList.contains("follow-filter-btn") && el.classList.contains("active"));
+        const active = items.findIndex((el) => el.classList.contains("watch-filter-btn") && el.classList.contains("active"));
         if (active >= 0) prev = active;
       }
       setFocus(prev);
@@ -935,17 +935,17 @@ window.addEventListener("DOMContentLoaded", async () => {
     // Left/right on filter buttons → navigate between filters
     if ((e.key === keybindings.collapse || e.key === "ArrowLeft"
       || e.key === keybindings.expand || e.key === "ArrowRight")
-      && focusIndex >= 0 && items[focusIndex]?.classList.contains("follow-filter-btn")) {
+      && focusIndex >= 0 && items[focusIndex]?.classList.contains("watch-filter-btn")) {
       e.preventDefault();
       const dir = (e.key === keybindings.expand || e.key === "ArrowRight") ? 1 : -1;
       const next = focusIndex + dir;
-      if (next >= 0 && next < items.length && items[next]?.classList.contains("follow-filter-btn")) {
+      if (next >= 0 && next < items.length && items[next]?.classList.contains("watch-filter-btn")) {
         const filter = items[next].getAttribute("data-filter");
         (items[next] as HTMLElement).click();
         // Re-render destroys DOM; restore kb-focus to the active filter button
         const refreshed = getFocusables();
         const restored = refreshed.findIndex(
-          (el) => el.classList.contains("follow-filter-btn") && el.getAttribute("data-filter") === filter
+          (el) => el.classList.contains("watch-filter-btn") && el.getAttribute("data-filter") === filter
         );
         if (restored >= 0) setFocus(restored);
       }
@@ -985,7 +985,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       const el = items[focusIndex];
       if (el instanceof HTMLInputElement) {
         el.focus();
-      } else if (el.classList.contains("follow-filter-btn")) {
+      } else if (el.classList.contains("watch-filter-btn")) {
         (el as HTMLElement).click();
       } else if (el.classList.contains("pr-card")) {
         const url = el.getAttribute("data-url");
@@ -1016,11 +1016,11 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // Tab: Followed
-    if (e.key === keybindings.tab_followed) {
+    // Tab: Watched
+    if (e.key === keybindings.tab_watched) {
       e.preventDefault();
       clearSidebarFocus();
-      setActiveTab("followed");
+      setActiveTab("watched");
       return;
     }
 
@@ -1075,7 +1075,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       const cycle: SidebarItem[] = [
         "mine",
         ...(showRequests ? ["requests" as SidebarItem] : []),
-        "followed",
+        "watched",
         ...(showRecentlyMerged ? ["merged" as SidebarItem] : []),
         ...(showClosed ? ["closed" as SidebarItem] : []),
         "avatar",

@@ -7,11 +7,11 @@ import {
   hiddenOrgs,
   hiddenRepos,
   hiddenPrs,
-  followedPrs,
+  watchedPrs,
   setGroupByRepository,
-  setFollowedUsers,
-  activeFollowFilter,
-  setActiveFollowFilter,
+  setWatchedUsers,
+  activeWatchFilter,
+  setActiveWatchFilter,
 } from "./state";
 
 // Injected callbacks (wired in main.ts)
@@ -39,13 +39,13 @@ export async function loadUserPrefs() {
   s.hidden_repos.forEach((r) => hiddenRepos.add(r));
   hiddenPrs.clear();
   (s.hidden_prs || []).forEach((h) => hiddenPrs.set(h.url, h.title));
-  followedPrs.clear();
-  (s.followed_prs || []).forEach((url) => followedPrs.add(url));
+  watchedPrs.clear();
+  (s.watched_prs || []).forEach((url) => watchedPrs.add(url));
   setGroupByRepository(s.group_by_repository !== false);
-  const users = s.followed_users || [];
-  setFollowedUsers(users);
-  if (activeFollowFilter !== "all" && !users.includes(activeFollowFilter)) {
-    setActiveFollowFilter("all");
+  const users = s.watched_users || [];
+  setWatchedUsers(users);
+  if (activeWatchFilter !== "all" && !users.includes(activeWatchFilter)) {
+    setActiveWatchFilter("all");
   }
 }
 
@@ -65,7 +65,7 @@ export function persistPrefs() {
     current.hidden_orgs = [...hiddenOrgs];
     current.hidden_repos = [...hiddenRepos];
     current.hidden_prs = [...hiddenPrs.entries()].map(([url, title]) => ({ url, title }));
-    current.followed_prs = [...followedPrs];
+    current.watched_prs = [...watchedPrs];
     await invoke("update_settings", { settings: current });
   });
 }

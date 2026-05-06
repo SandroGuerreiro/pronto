@@ -20,31 +20,31 @@ const { mockState } = vi.hoisted(() => {
     currentResult: null as FetchResult | null,
     currentAttentionUrls: [] as string[],
     activeTab: "mine" as string,
-    activeFollowFilter: "all",
+    activeWatchFilter: "all",
     showAuthorInCards: false,
     groupByRepository: false,
     hiddenOrgs: new Set<string>(),
     hiddenRepos: new Set<string>(),
     hiddenPrs: new Map<string, string>(),
-    followedUsers: [] as string[],
-    followedPrs: new Set<string>(),
+    watchedUsers: [] as string[],
+    watchedPrs: new Set<string>(),
     collapsedAccordions: new Set<string>(),
     favoriteOrgs: new Set<string>(),
     favoriteRepos: new Set<string>(),
     pendingUnhideOrgs: new Set<string>(),
     pendingUnhideRepos: new Set<string>(),
-    autoFollowedPrUrls: new Set<string>(),
+    autoWatchedPrUrls: new Set<string>(),
     unseenRequestUrls: new Set<string>(),
     searchQuery: "",
     focusIndex: -1,
     setCurrentAttentionUrls: vi.fn((urls: string[]) => { mockState.currentAttentionUrls = urls; }),
     setCurrentResult: vi.fn((r: FetchResult | null) => { mockState.currentResult = r; }),
     setActiveTabState: vi.fn((tab: string) => { mockState.activeTab = tab; }),
-    setActiveFollowFilter: vi.fn((f: string) => { mockState.activeFollowFilter = f; }),
+    setActiveWatchFilter: vi.fn((f: string) => { mockState.activeWatchFilter = f; }),
     setShowAuthorInCards: vi.fn((v: boolean) => { mockState.showAuthorInCards = v; }),
     setGroupByRepository: vi.fn(),
     setFocusIndex: vi.fn((i: number) => { mockState.focusIndex = i; }),
-    setFollowedUsers: vi.fn((users: string[]) => { mockState.followedUsers = users; }),
+    setWatchedUsers: vi.fn((users: string[]) => { mockState.watchedUsers = users; }),
     setSearchQuery: vi.fn((q: string) => { mockState.searchQuery = q; }),
     setShowRecentlyMerged: vi.fn(),
     setShowClosed: vi.fn(),
@@ -84,13 +84,13 @@ vi.mock("../state", () => mockState);
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue({
     hidden_prs: [],
-    followed_prs: [],
+    watched_prs: [],
     favorite_orgs: [],
     favorite_repos: [],
     collapsed_accordions: [],
     hidden_orgs: [],
     hidden_repos: [],
-    followed_users: [],
+    watched_users: [],
   }),
 }));
 
@@ -120,9 +120,9 @@ function makeFetchResult(overrides: Partial<FetchResult> = {}): FetchResult {
     open: [],
     recently_merged: [],
     recently_closed: [],
-    followed_open: [],
-    followed_recently_merged: [],
-    followed_recently_closed: [],
+    watched_open: [],
+    watched_recently_merged: [],
+    watched_recently_closed: [],
     attention_urls: [],
     element_changes: {},
     workflow_status: null,
@@ -137,7 +137,7 @@ function setupDom() {
     <div id="content"></div>
     <div id="main-nav">
       <button class="nav-item" data-tab="mine"></button>
-      <button class="nav-item" data-tab="followed"></button>
+      <button class="nav-item" data-tab="watched"></button>
       <button class="nav-item" data-tab="merged"></button>
       <button class="nav-item" data-tab="closed"></button>
     </div>
@@ -165,14 +165,14 @@ beforeEach(() => {
   mockState.currentResult = null;
   mockState.currentAttentionUrls = [];
   mockState.activeTab = "mine";
-  mockState.activeFollowFilter = "all";
+  mockState.activeWatchFilter = "all";
   mockState.showAuthorInCards = false;
   mockState.groupByRepository = false;
   mockState.hiddenOrgs.clear();
   mockState.hiddenRepos.clear();
   mockState.hiddenPrs.clear();
-  mockState.followedUsers = [];
-  mockState.followedPrs.clear();
+  mockState.watchedUsers = [];
+  mockState.watchedPrs.clear();
   mockState.collapsedAccordions.clear();
   mockState.searchQuery = "";
   mockState.focusIndex = -1;
@@ -223,16 +223,16 @@ describe("attention data flow", () => {
     expect(badge?.textContent).toBe("2");
   });
 
-  it("tab badge shows correct attention count for followed PRs", () => {
+  it("tab badge shows correct attention count for watched PRs", () => {
     mockState.currentAttentionUrls = [pr1.url];
     mockState.currentResult = makeFetchResult({
       open: [],
-      followed_open: [pr1, pr2],
+      watched_open: [pr1, pr2],
     });
     renderActiveTab();
 
-    const followedTab = document.querySelector('.nav-item[data-tab="followed"]');
-    const badge = followedTab?.querySelector(".tab-badge");
+    const watchedTab = document.querySelector('.nav-item[data-tab="watched"]');
+    const badge = watchedTab?.querySelector(".tab-badge");
     expect(badge?.textContent).toBe("1");
   });
 
@@ -245,7 +245,7 @@ describe("attention data flow", () => {
     expect(mineTab?.querySelector(".tab-badge")).toBeNull();
   });
 
-  it("merged tab badge counts attention PRs in both owned and followed merged", () => {
+  it("merged tab badge counts attention PRs in both owned and watched merged", () => {
     const mergedPr = makePr({
       url: "https://github.com/org/repo/pull/10",
       state: "MERGED",
@@ -738,11 +738,11 @@ describe("PR information updates on re-render", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Followed tab attention with per-user filter
+// Watched tab attention with per-user filter
 // ---------------------------------------------------------------------------
 
-describe("followed tab attention flow", () => {
-  it("followed tab shows attention badges per user in filter bar", () => {
+describe("watched tab attention flow", () => {
+  it("watched tab shows attention badges per user in filter bar", () => {
     const alicePr = makePr({
       url: "https://github.com/org/repo/pull/1",
       author: { login: "alice" },
@@ -752,24 +752,24 @@ describe("followed tab attention flow", () => {
       author: { login: "bob" },
     });
 
-    mockState.activeTab = "followed";
-    mockState.followedUsers = ["alice", "bob"];
+    mockState.activeTab = "watched";
+    mockState.watchedUsers = ["alice", "bob"];
     mockState.currentAttentionUrls = [alicePr.url];
     mockState.currentResult = makeFetchResult({
-      followed_open: [alicePr, bobPr],
+      watched_open: [alicePr, bobPr],
     });
     renderActiveTab();
 
     // Alice's filter button should have a badge
-    const aliceBtn = document.querySelector('.follow-filter-btn[data-filter="alice"]');
+    const aliceBtn = document.querySelector('.watch-filter-btn[data-filter="alice"]');
     expect(aliceBtn?.querySelector(".tab-badge")?.textContent).toBe("1");
 
     // Bob's filter button should have no badge
-    const bobBtn = document.querySelector('.follow-filter-btn[data-filter="bob"]');
+    const bobBtn = document.querySelector('.watch-filter-btn[data-filter="bob"]');
     expect(bobBtn?.querySelector(".tab-badge")).toBeNull();
 
     // "All" button should show total
-    const allBtn = document.querySelector('.follow-filter-btn[data-filter="all"]');
+    const allBtn = document.querySelector('.watch-filter-btn[data-filter="all"]');
     expect(allBtn?.querySelector(".tab-badge")?.textContent).toBe("1");
   });
 
@@ -785,11 +785,11 @@ describe("followed tab attention flow", () => {
       title: "Bob PR",
     });
 
-    mockState.activeTab = "followed";
-    mockState.followedUsers = ["alice", "bob"];
-    mockState.activeFollowFilter = "alice";
+    mockState.activeTab = "watched";
+    mockState.watchedUsers = ["alice", "bob"];
+    mockState.activeWatchFilter = "alice";
     mockState.currentResult = makeFetchResult({
-      followed_open: [alicePr, bobPr],
+      watched_open: [alicePr, bobPr],
     });
     renderActiveTab();
 
@@ -798,8 +798,8 @@ describe("followed tab attention flow", () => {
     expect(cards[0].getAttribute("data-url")).toBe(alicePr.url);
   });
 
-  it("direct filter shows only directly followed PRs", () => {
-    const followedPr = makePr({
+  it("direct filter shows only directly watched PRs", () => {
+    const watchedPr = makePr({
       url: "https://github.com/org/repo/pull/1",
       author: { login: "alice" },
     });
@@ -808,17 +808,17 @@ describe("followed tab attention flow", () => {
       author: { login: "alice" },
     });
 
-    mockState.activeTab = "followed";
-    mockState.followedUsers = ["alice"];
-    mockState.followedPrs.add(followedPr.url);
-    mockState.activeFollowFilter = "direct";
+    mockState.activeTab = "watched";
+    mockState.watchedUsers = ["alice"];
+    mockState.watchedPrs.add(watchedPr.url);
+    mockState.activeWatchFilter = "direct";
     mockState.currentResult = makeFetchResult({
-      followed_open: [followedPr, userPr],
+      watched_open: [watchedPr, userPr],
     });
     renderActiveTab();
 
     const cards = document.querySelectorAll(".pr-card");
     expect(cards).toHaveLength(1);
-    expect(cards[0].getAttribute("data-url")).toBe(followedPr.url);
+    expect(cards[0].getAttribute("data-url")).toBe(watchedPr.url);
   });
 });

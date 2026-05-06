@@ -313,13 +313,13 @@ pub struct FetchResult {
     pub open: Vec<PullRequest>,
     pub recently_merged: Vec<PullRequest>,
     pub recently_closed: Vec<PullRequest>,
-    pub followed_open: Vec<PullRequest>,
-    pub followed_recently_merged: Vec<PullRequest>,
-    pub followed_recently_closed: Vec<PullRequest>,
+    pub watched_open: Vec<PullRequest>,
+    pub watched_recently_merged: Vec<PullRequest>,
+    pub watched_recently_closed: Vec<PullRequest>,
     pub attention_urls: Vec<String>,
     pub element_changes: std::collections::HashMap<String, PrElementChanges>,
     pub workflow_status: Option<WorkflowStatus>,
-    pub expired_followed_prs: Vec<String>,
+    pub expired_watched_prs: Vec<String>,
     pub commented_pr_urls: Vec<String>,
     pub viewer_login: String,
     pub viewer_avatar_url: String,
@@ -596,8 +596,8 @@ const PR_FIELDS: &str = r#"title
       commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } }
       author { login }"#;
 
-/// Fetch PRs for multiple followed users in a single GraphQL request using aliases.
-async fn fetch_followed_users_prs(
+/// Fetch PRs for multiple watched users in a single GraphQL request using aliases.
+async fn fetch_watched_users_prs(
     client: &reqwest::Client,
     token: &str,
     users: &[String],
@@ -669,17 +669,17 @@ async fn fetch_followed_users_prs(
     let raw = http_response.text().await?;
 
     if !status.is_success() {
-        eprintln!("[pronto] GitHub API returned {status} for followed users: {raw}");
+        eprintln!("[pronto] GitHub API returned {status} for watched users: {raw}");
         return Ok((vec![], vec![], vec![]));
     }
 
     let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| {
-        eprintln!("[pronto] Followed users parse error: {e}\n[pronto] Response body: {raw}");
+        eprintln!("[pronto] Watched users parse error: {e}\n[pronto] Response body: {raw}");
         e
     })?;
 
     if let Some(errors) = parsed.get("errors") {
-        eprintln!("[pronto] Followed users GraphQL errors: {errors}");
+        eprintln!("[pronto] Watched users GraphQL errors: {errors}");
     }
 
     let mut all_open = Vec::new();
@@ -1002,8 +1002,8 @@ pub async fn fetch_all_prs(
     show_requests: bool,
     hidden_orgs: &[String],
     hidden_repos: &[String],
-    followed_users: &[String],
-    followed_prs: &[String],
+    watched_users: &[String],
+    watched_prs: &[String],
 ) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
     let exclusions = build_exclusions(hidden_orgs, hidden_repos);
 
@@ -1027,12 +1027,12 @@ pub async fn fetch_all_prs(
     )
     .await?;
 
-    // Fetch PRs authored by followed users (single batched query).
-    let (mut followed_open, mut followed_recently_merged, mut followed_recently_closed) =
-        fetch_followed_users_prs(
+    // Fetch PRs authored by watched users (single batched query).
+    let (mut watched_open, mut watched_recently_merged, mut watched_recently_closed) =
+        fetch_watched_users_prs(
             &client,
             token,
-            followed_users,
+            watched_users,
             merged_window_hours,
             show_recently_merged,
             closed_window_hours,
@@ -1042,9 +1042,9 @@ pub async fn fetch_all_prs(
         .await
         .unwrap_or_default();
 
-    // Fetch specifically followed PRs and (optionally) review requests in parallel
-    let (followed_pr_result, raw_review_requests) = tokio::join!(
-        fetch_prs_by_url(&client, token, followed_prs),
+    // Fetch specifically watched PRs and (optionally) review requests in parallel
+    let (watched_pr_result, raw_review_requests) = tokio::join!(
+        fetch_prs_by_url(&client, token, watched_prs),
         async {
             if show_requests {
                 fetch_review_requests(&client, token).await
@@ -1053,21 +1053,21 @@ pub async fn fetch_all_prs(
             }
         },
     );
-    let (followed_pr_open, followed_pr_merged, followed_pr_closed) =
-        followed_pr_result.unwrap_or_default();
+    let (watched_pr_open, watched_pr_merged, watched_pr_closed) =
+        watched_pr_result.unwrap_or_default();
     let raw_review_requests = raw_review_requests.unwrap_or_default();
     let review_requests: Vec<PullRequest> =
         raw_review_requests.iter().cloned().map(review_request_to_pr).collect();
 
-    followed_open.extend(followed_pr_open);
-    followed_recently_merged.extend(followed_pr_merged.clone());
-    followed_recently_closed.extend(followed_pr_closed.clone());
+    watched_open.extend(watched_pr_open);
+    watched_recently_merged.extend(watched_pr_merged.clone());
+    watched_recently_closed.extend(watched_pr_closed.clone());
 
-    // Identify followed PRs that are older than 48h and should be removed
-    let mut expired_followed_prs = Vec::new();
-    for pr in followed_pr_merged.iter().chain(followed_pr_closed.iter()) {
+    // Identify watched PRs that are older than 48h and should be removed
+    let mut expired_watched_prs = Vec::new();
+    for pr in watched_pr_merged.iter().chain(watched_pr_closed.iter()) {
         if is_pr_older_than_48h(pr) {
-            expired_followed_prs.push(pr.url.clone());
+            expired_watched_prs.push(pr.url.clone());
         }
     }
 
@@ -1075,13 +1075,13 @@ pub async fn fetch_all_prs(
         open: my_open,
         recently_merged: my_recently_merged,
         recently_closed: my_recently_closed,
-        followed_open,
-        followed_recently_merged,
-        followed_recently_closed,
+        watched_open,
+        watched_recently_merged,
+        watched_recently_closed,
         attention_urls: vec![],
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,
-        expired_followed_prs,
+        expired_watched_prs,
         commented_pr_urls,
         viewer_login,
         viewer_avatar_url,

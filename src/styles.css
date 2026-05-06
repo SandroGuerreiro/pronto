@@ -506,14 +506,14 @@ body {
   50%      { box-shadow: inset 2px 0 12px rgba(212, 160, 23, 0.18); }
 }
 
-.pr-card.auto-followed-new {
+.pr-card.auto-watched-new {
   border-left-color: var(--color-info);
   box-shadow: inset 2px 0 8px var(--color-info-bg);
-  animation: auto-followed-glow 2.4s ease-in-out infinite;
+  animation: auto-watched-glow 2.4s ease-in-out infinite;
   transition: border-left-color 0.4s ease, box-shadow 0.4s ease;
 }
 
-.pr-card.auto-followed-new::after {
+.pr-card.auto-watched-new::after {
   content: "auto";
   position: absolute;
   top: 6px;
@@ -532,7 +532,7 @@ body {
   opacity: 0.95;
 }
 
-@keyframes auto-followed-glow {
+@keyframes auto-watched-glow {
   0%, 100% { box-shadow: inset 2px 0 8px rgba(56, 139, 253, 0.08); }
   50%      { box-shadow: inset 2px 0 12px rgba(56, 139, 253, 0.22); }
 }
@@ -1054,7 +1054,7 @@ details[open] > .accordion-header .accordion-chevron::before {
    FOLLOW FILTER BAR
    ============================================================ */
 
-.follow-filter-bar {
+.watch-filter-bar {
   display: flex;
   gap: var(--space-2);
   padding: var(--space-4) 10px;
@@ -1063,7 +1063,7 @@ details[open] > .accordion-header .accordion-chevron::before {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.follow-filter-btn {
+.watch-filter-btn {
   padding: 3px 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1076,39 +1076,39 @@ details[open] > .accordion-header .accordion-chevron::before {
   white-space: nowrap;
 }
 
-.follow-filter-btn:hover {
+.watch-filter-btn:hover {
   background: var(--surface-active);
   color: var(--text-primary);
 }
 
-.follow-filter-btn.kb-focus:not(.active) {
+.watch-filter-btn.kb-focus:not(.active) {
   background: var(--surface-active);
   color: var(--text-primary);
   outline: 1px solid rgba(56, 139, 253, 0.5);
   outline-offset: -1px;
 }
 
-.follow-filter-btn.active {
+.watch-filter-btn.active {
   background: rgba(56, 139, 253, 0.25);
   border-color: rgba(56, 139, 253, 0.45);
   color: var(--text-primary);
   font-weight: 500;
 }
 
-.follow-filter-btn.active.kb-focus {
+.watch-filter-btn.active.kb-focus {
   outline: 1px solid rgba(56, 139, 253, 0.5);
   outline-offset: -1px;
 }
 
-.follow-filter-dropdown-wrapper {
+.watch-filter-dropdown-wrapper {
   position: relative;
 }
 
-.follow-filter-more-btn {
+.watch-filter-more-btn {
   font-weight: 500;
 }
 
-.follow-filter-dropdown {
+.watch-filter-dropdown {
   position: absolute;
   top: 100%;
   left: 0;
@@ -1127,13 +1127,13 @@ details[open] > .accordion-header .accordion-chevron::before {
   pointer-events: none;
 }
 
-.follow-filter-dropdown.visible {
+.watch-filter-dropdown.visible {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
 
-.follow-filter-dropdown-item {
+.watch-filter-dropdown-item {
   padding: var(--space-3) 10px;
   background: transparent;
   border: none;
@@ -1147,12 +1147,12 @@ details[open] > .accordion-header .accordion-chevron::before {
   text-align: left;
 }
 
-.follow-filter-dropdown-item:hover {
+.watch-filter-dropdown-item:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
 }
 
-.follow-filter-dropdown-item.active {
+.watch-filter-dropdown-item.active {
   background: rgba(56, 139, 253, 0.25);
   color: var(--text-primary);
   font-weight: 500;
@@ -2299,7 +2299,7 @@ details[open] > .section-header .accordion-chevron::before {
 }
 
 /* ============================================================
-   NOTIFICATION WINDOW (tray popup for follow actions)
+   NOTIFICATION WINDOW (tray popup for watch actions)
    ============================================================ */
 
 .notify-popup {
@@ -2356,7 +2356,7 @@ details[open] > .section-header .accordion-chevron::before {
    FOLLOW TOAST
    ============================================================ */
 
-.follow-toast {
+.watch-toast {
   position: fixed;
   top: 14px;
   left: 50%;
@@ -2370,14 +2370,14 @@ details[open] > .section-header .accordion-chevron::before {
   z-index: 1000;
   pointer-events: none;
   white-space: nowrap;
-  animation: follow-toast-anim 3s ease forwards;
+  animation: watch-toast-anim 3s ease forwards;
 }
 
-.follow-toast-removed {
+.watch-toast-removed {
   background: var(--text-tertiary);
 }
 
-@keyframes follow-toast-anim {
+@keyframes watch-toast-anim {
   0%   { opacity: 0; transform: translateX(-50%) translateY(-6px); }
   12%  { opacity: 1; transform: translateX(-50%) translateY(0); }
   80%  { opacity: 1; transform: translateX(-50%) translateY(0); }

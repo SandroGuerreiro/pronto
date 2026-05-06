@@ -14,13 +14,13 @@ const { mockState, mockInvoke } = vi.hoisted(() => {
     hiddenOrgs: new Set<string>(),
     hiddenRepos: new Set<string>(),
     hiddenPrs: new Map<string, string>(),
-    followedPrs: new Set<string>(),
-    activeFollowFilter: "all",
+    watchedPrs: new Set<string>(),
+    activeWatchFilter: "all",
     groupByRepository: true,
-    followedUsers: [] as string[],
+    watchedUsers: [] as string[],
     setGroupByRepository: vi.fn((v: boolean) => { mockState.groupByRepository = v; }),
-    setFollowedUsers: vi.fn((users: string[]) => { mockState.followedUsers = users; }),
-    setActiveFollowFilter: vi.fn((f: string) => { mockState.activeFollowFilter = f; }),
+    setWatchedUsers: vi.fn((users: string[]) => { mockState.watchedUsers = users; }),
+    setActiveWatchFilter: vi.fn((f: string) => { mockState.activeWatchFilter = f; }),
   };
   return { mockState, mockInvoke };
 });
@@ -49,8 +49,8 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     hidden_orgs: [],
     hidden_repos: [],
     hidden_prs: [],
-    followed_users: [],
-    followed_prs: [],
+    watched_users: [],
+    watched_prs: [],
     group_by_repository: true,
     workflow_monitor_enabled: false,
     workflow_org: "",
@@ -66,7 +66,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
       new_comment: true,
       new_comment_participated: true,
     },
-    notification_prefs_followed: {
+    notification_prefs_watched: {
       review_required: true,
       changes_requested: true,
       approved: true,
@@ -103,10 +103,10 @@ describe("prefs", () => {
     mockState.hiddenOrgs.clear();
     mockState.hiddenRepos.clear();
     mockState.hiddenPrs.clear();
-    mockState.followedPrs.clear();
-    mockState.activeFollowFilter = "all";
+    mockState.watchedPrs.clear();
+    mockState.activeWatchFilter = "all";
     mockState.groupByRepository = true;
-    mockState.followedUsers = [];
+    mockState.watchedUsers = [];
 
     // Fresh import each test to reset module-level _savePending / callbacks
     vi.resetModules();
@@ -146,8 +146,8 @@ describe("prefs", () => {
           { url: "https://github.com/o/r/pull/1", title: "PR one" },
           { url: "https://github.com/o/r/pull/2", title: "PR two" },
         ],
-        followed_prs: ["https://github.com/o/r/pull/10"],
-        followed_users: ["alice", "bob"],
+        watched_prs: ["https://github.com/o/r/pull/10"],
+        watched_users: ["alice", "bob"],
         group_by_repository: false,
       });
       mockInvoke.mockResolvedValue(settings);
@@ -165,16 +165,16 @@ describe("prefs", () => {
           ["https://github.com/o/r/pull/2", "PR two"],
         ]),
       );
-      expect(mockState.followedPrs).toEqual(new Set(["https://github.com/o/r/pull/10"]));
+      expect(mockState.watchedPrs).toEqual(new Set(["https://github.com/o/r/pull/10"]));
       expect(mockState.setGroupByRepository).toHaveBeenCalledWith(false);
-      expect(mockState.setFollowedUsers).toHaveBeenCalledWith(["alice", "bob"]);
+      expect(mockState.setWatchedUsers).toHaveBeenCalledWith(["alice", "bob"]);
     });
 
     it("clears existing state before populating", async () => {
       // Pre-populate state
       mockState.favoriteOrgs.add("stale-org");
       mockState.hiddenPrs.set("https://stale", "Stale PR");
-      mockState.followedPrs.add("https://stale-followed");
+      mockState.watchedPrs.add("https://stale-followed");
 
       mockInvoke.mockResolvedValue(makeSettings({
         favorite_orgs: ["fresh-org"],
@@ -184,60 +184,60 @@ describe("prefs", () => {
 
       expect(mockState.favoriteOrgs).toEqual(new Set(["fresh-org"]));
       expect(mockState.hiddenPrs.size).toBe(0);
-      expect(mockState.followedPrs.size).toBe(0);
+      expect(mockState.watchedPrs.size).toBe(0);
     });
 
-    it("resets activeFollowFilter when selected user is removed from followed_users", async () => {
-      mockState.activeFollowFilter = "alice";
+    it("resets activeWatchFilter when selected user is removed from watched_users", async () => {
+      mockState.activeWatchFilter = "alice";
 
       mockInvoke.mockResolvedValue(makeSettings({
-        followed_users: ["bob", "charlie"],
+        watched_users: ["bob", "charlie"],
       }));
 
       await prefs.loadUserPrefs();
 
-      expect(mockState.setActiveFollowFilter).toHaveBeenCalledWith("all");
+      expect(mockState.setActiveWatchFilter).toHaveBeenCalledWith("all");
     });
 
-    it("keeps activeFollowFilter when selected user still exists in followed_users", async () => {
-      mockState.activeFollowFilter = "alice";
+    it("keeps activeWatchFilter when selected user still exists in watched_users", async () => {
+      mockState.activeWatchFilter = "alice";
 
       mockInvoke.mockResolvedValue(makeSettings({
-        followed_users: ["alice", "bob"],
+        watched_users: ["alice", "bob"],
       }));
 
       await prefs.loadUserPrefs();
 
-      expect(mockState.setActiveFollowFilter).not.toHaveBeenCalled();
+      expect(mockState.setActiveWatchFilter).not.toHaveBeenCalled();
     });
 
-    it("does not reset activeFollowFilter when it is 'all'", async () => {
-      mockState.activeFollowFilter = "all";
+    it("does not reset activeWatchFilter when it is 'all'", async () => {
+      mockState.activeWatchFilter = "all";
 
       mockInvoke.mockResolvedValue(makeSettings({
-        followed_users: [],
+        watched_users: [],
       }));
 
       await prefs.loadUserPrefs();
 
-      expect(mockState.setActiveFollowFilter).not.toHaveBeenCalled();
+      expect(mockState.setActiveWatchFilter).not.toHaveBeenCalled();
     });
 
-    it("handles missing optional fields (hidden_prs, followed_prs, followed_users)", async () => {
+    it("handles missing optional fields (hidden_prs, watched_prs, watched_users)", async () => {
       const settings = makeSettings();
       // Simulate backend returning null/undefined for optional arrays
       const partial = { ...settings } as Record<string, unknown>;
       delete partial.hidden_prs;
-      delete partial.followed_prs;
-      delete partial.followed_users;
+      delete partial.watched_prs;
+      delete partial.watched_users;
 
       mockInvoke.mockResolvedValue(partial);
 
       await prefs.loadUserPrefs();
 
       expect(mockState.hiddenPrs.size).toBe(0);
-      expect(mockState.followedPrs.size).toBe(0);
-      expect(mockState.setFollowedUsers).toHaveBeenCalledWith([]);
+      expect(mockState.watchedPrs.size).toBe(0);
+      expect(mockState.setWatchedUsers).toHaveBeenCalledWith([]);
     });
 
     it("sets group_by_repository to true when field is not explicitly false", async () => {
@@ -271,7 +271,7 @@ describe("prefs", () => {
       mockState.hiddenOrgs.add("bad-org");
       mockState.hiddenRepos.add("bad-repo");
       mockState.hiddenPrs.set("https://github.com/o/r/pull/5", "Hidden PR");
-      mockState.followedPrs.add("https://github.com/o/r/pull/99");
+      mockState.watchedPrs.add("https://github.com/o/r/pull/99");
 
       prefs.persistPrefs();
 
@@ -287,7 +287,7 @@ describe("prefs", () => {
           hidden_orgs: ["bad-org"],
           hidden_repos: ["bad-repo"],
           hidden_prs: [{ url: "https://github.com/o/r/pull/5", title: "Hidden PR" }],
-          followed_prs: ["https://github.com/o/r/pull/99"],
+          watched_prs: ["https://github.com/o/r/pull/99"],
         }),
       });
     });

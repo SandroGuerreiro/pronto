@@ -7,20 +7,20 @@ import {
   setCurrentAttentionUrls,
   activeTab,
   setActiveTabState,
-  activeFollowFilter,
-  setActiveFollowFilter,
+  activeWatchFilter,
+  setActiveWatchFilter,
   setShowAuthorInCards,
   hiddenOrgs,
   hiddenRepos,
   groupByRepository,
   collapsedAccordions,
   hiddenPrs,
-  followedUsers,
-  followedPrs,
+  watchedUsers,
+  watchedPrs,
   searchQuery,
   setSearchQuery,
   setFocusIndex,
-  autoFollowedPrUrls,
+  autoWatchedPrUrls,
   unseenRequestUrls,
   removeUnseenRequestUrl,
 } from "./state";
@@ -126,7 +126,7 @@ export function renderActiveTab() {
 
   } else if (activeTab === "requests") {
     const prs = (currentResult.review_requests || []).filter(
-      (pr) => !followedPrs.has(pr.url)
+      (pr) => !watchedPrs.has(pr.url)
     );
     if (prs.length === 0) {
       html = '<div class="empty">No review requests</div>';
@@ -139,16 +139,16 @@ export function renderActiveTab() {
       setShowAuthorInCards(false);
     }
 
-  } else if (activeTab === "followed") {
-    if (followedUsers.length === 0 && followedPrs.size === 0) {
-      html = '<div class="empty">No followed developers or PRs. Add some in Settings.</div>';
+  } else if (activeTab === "watched") {
+    if (watchedUsers.length === 0 && watchedPrs.size === 0) {
+      html = '<div class="empty">No watched developers or PRs. Add some in Settings.</div>';
     } else {
-      const allOpen = currentResult.followed_open || [];
+      const allOpen = currentResult.watched_open || [];
 
       html += renderSearchBar();
 
       // Per-user filter bar (moved below search bar)
-      if (followedUsers.length > 1 || followedPrs.size > 0) {
+      if (watchedUsers.length > 1 || watchedPrs.size > 0) {
         const attentionByUser: Record<string, number> = {};
         for (const pr of allOpen) {
           if (currentAttentionUrls.includes(pr.url)) {
@@ -160,11 +160,11 @@ export function renderActiveTab() {
 
         // Show "All" + selected user (or first N users) inline, rest in dropdown
         const inlineCount = 3;
-        let visibleUsers = [...followedUsers];
+        let visibleUsers = [...watchedUsers];
 
         // If a specific user is selected, move them to the front to ensure visibility
-        if (activeFollowFilter !== "all" && followedUsers.includes(activeFollowFilter)) {
-          const selectedIndex = visibleUsers.indexOf(activeFollowFilter);
+        if (activeWatchFilter !== "all" && watchedUsers.includes(activeWatchFilter)) {
+          const selectedIndex = visibleUsers.indexOf(activeWatchFilter);
           const selected = visibleUsers.splice(selectedIndex, 1)[0];
           visibleUsers.unshift(selected);
         }
@@ -172,23 +172,23 @@ export function renderActiveTab() {
         const inlineUsers = visibleUsers.slice(0, inlineCount);
         const moreUsers = visibleUsers.slice(inlineCount);
 
-        html += `<div class="follow-filter-bar">
-          <button class="follow-filter-btn${activeFollowFilter === "all" ? " active" : ""}" data-filter="all">All${totalAttention ? `<span class="tab-badge">${totalAttention}</span>` : ""}</button>
-          ${followedPrs.size > 0 ? `<button class="follow-filter-btn${activeFollowFilter === "direct" ? " active" : ""}" data-filter="direct">Direct</button>` : ""}
+        html += `<div class="watch-filter-bar">
+          <button class="watch-filter-btn${activeWatchFilter === "all" ? " active" : ""}" data-filter="all">All${totalAttention ? `<span class="tab-badge">${totalAttention}</span>` : ""}</button>
+          ${watchedPrs.size > 0 ? `<button class="watch-filter-btn${activeWatchFilter === "direct" ? " active" : ""}" data-filter="direct">Direct</button>` : ""}
           ${inlineUsers
             .map((u) => {
               const count = attentionByUser[u] || 0;
-              return `<button class="follow-filter-btn${activeFollowFilter === u ? " active" : ""}" data-filter="${u}">@${u}${count ? `<span class="tab-badge">${count}</span>` : ""}</button>`;
+              return `<button class="watch-filter-btn${activeWatchFilter === u ? " active" : ""}" data-filter="${u}">@${u}${count ? `<span class="tab-badge">${count}</span>` : ""}</button>`;
             })
             .join("")}
           ${moreUsers.length > 0 ? `
-            <div class="follow-filter-dropdown-wrapper">
-              <button class="follow-filter-btn follow-filter-more-btn" id="follow-filter-more">+${moreUsers.length}</button>
-              <div class="follow-filter-dropdown" id="follow-filter-dropdown">
+            <div class="watch-filter-dropdown-wrapper">
+              <button class="watch-filter-btn watch-filter-more-btn" id="watch-filter-more">+${moreUsers.length}</button>
+              <div class="watch-filter-dropdown" id="watch-filter-dropdown">
                 ${moreUsers
                   .map((u) => {
                     const count = attentionByUser[u] || 0;
-                    return `<button class="follow-filter-dropdown-item${activeFollowFilter === u ? " active" : ""}" data-filter="${u}">@${u}${count ? `<span class="tab-badge">${count}</span>` : ""}</button>`;
+                    return `<button class="watch-filter-dropdown-item${activeWatchFilter === u ? " active" : ""}" data-filter="${u}">@${u}${count ? `<span class="tab-badge">${count}</span>` : ""}</button>`;
                   })
                   .join("")}
               </div>
@@ -199,10 +199,10 @@ export function renderActiveTab() {
 
       // Apply filter (all, direct, or specific user)
       let byFilter = allOpen;
-      if (activeFollowFilter === "direct") {
-        byFilter = allOpen.filter((pr) => followedPrs.has(pr.url));
-      } else if (activeFollowFilter !== "all") {
-        const filterLower = activeFollowFilter.toLowerCase();
+      if (activeWatchFilter === "direct") {
+        byFilter = allOpen.filter((pr) => watchedPrs.has(pr.url));
+      } else if (activeWatchFilter !== "all") {
+        const filterLower = activeWatchFilter.toLowerCase();
         byFilter = allOpen.filter((pr) => pr.author.login.toLowerCase() === filterLower);
       }
 
@@ -222,28 +222,28 @@ export function renderActiveTab() {
 
   } else if (activeTab === "merged") {
     const mine = currentResult.recently_merged || [];
-    const following = currentResult.followed_recently_merged || [];
-    if (mine.length === 0 && following.length === 0) {
+    const watched = currentResult.watched_recently_merged || [];
+    if (mine.length === 0 && watched.length === 0) {
       html = '<div class="empty">No recently merged PRs</div>';
     } else {
       if (mine.length > 0) html += renderCollapsibleSection("section:owned", "Owned", mine);
-      if (following.length > 0) {
+      if (watched.length > 0) {
         setShowAuthorInCards(true);
-        html += renderCollapsibleSection("section:following", "Following", following);
+        html += renderCollapsibleSection("section:watched", "Watched", watched);
         setShowAuthorInCards(false);
       }
     }
 
   } else if (activeTab === "closed") {
     const mine = currentResult.recently_closed || [];
-    const following = currentResult.followed_recently_closed || [];
-    if (mine.length === 0 && following.length === 0) {
+    const watched = currentResult.watched_recently_closed || [];
+    if (mine.length === 0 && watched.length === 0) {
       html = '<div class="empty">No recently closed PRs</div>';
     } else {
       if (mine.length > 0) html += renderCollapsibleSection("section:owned", "Owned", mine);
-      if (following.length > 0) {
+      if (watched.length > 0) {
         setShowAuthorInCards(true);
-        html += renderCollapsibleSection("section:following", "Following", following);
+        html += renderCollapsibleSection("section:watched", "Watched", watched);
         setShowAuthorInCards(false);
       }
     }
@@ -253,26 +253,26 @@ export function renderActiveTab() {
   content.innerHTML = html;
   bindContentEvents(content);
 
-  // Bind follow filter buttons (all, direct, user filters)
-  content.querySelectorAll<HTMLButtonElement>(".follow-filter-btn[data-filter]").forEach((btn) => {
+  // Bind watch filter buttons (all, direct, user filters)
+  content.querySelectorAll<HTMLButtonElement>(".watch-filter-btn[data-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      setActiveFollowFilter(btn.getAttribute("data-filter") || "all");
+      setActiveWatchFilter(btn.getAttribute("data-filter") || "all");
       renderActiveTab();
     });
   });
 
   // Bind dropdown items
-  content.querySelectorAll<HTMLButtonElement>(".follow-filter-dropdown-item").forEach((btn) => {
+  content.querySelectorAll<HTMLButtonElement>(".watch-filter-dropdown-item").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      setActiveFollowFilter(btn.getAttribute("data-filter") || "all");
+      setActiveWatchFilter(btn.getAttribute("data-filter") || "all");
       renderActiveTab();
     });
   });
 
   // Toggle dropdown on more button click
-  const moreBtn = content.querySelector<HTMLButtonElement>("#follow-filter-more");
-  const dropdown = content.querySelector<HTMLElement>("#follow-filter-dropdown");
+  const moreBtn = content.querySelector<HTMLButtonElement>("#watch-filter-more");
+  const dropdown = content.querySelector<HTMLElement>("#watch-filter-dropdown");
   if (moreBtn && dropdown) {
     moreBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -285,7 +285,7 @@ export function renderActiveTab() {
   }
 
   // Bind search/filter events
-  if (activeTab === "mine" || activeTab === "followed") {
+  if (activeTab === "mine" || activeTab === "watched") {
     bindSearchEvents(content);
   }
 
@@ -327,20 +327,20 @@ export function setActiveTab(tab: TabName) {
 export function updateTabBadges() {
   if (!currentResult) return;
   const mineCount = currentResult.open.filter((pr) => currentAttentionUrls.includes(pr.url)).length;
-  const followedCount = (currentResult.followed_open || []).filter((pr) => currentAttentionUrls.includes(pr.url)).length;
+  const watchedCount = (currentResult.watched_open || []).filter((pr) => currentAttentionUrls.includes(pr.url)).length;
   const mergedCount = [
     ...currentResult.recently_merged,
-    ...(currentResult.followed_recently_merged || []),
+    ...(currentResult.watched_recently_merged || []),
   ].filter((pr) => currentAttentionUrls.includes(pr.url)).length;
   const closedCount = [
     ...currentResult.recently_closed,
-    ...(currentResult.followed_recently_closed || []),
+    ...(currentResult.watched_recently_closed || []),
   ].filter((pr) => currentAttentionUrls.includes(pr.url)).length;
 
   const requestsCount = (currentResult.review_requests || []).filter(
-    (pr) => !followedPrs.has(pr.url)
+    (pr) => !watchedPrs.has(pr.url)
   ).length;
-  const counts: Record<string, number> = { mine: mineCount, requests: requestsCount, followed: followedCount, merged: mergedCount, closed: closedCount };
+  const counts: Record<string, number> = { mine: mineCount, requests: requestsCount, watched: watchedCount, merged: mergedCount, closed: closedCount };
 
   document.querySelectorAll("#main-nav .nav-item").forEach((btn) => {
     const tab = btn.getAttribute("data-tab")!;
@@ -366,11 +366,11 @@ export function updateTabBadges() {
   });
 }
 
-// ── Follow filter button badges ───────────────────────────────────────────────
+// ── Watch filter button badges ───────────────────────────────────────────────
 
-function updateFollowFilterBadges() {
-  if (!currentResult || activeTab !== "followed") return;
-  const allOpen = currentResult.followed_open || [];
+function updateWatchFilterBadges() {
+  if (!currentResult || activeTab !== "watched") return;
+  const allOpen = currentResult.watched_open || [];
   const attentionByUser: Record<string, number> = {};
 
   for (const pr of allOpen) {
@@ -383,7 +383,7 @@ function updateFollowFilterBadges() {
   const totalAttention = Object.values(attentionByUser).reduce((a, b) => a + b, 0);
 
   // Update "All" button
-  const allBtn = document.querySelector<HTMLButtonElement>(".follow-filter-btn[data-filter='all']");
+  const allBtn = document.querySelector<HTMLButtonElement>(".watch-filter-btn[data-filter='all']");
   if (allBtn) {
     let badge = allBtn.querySelector<HTMLElement>(".tab-badge");
     if (totalAttention > 0) {
@@ -401,7 +401,7 @@ function updateFollowFilterBadges() {
   }
 
   // Update user buttons
-  document.querySelectorAll<HTMLButtonElement>(".follow-filter-btn[data-filter], .follow-filter-dropdown-item[data-filter]").forEach((btn) => {
+  document.querySelectorAll<HTMLButtonElement>(".watch-filter-btn[data-filter], .watch-filter-dropdown-item[data-filter]").forEach((btn) => {
     const user = btn.getAttribute("data-filter");
     if (user && user !== "all") {
       const count = attentionByUser[user] || 0;
@@ -432,9 +432,9 @@ export function bindContentEvents(container: HTMLElement) {
     card.addEventListener("click", () => {
       const url = card.getAttribute("data-url");
       if (url) openUrl(url);
-      if (url && card.classList.contains("auto-followed-new")) {
-        autoFollowedPrUrls.delete(url);
-        card.classList.remove("auto-followed-new");
+      if (url && card.classList.contains("auto-watched-new")) {
+        autoWatchedPrUrls.delete(url);
+        card.classList.remove("auto-watched-new");
       }
       if (card.classList.contains("attention")) {
         if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
@@ -446,7 +446,7 @@ export function bindContentEvents(container: HTMLElement) {
           invoke("dismiss_pr", { url });
         }
         updateTabBadges();
-        updateFollowFilterBadges();
+        updateWatchFilterBadges();
       }
     });
 
@@ -484,7 +484,7 @@ export function bindContentEvents(container: HTMLElement) {
             invoke("dismiss_pr", { url });
           }
           updateTabBadges();
-          updateFollowFilterBadges();
+          updateWatchFilterBadges();
         }, 300);
       }
     });
@@ -497,9 +497,9 @@ export function bindContentEvents(container: HTMLElement) {
       if (hoverActive) {
         hoverActive = false;
         const url = card.getAttribute("data-url");
-        if (url && card.classList.contains("auto-followed-new")) {
-          autoFollowedPrUrls.delete(url);
-          card.classList.remove("auto-followed-new");
+        if (url && card.classList.contains("auto-watched-new")) {
+          autoWatchedPrUrls.delete(url);
+          card.classList.remove("auto-watched-new");
         }
         card.querySelectorAll<HTMLElement>(".status-detail.highlight-attention")
           .forEach((el) => el.classList.remove("highlight-attention"));
@@ -572,7 +572,7 @@ export function bindContentEvents(container: HTMLElement) {
 export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
   const content = document.getElementById("content")!;
   const items = [...content.querySelectorAll(
-    "#pr-search-input, .follow-filter-btn[data-filter], summary.accordion-header, .pr-card"
+    "#pr-search-input, .watch-filter-btn[data-filter], summary.accordion-header, .pr-card"
   )];
   if (focusIndex < 0 || focusIndex >= items.length) return false;
 
@@ -588,9 +588,9 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
 
   await new Promise<void>((resolve) => {
     setTimeout(() => {
-      const wasDirectFollow = followedPrs.has(url);
-      if (wasDirectFollow) {
-        followedPrs.delete(url);
+      const wasDirectWatch = watchedPrs.has(url);
+      if (wasDirectWatch) {
+        watchedPrs.delete(url);
       }
       hiddenPrs.set(url, title);
 
@@ -598,9 +598,9 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
         currentResult.open = currentResult.open.filter((pr) => pr.url !== url);
         currentResult.recently_merged = currentResult.recently_merged.filter((pr) => pr.url !== url);
         currentResult.recently_closed = currentResult.recently_closed.filter((pr) => pr.url !== url);
-        currentResult.followed_open = currentResult.followed_open.filter((pr) => pr.url !== url);
-        currentResult.followed_recently_merged = currentResult.followed_recently_merged.filter((pr) => pr.url !== url);
-        currentResult.followed_recently_closed = currentResult.followed_recently_closed.filter((pr) => pr.url !== url);
+        currentResult.watched_open = currentResult.watched_open.filter((pr) => pr.url !== url);
+        currentResult.watched_recently_merged = currentResult.watched_recently_merged.filter((pr) => pr.url !== url);
+        currentResult.watched_recently_closed = currentResult.watched_recently_closed.filter((pr) => pr.url !== url);
       }
       renderActiveTab();
       resolve();
@@ -609,7 +609,7 @@ export async function hideCurrentFocusPr(focusIndex: number): Promise<boolean> {
 
   const current = await invoke<import("./types").Settings>("get_settings");
   current.hidden_prs = [...hiddenPrs.entries()].map(([u, t]) => ({ url: u, title: t }));
-  current.followed_prs = [...followedPrs];
+  current.watched_prs = [...watchedPrs];
   await invoke("update_settings", { settings: current });
 
   return true;

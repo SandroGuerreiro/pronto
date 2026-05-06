@@ -13,9 +13,9 @@ const { mockState } = vi.hoisted(() => {
     hiddenOrgs: new Set<string>(),
     hiddenRepos: new Set<string>(),
     hiddenPrs: new Map<string, string>(),
-    followedUsers: [] as string[],
-    followedPrs: new Set<string>(),
-    activeFollowFilter: "all",
+    watchedUsers: [] as string[],
+    watchedPrs: new Set<string>(),
+    activeWatchFilter: "all",
     keybindings: {
       navigate_down: "j",
       navigate_up: "k",
@@ -25,18 +25,18 @@ const { mockState } = vi.hoisted(() => {
       hide_pr: "i",
       copy_url: "c",
       tab_owned: "1",
-      tab_followed: "2",
+      tab_watched: "2",
       tab_merged: "3",
       tab_closed: "4",
       global_toggle: "Super+Ctrl+P",
       global_reload: "Super+Ctrl+R",
     } as Record<string, string>,
     setGroupByRepository: vi.fn(),
-    setFollowedUsers: vi.fn((u: string[]) => {
-      mockState.followedUsers = u;
+    setWatchedUsers: vi.fn((u: string[]) => {
+      mockState.watchedUsers = u;
     }),
-    setActiveFollowFilter: vi.fn((f: string) => {
-      mockState.activeFollowFilter = f;
+    setActiveWatchFilter: vi.fn((f: string) => {
+      mockState.activeWatchFilter = f;
     }),
     setKeybindings: vi.fn(),
     setShowRecentlyMerged: vi.fn(),
@@ -54,13 +54,13 @@ vi.mock("../state", () => ({
   get hiddenOrgs() { return mockState.hiddenOrgs; },
   get hiddenRepos() { return mockState.hiddenRepos; },
   get hiddenPrs() { return mockState.hiddenPrs; },
-  get followedUsers() { return mockState.followedUsers; },
-  get followedPrs() { return mockState.followedPrs; },
-  get activeFollowFilter() { return mockState.activeFollowFilter; },
+  get watchedUsers() { return mockState.watchedUsers; },
+  get watchedPrs() { return mockState.watchedPrs; },
+  get activeWatchFilter() { return mockState.activeWatchFilter; },
   get keybindings() { return mockState.keybindings; },
   setGroupByRepository: (...args: unknown[]) => mockState.setGroupByRepository(...args),
-  setFollowedUsers: (...args: unknown[]) => mockState.setFollowedUsers(...args),
-  setActiveFollowFilter: (...args: unknown[]) => mockState.setActiveFollowFilter(...args),
+  setWatchedUsers: (...args: unknown[]) => mockState.setWatchedUsers(...args),
+  setActiveWatchFilter: (...args: unknown[]) => mockState.setActiveWatchFilter(...args),
   setKeybindings: (...args: unknown[]) => mockState.setKeybindings(...args),
   setShowRecentlyMerged: (...args: unknown[]) => mockState.setShowRecentlyMerged(...args),
   setShowClosed: (...args: unknown[]) => mockState.setShowClosed(...args),
@@ -112,8 +112,8 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     hidden_orgs: [],
     hidden_repos: [],
     hidden_prs: [],
-    followed_users: [],
-    followed_prs: [],
+    watched_users: [],
+    watched_prs: [],
     group_by_repository: true,
     workflow_monitor_enabled: false,
     workflow_org: "",
@@ -129,7 +129,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
       new_comment: true,
       new_comment_participated: false,
     },
-    notification_prefs_followed: {
+    notification_prefs_watched: {
       review_required: true,
       changes_requested: false,
       approved: false,
@@ -160,9 +160,9 @@ function resetMockState(): void {
   mockState.hiddenOrgs = new Set<string>();
   mockState.hiddenRepos = new Set<string>();
   mockState.hiddenPrs = new Map<string, string>();
-  mockState.followedUsers = [];
-  mockState.followedPrs = new Set<string>();
-  mockState.activeFollowFilter = "all";
+  mockState.watchedUsers = [];
+  mockState.watchedPrs = new Set<string>();
+  mockState.activeWatchFilter = "all";
   mockState.keybindings = {
     navigate_down: "j",
     navigate_up: "k",
@@ -172,7 +172,7 @@ function resetMockState(): void {
     hide_pr: "i",
     copy_url: "c",
     tab_owned: "1",
-    tab_followed: "2",
+    tab_watched: "2",
     tab_merged: "3",
     tab_closed: "4",
     global_toggle: "Super+Ctrl+P",
@@ -202,7 +202,7 @@ describe("loadNotifPrefsFromSettings", () => {
         changes_requested: true,
         approved: true,
       },
-      notification_prefs_followed: {
+      notification_prefs_watched: {
         ...makeDefaultNotifPrefs(),
         review_required: true,
       },
@@ -241,7 +241,7 @@ describe("loadNotifPrefsFromSettings", () => {
     const partialOwned = { changes_requested: true } as NotificationPreferences;
     const settings = makeSettings({
       notification_prefs_owned: partialOwned,
-      notification_prefs_followed: { approved: true } as NotificationPreferences,
+      notification_prefs_watched: { approved: true } as NotificationPreferences,
       use_native_notifications: false,
       notify_on_merged: false,
       notify_on_closed: true,
@@ -268,8 +268,8 @@ describe("loadNotifPrefsFromSettings", () => {
     expect(savedSettings.notification_prefs_owned.checks_failed).toBe(false);
 
     // Partial followed merged with defaults: approved=true, rest false
-    expect(savedSettings.notification_prefs_followed.approved).toBe(true);
-    expect(savedSettings.notification_prefs_followed.review_required).toBe(false);
+    expect(savedSettings.notification_prefs_watched.approved).toBe(true);
+    expect(savedSettings.notification_prefs_watched.review_required).toBe(false);
 
     // Other module-level state
     expect(savedSettings.use_native_notifications).toBe(false);
@@ -430,7 +430,7 @@ describe("autoSaveSettings", () => {
         poll_interval_secs: expect.any(Number),
         use_native_notifications: expect.any(Boolean),
         favorite_orgs: expect.any(Array),
-        followed_users: expect.any(Array),
+        watched_users: expect.any(Array),
       }),
     });
   });
@@ -452,7 +452,7 @@ describe("autoSaveSettings", () => {
     mockState.hiddenPrs = new Map([
       ["https://github.com/o/r/pull/1", "Fix bug"],
     ]);
-    mockState.followedPrs = new Set(["https://github.com/o/r/pull/2"]);
+    mockState.watchedPrs = new Set(["https://github.com/o/r/pull/2"]);
 
     await autoSaveSettings();
 
@@ -465,7 +465,7 @@ describe("autoSaveSettings", () => {
     expect(savedSettings.hidden_prs).toEqual([
       { url: "https://github.com/o/r/pull/1", title: "Fix bug" },
     ]);
-    expect(savedSettings.followed_prs).toEqual(["https://github.com/o/r/pull/2"]);
+    expect(savedSettings.watched_prs).toEqual(["https://github.com/o/r/pull/2"]);
   });
 });
 
@@ -778,10 +778,10 @@ describe("showSettings", () => {
 
   // ── Subscriptions tab ─────────────────────────────────────────────────
 
-  it("subscriptions tab: renders followed users list", async () => {
+  it("subscriptions tab: renders watched users list", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
-        return Promise.resolve(makeSettings({ followed_users: ["alice", "bob"] }));
+        return Promise.resolve(makeSettings({ watched_users: ["alice", "bob"] }));
       return Promise.resolve(undefined);
     });
 
@@ -790,20 +790,20 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-users-list")).toBeTruthy();
+      expect(document.getElementById("watch-users-list")).toBeTruthy();
     });
 
-    const userRows = document.querySelectorAll('#follow-users-list .hidden-pr-row');
+    const userRows = document.querySelectorAll('#watch-users-list .hidden-pr-row');
     expect(userRows.length).toBe(2);
     expect(userRows[0].querySelector(".hidden-pr-title")?.textContent).toBe("alice");
     expect(userRows[1].querySelector(".hidden-pr-title")?.textContent).toBe("bob");
   });
 
-  it("subscriptions tab: renders followed PRs list with short display", async () => {
+  it("subscriptions tab: renders watched PRs list with short display", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
         return Promise.resolve(
-          makeSettings({ followed_prs: ["https://github.com/org/repo/pull/42"] })
+          makeSettings({ watched_prs: ["https://github.com/org/repo/pull/42"] })
         );
       return Promise.resolve(undefined);
     });
@@ -813,23 +813,23 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-prs-list")).toBeTruthy();
+      expect(document.getElementById("watch-prs-list")).toBeTruthy();
     });
 
-    const prRows = document.querySelectorAll('#follow-prs-list .hidden-pr-row');
+    const prRows = document.querySelectorAll('#watch-prs-list .hidden-pr-row');
     expect(prRows.length).toBe(1);
     expect(prRows[0].querySelector(".hidden-pr-title")?.textContent).toBe("org/repo #42");
   });
 
   it("subscriptions tab: adding a user updates state and auto-saves", async () => {
-    mockState.followedUsers = ["existing-user"];
+    mockState.watchedUsers = ["existing-user"];
 
     await showSettings();
 
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-user-input")).toBeTruthy();
+      expect(document.getElementById("watch-user-input")).toBeTruthy();
     });
 
     mockInvoke.mockClear();
@@ -838,17 +838,17 @@ describe("showSettings", () => {
       return Promise.resolve(undefined);
     });
 
-    const input = document.getElementById("follow-user-input") as HTMLInputElement;
-    const addBtn = document.getElementById("follow-user-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-user-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-user-add") as HTMLButtonElement;
 
     input.value = "newuser";
     addBtn.click();
 
     expect(input.value).toBe("");
-    expect(mockState.followedUsers).toContain("newuser");
+    expect(mockState.watchedUsers).toContain("newuser");
 
     // Check that a row was added
-    const userRows = document.querySelectorAll('#follow-users-list .hidden-pr-row');
+    const userRows = document.querySelectorAll('#watch-users-list .hidden-pr-row');
     const lastRow = userRows[userRows.length - 1];
     expect(lastRow.querySelector(".hidden-pr-title")?.textContent).toBe("newuser");
 
@@ -863,23 +863,23 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-user-input")).toBeTruthy();
+      expect(document.getElementById("watch-user-input")).toBeTruthy();
     });
 
-    const input = document.getElementById("follow-user-input") as HTMLInputElement;
-    const addBtn = document.getElementById("follow-user-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-user-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-user-add") as HTMLButtonElement;
 
     input.value = "@octocat";
     addBtn.click();
 
-    expect(mockState.followedUsers).toContain("octocat");
+    expect(mockState.watchedUsers).toContain("octocat");
   });
 
   it("subscriptions tab: adding a duplicate user is a no-op", async () => {
-    mockState.followedUsers = ["alice"];
+    mockState.watchedUsers = ["alice"];
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
-        return Promise.resolve(makeSettings({ followed_users: ["alice"] }));
+        return Promise.resolve(makeSettings({ watched_users: ["alice"] }));
       return Promise.resolve(undefined);
     });
 
@@ -888,26 +888,26 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-user-input")).toBeTruthy();
+      expect(document.getElementById("watch-user-input")).toBeTruthy();
     });
 
-    const initialRowCount = document.querySelectorAll('#follow-users-list .hidden-pr-row').length;
+    const initialRowCount = document.querySelectorAll('#watch-users-list .hidden-pr-row').length;
 
-    const input = document.getElementById("follow-user-input") as HTMLInputElement;
-    const addBtn = document.getElementById("follow-user-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-user-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-user-add") as HTMLButtonElement;
 
     input.value = "alice";
     addBtn.click();
 
-    const afterRowCount = document.querySelectorAll('#follow-users-list .hidden-pr-row').length;
+    const afterRowCount = document.querySelectorAll('#watch-users-list .hidden-pr-row').length;
     expect(afterRowCount).toBe(initialRowCount);
   });
 
   it("subscriptions tab: removing a user updates state and auto-saves", async () => {
-    mockState.followedUsers = ["alice", "bob"];
+    mockState.watchedUsers = ["alice", "bob"];
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
-        return Promise.resolve(makeSettings({ followed_users: ["alice", "bob"] }));
+        return Promise.resolve(makeSettings({ watched_users: ["alice", "bob"] }));
       return Promise.resolve(undefined);
     });
 
@@ -916,7 +916,7 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-users-list")).toBeTruthy();
+      expect(document.getElementById("watch-users-list")).toBeTruthy();
     });
 
     mockInvoke.mockClear();
@@ -925,12 +925,12 @@ describe("showSettings", () => {
       return Promise.resolve(undefined);
     });
 
-    const removeBtn = document.querySelector('.follow-user-remove[data-user="alice"]') as HTMLElement;
+    const removeBtn = document.querySelector('.watch-user-remove[data-user="alice"]') as HTMLElement;
     removeBtn.click();
 
-    expect(mockState.setFollowedUsers).toHaveBeenCalled();
+    expect(mockState.setWatchedUsers).toHaveBeenCalled();
     // The filter removes "alice"
-    const lastCall = mockState.setFollowedUsers.mock.calls.at(-1);
+    const lastCall = mockState.setWatchedUsers.mock.calls.at(-1);
     expect(lastCall?.[0]).toEqual(["bob"]);
 
     await vi.waitFor(() => {
@@ -938,12 +938,12 @@ describe("showSettings", () => {
     });
   });
 
-  it("subscriptions tab: removing the active follow filter resets to 'all'", async () => {
-    mockState.followedUsers = ["alice"];
-    mockState.activeFollowFilter = "alice";
+  it("subscriptions tab: removing the active watch filter resets to 'all'", async () => {
+    mockState.watchedUsers = ["alice"];
+    mockState.activeWatchFilter = "alice";
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
-        return Promise.resolve(makeSettings({ followed_users: ["alice"] }));
+        return Promise.resolve(makeSettings({ watched_users: ["alice"] }));
       return Promise.resolve(undefined);
     });
 
@@ -952,22 +952,22 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.querySelector('.follow-user-remove[data-user="alice"]')).toBeTruthy();
+      expect(document.querySelector('.watch-user-remove[data-user="alice"]')).toBeTruthy();
     });
 
-    const removeBtn = document.querySelector('.follow-user-remove[data-user="alice"]') as HTMLElement;
+    const removeBtn = document.querySelector('.watch-user-remove[data-user="alice"]') as HTMLElement;
     removeBtn.click();
 
-    expect(mockState.setActiveFollowFilter).toHaveBeenCalledWith("all");
+    expect(mockState.setActiveWatchFilter).toHaveBeenCalledWith("all");
   });
 
-  it("subscriptions tab: adding a PR URL normalizes and adds to followedPrs", async () => {
+  it("subscriptions tab: adding a PR URL normalizes and adds to watchedPrs", async () => {
     await showSettings();
 
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-pr-input")).toBeTruthy();
+      expect(document.getElementById("watch-pr-input")).toBeTruthy();
     });
 
     mockInvoke.mockClear();
@@ -976,17 +976,17 @@ describe("showSettings", () => {
       return Promise.resolve(undefined);
     });
 
-    const input = document.getElementById("follow-pr-input") as HTMLInputElement;
-    const addBtn = document.getElementById("follow-pr-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-pr-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-pr-add") as HTMLButtonElement;
 
     input.value = "https://github.com/org/repo/pull/99";
     addBtn.click();
 
     expect(input.value).toBe("");
-    expect(mockState.followedPrs.has("https://github.com/org/repo/pull/99")).toBe(true);
+    expect(mockState.watchedPrs.has("https://github.com/org/repo/pull/99")).toBe(true);
 
     // Row added with short display
-    const prRows = document.querySelectorAll('#follow-prs-list .hidden-pr-row');
+    const prRows = document.querySelectorAll('#watch-prs-list .hidden-pr-row');
     expect(prRows.length).toBe(1);
     expect(prRows[0].querySelector(".hidden-pr-title")?.textContent).toBe("org/repo #99");
 
@@ -1001,24 +1001,24 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-pr-input")).toBeTruthy();
+      expect(document.getElementById("watch-pr-input")).toBeTruthy();
     });
 
-    const input = document.getElementById("follow-pr-input") as HTMLInputElement;
-    const addBtn = document.getElementById("follow-pr-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-pr-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-pr-add") as HTMLButtonElement;
 
     input.value = "org/repo/pull/42";
     addBtn.click();
 
-    expect(mockState.followedPrs.has("https://github.com/org/repo/pull/42")).toBe(true);
+    expect(mockState.watchedPrs.has("https://github.com/org/repo/pull/42")).toBe(true);
   });
 
   it("subscriptions tab: adding a duplicate PR URL is a no-op", async () => {
-    mockState.followedPrs = new Set(["https://github.com/org/repo/pull/1"]);
+    mockState.watchedPrs = new Set(["https://github.com/org/repo/pull/1"]);
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
         return Promise.resolve(
-          makeSettings({ followed_prs: ["https://github.com/org/repo/pull/1"] })
+          makeSettings({ watched_prs: ["https://github.com/org/repo/pull/1"] })
         );
       return Promise.resolve(undefined);
     });
@@ -1028,27 +1028,27 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-pr-input")).toBeTruthy();
+      expect(document.getElementById("watch-pr-input")).toBeTruthy();
     });
 
-    const initialCount = document.querySelectorAll('#follow-prs-list .hidden-pr-row').length;
+    const initialCount = document.querySelectorAll('#watch-prs-list .hidden-pr-row').length;
 
-    const input = document.getElementById("follow-pr-input") as HTMLInputElement;
-    const addBtn = document.getElementById("follow-pr-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-pr-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-pr-add") as HTMLButtonElement;
 
     input.value = "https://github.com/org/repo/pull/1";
     addBtn.click();
 
-    const afterCount = document.querySelectorAll('#follow-prs-list .hidden-pr-row').length;
+    const afterCount = document.querySelectorAll('#watch-prs-list .hidden-pr-row').length;
     expect(afterCount).toBe(initialCount);
   });
 
-  it("subscriptions tab: removing a PR URL removes from followedPrs", async () => {
-    mockState.followedPrs = new Set(["https://github.com/org/repo/pull/1"]);
+  it("subscriptions tab: removing a PR URL removes from watchedPrs", async () => {
+    mockState.watchedPrs = new Set(["https://github.com/org/repo/pull/1"]);
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings")
         return Promise.resolve(
-          makeSettings({ followed_prs: ["https://github.com/org/repo/pull/1"] })
+          makeSettings({ watched_prs: ["https://github.com/org/repo/pull/1"] })
         );
       return Promise.resolve(undefined);
     });
@@ -1058,7 +1058,7 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.querySelector('.follow-pr-remove')).toBeTruthy();
+      expect(document.querySelector('.watch-pr-remove')).toBeTruthy();
     });
 
     mockInvoke.mockClear();
@@ -1067,10 +1067,10 @@ describe("showSettings", () => {
       return Promise.resolve(undefined);
     });
 
-    const removeBtn = document.querySelector('.follow-pr-remove') as HTMLElement;
+    const removeBtn = document.querySelector('.watch-pr-remove') as HTMLElement;
     removeBtn.click();
 
-    expect(mockState.followedPrs.has("https://github.com/org/repo/pull/1")).toBe(false);
+    expect(mockState.watchedPrs.has("https://github.com/org/repo/pull/1")).toBe(false);
 
     await vi.waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("update_settings", expect.anything());
@@ -1088,7 +1088,7 @@ describe("showSettings", () => {
     subTab.click();
     await vi.waitFor(() => {
       expect(
-        document.querySelector('.hidden-pr-remove:not(.follow-pr-remove)[data-pr-url]')
+        document.querySelector('.hidden-pr-remove:not(.watch-pr-remove)[data-pr-url]')
       ).toBeTruthy();
     });
 
@@ -1099,7 +1099,7 @@ describe("showSettings", () => {
     });
 
     const unhideBtn = document.querySelector(
-      '.hidden-pr-remove:not(.follow-pr-remove)[data-pr-url]'
+      '.hidden-pr-remove:not(.watch-pr-remove)[data-pr-url]'
     ) as HTMLElement;
     unhideBtn.click();
 
@@ -1154,14 +1154,14 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-user-input")).toBeTruthy();
+      expect(document.getElementById("watch-user-input")).toBeTruthy();
     });
 
-    const input = document.getElementById("follow-user-input") as HTMLInputElement;
+    const input = document.getElementById("watch-user-input") as HTMLInputElement;
     input.value = "enteruser";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
-    expect(mockState.followedUsers).toContain("enteruser");
+    expect(mockState.watchedUsers).toContain("enteruser");
   });
 
   it("subscriptions tab: pressing Enter in PR input triggers add", async () => {
@@ -1170,14 +1170,14 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-pr-input")).toBeTruthy();
+      expect(document.getElementById("watch-pr-input")).toBeTruthy();
     });
 
-    const input = document.getElementById("follow-pr-input") as HTMLInputElement;
+    const input = document.getElementById("watch-pr-input") as HTMLInputElement;
     input.value = "https://github.com/org/repo/pull/77";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
-    expect(mockState.followedPrs.has("https://github.com/org/repo/pull/77")).toBe(true);
+    expect(mockState.watchedPrs.has("https://github.com/org/repo/pull/77")).toBe(true);
   });
 
   it("subscriptions tab: empty input does not add user", async () => {
@@ -1186,15 +1186,15 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-user-input")).toBeTruthy();
+      expect(document.getElementById("watch-user-input")).toBeTruthy();
     });
 
-    const addBtn = document.getElementById("follow-user-add") as HTMLButtonElement;
-    const input = document.getElementById("follow-user-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-user-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-user-input") as HTMLInputElement;
     input.value = "";
     addBtn.click();
 
-    expect(mockState.followedUsers.length).toBe(0);
+    expect(mockState.watchedUsers.length).toBe(0);
   });
 
   it("subscriptions tab: empty input does not add PR", async () => {
@@ -1203,15 +1203,15 @@ describe("showSettings", () => {
     const subTab = document.querySelector('[data-tab="subscriptions"]') as HTMLElement;
     subTab.click();
     await vi.waitFor(() => {
-      expect(document.getElementById("follow-pr-input")).toBeTruthy();
+      expect(document.getElementById("watch-pr-input")).toBeTruthy();
     });
 
-    const addBtn = document.getElementById("follow-pr-add") as HTMLButtonElement;
-    const input = document.getElementById("follow-pr-input") as HTMLInputElement;
+    const addBtn = document.getElementById("watch-pr-add") as HTMLButtonElement;
+    const input = document.getElementById("watch-pr-input") as HTMLInputElement;
     input.value = "   ";
     addBtn.click();
 
-    expect(mockState.followedPrs.size).toBe(0);
+    expect(mockState.watchedPrs.size).toBe(0);
   });
 
   // ── Shortcuts tab - key capture ──────────────────────────────────────────

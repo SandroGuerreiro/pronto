@@ -8,12 +8,12 @@ import {
   hiddenOrgs,
   hiddenRepos,
   hiddenPrs,
-  followedUsers,
-  followedPrs,
+  watchedUsers,
+  watchedPrs,
   setGroupByRepository,
-  setFollowedUsers,
-  activeFollowFilter,
-  setActiveFollowFilter,
+  setWatchedUsers,
+  activeWatchFilter,
+  setActiveWatchFilter,
   keybindings,
   setKeybindings,
   activeTab,
@@ -46,7 +46,7 @@ let _notificationSound: boolean = true;
 let _notificationVolume: number = 0.35;
 let _useNativeNotifications: boolean = true;
 let _notifPrefsOwned: NotificationPreferences = defaultNotifPrefs();
-let _notifPrefsFollowed: NotificationPreferences = defaultNotifPrefs();
+let _notifPrefsWatched: NotificationPreferences = defaultNotifPrefs();
 let _notifyOnMerged: boolean = true;
 let _notifyOnClosed: boolean = false;
 
@@ -57,8 +57,8 @@ let _brewCheckIntervalSecs: number = 14400;
 // ── Popup screen preference ──────────────────────────────────────────────
 let _popupScreen: string = "primary";
 
-// ── Auto-follow PRs you commented on ──────────────────────────────────────
-let _autoFollowCommentedPrs: boolean = true;
+// ── Auto-watch PRs you commented on ──────────────────────────────────────
+let _autoWatchCommentedPrs: boolean = true;
 
 // ── Notification duration ─────────────────────────────────────────────────
 let _notificationDurationSecs: number = 8;
@@ -69,13 +69,13 @@ export function loadNotifPrefsFromSettings(s: Settings) {
   _notificationDurationSecs = s.notification_duration_secs ?? 8;
   _useNativeNotifications = s.use_native_notifications ?? false;
   _notifPrefsOwned = { ...defaultNotifPrefs(), ...s.notification_prefs_owned };
-  _notifPrefsFollowed = { ...defaultNotifPrefs(), ...s.notification_prefs_followed };
+  _notifPrefsWatched = { ...defaultNotifPrefs(), ...s.notification_prefs_watched };
   _notifyOnMerged = s.notify_on_merged ?? true;
   _notifyOnClosed = s.notify_on_closed ?? false;
   _brewCheckEnabled = s.homebrew_check_enabled ?? false;
   _brewCheckIntervalSecs = s.homebrew_check_interval_secs ?? 14400;
   _popupScreen = s.popup_screen ?? "primary";
-  _autoFollowCommentedPrs = s.auto_follow_commented_prs ?? true;
+  _autoWatchCommentedPrs = s.auto_watch_commented_prs ?? true;
 }
 
 export function initSettings(onClosed: () => void) {
@@ -105,7 +105,7 @@ export async function autoSaveSettings() {
   const wfNameEl = document.getElementById("setting-workflow-name") as HTMLInputElement | null;
   const globalToggleEl = document.querySelector('[data-action="global_toggle"]') as HTMLElement | null;
   const globalReloadEl = document.querySelector('[data-action="global_reload"]') as HTMLElement | null;
-  const globalFollowEl = document.querySelector('[data-action="global_follow"]') as HTMLElement | null;
+  const globalWatchEl = document.querySelector('[data-action="global_watch"]') as HTMLElement | null;
 
   // Collect keybindings from state
   const kbToSave = { ...keybindings };
@@ -124,8 +124,8 @@ export async function autoSaveSettings() {
     hidden_orgs: [...hiddenOrgs],
     hidden_repos: [...hiddenRepos],
     hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
-    followed_users: followedUsers,
-    followed_prs: [...followedPrs],
+    watched_users: watchedUsers,
+    watched_prs: [...watchedPrs],
     group_by_repository: groupRepoEl?.checked ?? currentSettings.group_by_repository,
     workflow_monitor_enabled: wfEnabledEl?.checked ?? currentSettings.workflow_monitor_enabled,
     workflow_org: wfOrgEl?.value.trim() ?? currentSettings.workflow_org,
@@ -134,10 +134,10 @@ export async function autoSaveSettings() {
     keybindings: kbToSave,
     global_toggle_shortcut: globalToggleEl?.textContent ?? currentSettings.global_toggle_shortcut,
     global_reload_shortcut: globalReloadEl?.textContent ?? currentSettings.global_reload_shortcut,
-    global_follow_shortcut: globalFollowEl?.textContent ?? currentSettings.global_follow_shortcut,
+    global_watch_shortcut: globalWatchEl?.textContent ?? currentSettings.global_watch_shortcut,
     // Use module-level state — always current regardless of which tab is rendered
     notification_prefs_owned: { ..._notifPrefsOwned },
-    notification_prefs_followed: { ..._notifPrefsFollowed },
+    notification_prefs_watched: { ..._notifPrefsWatched },
     notify_on_merged: _notifyOnMerged,
     notify_on_closed: _notifyOnClosed,
     homebrew_check_enabled: _brewCheckEnabled,
@@ -146,7 +146,7 @@ export async function autoSaveSettings() {
     notification_sound: _notificationSound,
     notification_volume: _notificationVolume,
     notification_duration_secs: _notificationDurationSecs,
-    auto_follow_commented_prs: _autoFollowCommentedPrs,
+    auto_watch_commented_prs: _autoWatchCommentedPrs,
   };
 
   setGroupByRepository(updated.group_by_repository);
@@ -473,14 +473,14 @@ export async function showSettings() {
             </div>
 
             <div class="settings-section">
-              <div class="settings-section-title">Followed PRs</div>
+              <div class="settings-section-title">Watched PRs</div>
               <div class="settings-group">
                 <label class="settings-label">
                   <div>
                     <span>Needs review</span>
                     <div class="settings-hint">PR is waiting for a review decision</div>
                   </div>
-                  <input type="checkbox" id="notif-followed-review_required" class="settings-toggle"${_notifPrefsFollowed.review_required ? " checked" : ""} />
+                  <input type="checkbox" id="notif-watched-review_required" class="settings-toggle"${_notifPrefsWatched.review_required ? " checked" : ""} />
                 </label>
               </div>
               <div class="settings-group">
@@ -489,7 +489,7 @@ export async function showSettings() {
                     <span>Changes requested</span>
                     <div class="settings-hint">A reviewer blocked the PR</div>
                   </div>
-                  <input type="checkbox" id="notif-followed-changes_requested" class="settings-toggle"${_notifPrefsFollowed.changes_requested ? " checked" : ""} />
+                  <input type="checkbox" id="notif-watched-changes_requested" class="settings-toggle"${_notifPrefsWatched.changes_requested ? " checked" : ""} />
                 </label>
               </div>
               <div class="settings-group">
@@ -498,7 +498,7 @@ export async function showSettings() {
                     <span>PR approved</span>
                     <div class="settings-hint">PR received all needed approvals</div>
                   </div>
-                  <input type="checkbox" id="notif-followed-approved" class="settings-toggle"${_notifPrefsFollowed.approved ? " checked" : ""} />
+                  <input type="checkbox" id="notif-watched-approved" class="settings-toggle"${_notifPrefsWatched.approved ? " checked" : ""} />
                 </label>
               </div>
               <div class="settings-group">
@@ -507,7 +507,7 @@ export async function showSettings() {
                     <span>Any new comments</span>
                     <div class="settings-hint">Any comment or thread reply on the PR</div>
                   </div>
-                  <input type="checkbox" id="notif-followed-new_comment" class="settings-toggle"${_notifPrefsFollowed.new_comment ? " checked" : ""} />
+                  <input type="checkbox" id="notif-watched-new_comment" class="settings-toggle"${_notifPrefsWatched.new_comment ? " checked" : ""} />
                 </label>
               </div>
               <div class="settings-group">
@@ -516,7 +516,7 @@ export async function showSettings() {
                     <span>Replies to my threads</span>
                     <div class="settings-hint">Someone replied to a thread you started</div>
                   </div>
-                  <input type="checkbox" id="notif-followed-new_comment_participated" class="settings-toggle"${_notifPrefsFollowed.new_comment_participated ? " checked" : ""} />
+                  <input type="checkbox" id="notif-watched-new_comment_participated" class="settings-toggle"${_notifPrefsWatched.new_comment_participated ? " checked" : ""} />
                 </label>
               </div>
             </div>
@@ -597,7 +597,7 @@ export async function showSettings() {
         document.getElementById("notif-mode-pronto")?.addEventListener("click", () => setNotifMode(false));
         document.getElementById("notif-mode-native")?.addEventListener("click", () => setNotifMode(true));
 
-        // Wire up owned/followed checkboxes
+        // Wire up owned/watched checkboxes
         type NotifKey = keyof NotificationPreferences;
         const notifMap: Array<{ id: string; key: NotifKey; state: NotificationPreferences }> = [
           { id: "notif-owned-changes_requested",  key: "changes_requested", state: _notifPrefsOwned },
@@ -606,11 +606,11 @@ export async function showSettings() {
           { id: "notif-owned-checks_recovered",   key: "checks_recovered",    state: _notifPrefsOwned },
           { id: "notif-owned-kicked_from_queue",  key: "kicked_from_queue",   state: _notifPrefsOwned },
           { id: "notif-owned-new_comment",        key: "new_comment",         state: _notifPrefsOwned },
-          { id: "notif-followed-review_required", key: "review_required",   state: _notifPrefsFollowed },
-          { id: "notif-followed-changes_requested", key: "changes_requested", state: _notifPrefsFollowed },
-          { id: "notif-followed-approved",        key: "approved",          state: _notifPrefsFollowed },
-          { id: "notif-followed-new_comment",     key: "new_comment",       state: _notifPrefsFollowed },
-          { id: "notif-followed-new_comment_participated", key: "new_comment_participated", state: _notifPrefsFollowed },
+          { id: "notif-watched-review_required", key: "review_required",   state: _notifPrefsWatched },
+          { id: "notif-watched-changes_requested", key: "changes_requested", state: _notifPrefsWatched },
+          { id: "notif-watched-approved",        key: "approved",          state: _notifPrefsWatched },
+          { id: "notif-watched-new_comment",     key: "new_comment",       state: _notifPrefsWatched },
+          { id: "notif-watched-new_comment_participated", key: "new_comment_participated", state: _notifPrefsWatched },
         ];
 
         for (const { id, key, state } of notifMap) {
@@ -688,8 +688,8 @@ export async function showSettings() {
                 <button class="kb-key global-kb-key" data-action="global_reload">${freshSettings.global_reload_shortcut || "Super+Ctrl+R"}</button>
               </div>
               <div class="kb-row">
-                <span class="kb-label">Follow selected PR</span>
-                <button class="kb-key global-kb-key" data-action="global_follow">${freshSettings.global_follow_shortcut || "Super+Ctrl+L"}</button>
+                <span class="kb-label">Watch selected PR</span>
+                <button class="kb-key global-kb-key" data-action="global_watch">${freshSettings.global_watch_shortcut || "Super+Ctrl+L"}</button>
               </div>
             </div>
           </div>
@@ -730,8 +730,8 @@ export async function showSettings() {
                 <button class="kb-key" data-action="tab_owned">${formatKeybinding(keybindings.tab_owned)}</button>
               </div>
               <div class="kb-row">
-                <span class="kb-label">Tab: Followed</span>
-                <button class="kb-key" data-action="tab_followed">${formatKeybinding(keybindings.tab_followed)}</button>
+                <span class="kb-label">Tab: Watched</span>
+                <button class="kb-key" data-action="tab_watched">${formatKeybinding(keybindings.tab_watched)}</button>
               </div>
               <div class="kb-row">
                 <span class="kb-label">Tab: Merged</span>
@@ -872,51 +872,51 @@ export async function showSettings() {
   function renderSubscriptionsTab() {
     contentArea.innerHTML = `
       <div class="settings-section">
-        <div class="settings-section-title">Followed users</div>
+        <div class="settings-section-title">Watched users</div>
         <div class="settings-group">
           <label class="settings-label"><span>Add GitHub username</span></label>
           <div style="display: flex; gap: 6px;">
-            <input type="text" id="follow-user-input" class="settings-input" placeholder="e.g. octocat" autocapitalize="off" autocorrect="off" spellcheck="false" />
-            <button id="follow-user-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
+            <input type="text" id="watch-user-input" class="settings-input" placeholder="e.g. octocat" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button id="watch-user-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
           </div>
         </div>
-        <div class="hidden-prs-list" id="follow-users-list">
+        <div class="hidden-prs-list" id="watch-users-list">
           ${
-            freshSettings.followed_users && freshSettings.followed_users.length > 0
-              ? freshSettings.followed_users
+            freshSettings.watched_users && freshSettings.watched_users.length > 0
+              ? freshSettings.watched_users
                   .map(
                     (u: string) => `
                 <div class="hidden-pr-row" data-user="${u}">
                   <span class="hidden-pr-title">${u}</span>
-                  <button class="hidden-pr-remove follow-user-remove" data-user="${u}" title="Remove user" aria-label="Remove user">✕</button>
+                  <button class="hidden-pr-remove watch-user-remove" data-user="${u}" title="Remove user" aria-label="Remove user">✕</button>
                 </div>`
                   )
                   .join("")
-              : '<div class="hidden-prs-empty">No followed users</div>'
+              : '<div class="hidden-prs-empty">No watched users</div>'
           }
         </div>
       </div>
 
       <div class="settings-section">
-        <div class="settings-section-title">Followed PRs</div>
+        <div class="settings-section-title">Watched PRs</div>
         <div class="settings-group">
           <label class="settings-label">
-            <span>Auto-follow PRs you comment on</span>
-            <input type="checkbox" id="setting-auto-follow-commented" class="settings-toggle"${_autoFollowCommentedPrs ? " checked" : ""} />
+            <span>Auto-watch PRs you comment on</span>
+            <input type="checkbox" id="setting-auto-watch-commented" class="settings-toggle"${_autoWatchCommentedPrs ? " checked" : ""} />
           </label>
           <div class="settings-hint">Adds open PRs you've commented on (and didn't author) so people don't wait for your re-review.</div>
         </div>
         <div class="settings-group">
           <label class="settings-label"><span>Add PR URL</span></label>
           <div style="display: flex; gap: 6px;">
-            <input type="text" id="follow-pr-input" class="settings-input" placeholder="e.g. https://github.com/owner/repo/pull/123" autocapitalize="off" autocorrect="off" spellcheck="false" />
-            <button id="follow-pr-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
+            <input type="text" id="watch-pr-input" class="settings-input" placeholder="e.g. https://github.com/owner/repo/pull/123" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button id="watch-pr-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
           </div>
         </div>
-        <div class="hidden-prs-list" id="follow-prs-list">
+        <div class="hidden-prs-list" id="watch-prs-list">
           ${
-            freshSettings.followed_prs && freshSettings.followed_prs.length > 0
-              ? freshSettings.followed_prs
+            freshSettings.watched_prs && freshSettings.watched_prs.length > 0
+              ? freshSettings.watched_prs
                   .map(
                     (url: string) => {
                       // Extract owner/repo/pr# from URL for shorter display
@@ -925,12 +925,12 @@ export async function showSettings() {
                       return `
                 <div class="hidden-pr-row" data-pr-url="${url.replace(/"/g, "&quot;")}">
                   <span class="hidden-pr-title" title="${url}">${shortDisplay}</span>
-                  <button class="hidden-pr-remove follow-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}" title="Remove PR" aria-label="Remove PR">✕</button>
+                  <button class="hidden-pr-remove watch-pr-remove" data-pr-url="${url.replace(/"/g, "&quot;")}" title="Remove PR" aria-label="Remove PR">✕</button>
                 </div>`;
                     }
                   )
                   .join("")
-              : '<div class="hidden-prs-empty">No followed PRs</div>'
+              : '<div class="hidden-prs-empty">No watched PRs</div>'
           }
         </div>
       </div>
@@ -955,8 +955,8 @@ export async function showSettings() {
       </div>
     `;
 
-    // Unhide PR buttons (hidden PRs only - not follow-pr-remove)
-    contentArea.querySelectorAll<HTMLElement>(".hidden-pr-remove:not(.follow-pr-remove)[data-pr-url]").forEach((btn) => {
+    // Unhide PR buttons (hidden PRs only - not watch-pr-remove)
+    contentArea.querySelectorAll<HTMLElement>(".hidden-pr-remove:not(.watch-pr-remove)[data-pr-url]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const url = btn.getAttribute("data-pr-url")!;
         hiddenPrs.delete(url);
@@ -971,50 +971,50 @@ export async function showSettings() {
       });
     });
 
-    const autoFollowToggle = contentArea.querySelector(
-      "#setting-auto-follow-commented"
+    const autoWatchToggle = contentArea.querySelector(
+      "#setting-auto-watch-commented"
     ) as HTMLInputElement | null;
-    autoFollowToggle?.addEventListener("change", (e) => {
-      _autoFollowCommentedPrs = (e.target as HTMLInputElement).checked;
+    autoWatchToggle?.addEventListener("change", (e) => {
+      _autoWatchCommentedPrs = (e.target as HTMLInputElement).checked;
       autoSaveSettings();
     });
 
-    // Followed PRs list
-    const followPrList = contentArea.querySelector("#follow-prs-list") as HTMLElement;
-    const followPrInput = contentArea.querySelector("#follow-pr-input") as HTMLInputElement;
-    const followPrAddBtn = contentArea.querySelector("#follow-pr-add") as HTMLButtonElement;
+    // Watched PRs list
+    const watchPrList = contentArea.querySelector("#watch-prs-list") as HTMLElement;
+    const watchPrInput = contentArea.querySelector("#watch-pr-input") as HTMLInputElement;
+    const watchPrAddBtn = contentArea.querySelector("#watch-pr-add") as HTMLButtonElement;
 
-    const refreshFollowPrEmptyState = () => {
-      if (!followPrList.querySelector(".hidden-pr-row")) {
-        followPrList.innerHTML = '<div class="hidden-prs-empty">No followed PRs</div>';
+    const refreshWatchPrEmptyState = () => {
+      if (!watchPrList.querySelector(".hidden-pr-row")) {
+        watchPrList.innerHTML = '<div class="hidden-prs-empty">No watched PRs</div>';
       }
     };
 
-    const addFollowPrRemoveListener = (btn: Element) => {
+    const addWatchPrRemoveListener = (btn: Element) => {
       btn.addEventListener("click", () => {
         const url = btn.getAttribute("data-pr-url")!;
-        followedPrs.delete(url);
+        watchedPrs.delete(url);
         btn.closest(".hidden-pr-row")?.remove();
-        refreshFollowPrEmptyState();
+        refreshWatchPrEmptyState();
         autoSaveSettings();
       });
     };
 
-    followPrInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") followPrAddBtn.click();
+    watchPrInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") watchPrAddBtn.click();
     });
 
-    followPrAddBtn.addEventListener("click", () => {
-      const url = followPrInput.value.trim();
+    watchPrAddBtn.addEventListener("click", () => {
+      const url = watchPrInput.value.trim();
       if (!url) return;
       // Normalize: handle full URLs or short forms
       const normalizedUrl = url.startsWith("http") ? url : `https://github.com/${url}`;
-      if (followedPrs.has(normalizedUrl)) {
-        followPrInput.value = "";
+      if (watchedPrs.has(normalizedUrl)) {
+        watchPrInput.value = "";
         return;
       }
-      followedPrs.add(normalizedUrl);
-      followPrList.querySelector(".hidden-prs-empty")?.remove();
+      watchedPrs.add(normalizedUrl);
+      watchPrList.querySelector(".hidden-prs-empty")?.remove();
       const row = document.createElement("div");
       row.className = "hidden-pr-row";
       row.dataset.prUrl = normalizedUrl;
@@ -1023,68 +1023,68 @@ export async function showSettings() {
       const shortDisplay = match ? `${match[1]}/${match[2]} #${match[3]}` : normalizedUrl;
       row.innerHTML = `
         <span class="hidden-pr-title" title="${normalizedUrl}">${shortDisplay}</span>
-        <button class="hidden-pr-remove follow-pr-remove" data-pr-url="${normalizedUrl.replace(/"/g, "&quot;")}" title="Remove PR" aria-label="Remove PR">✕</button>
+        <button class="hidden-pr-remove watch-pr-remove" data-pr-url="${normalizedUrl.replace(/"/g, "&quot;")}" title="Remove PR" aria-label="Remove PR">✕</button>
       `;
-      followPrList.appendChild(row);
-      const newBtn = row.querySelector(".follow-pr-remove")!;
-      addFollowPrRemoveListener(newBtn);
-      followPrInput.value = "";
+      watchPrList.appendChild(row);
+      const newBtn = row.querySelector(".watch-pr-remove")!;
+      addWatchPrRemoveListener(newBtn);
+      watchPrInput.value = "";
       autoSaveSettings();
     });
 
-    followPrList.querySelectorAll(".follow-pr-remove").forEach(addFollowPrRemoveListener);
+    watchPrList.querySelectorAll(".watch-pr-remove").forEach(addWatchPrRemoveListener);
 
-    // Followed users list
-    const followList = contentArea.querySelector("#follow-users-list") as HTMLElement;
-    const followInput = contentArea.querySelector("#follow-user-input") as HTMLInputElement;
-    const followAddBtn = contentArea.querySelector("#follow-user-add") as HTMLButtonElement;
+    // Watched users list
+    const watchList = contentArea.querySelector("#watch-users-list") as HTMLElement;
+    const watchInput = contentArea.querySelector("#watch-user-input") as HTMLInputElement;
+    const watchAddBtn = contentArea.querySelector("#watch-user-add") as HTMLButtonElement;
 
-    const refreshFollowEmptyState = () => {
-      if (!followList.querySelector(".hidden-pr-row")) {
-        followList.innerHTML = '<div class="hidden-prs-empty">No followed users</div>';
+    const refreshWatchEmptyState = () => {
+      if (!watchList.querySelector(".hidden-pr-row")) {
+        watchList.innerHTML = '<div class="hidden-prs-empty">No watched users</div>';
       }
     };
 
-    const addFollowRemoveListener = (btn: Element) => {
+    const addWatchRemoveListener = (btn: Element) => {
       btn.addEventListener("click", () => {
         const user = btn.getAttribute("data-user")!;
-        setFollowedUsers(followedUsers.filter((u) => u !== user));
+        setWatchedUsers(watchedUsers.filter((u) => u !== user));
         btn.closest(".hidden-pr-row")?.remove();
-        refreshFollowEmptyState();
-        if (activeFollowFilter === user) setActiveFollowFilter("all");
+        refreshWatchEmptyState();
+        if (activeWatchFilter === user) setActiveWatchFilter("all");
         autoSaveSettings();
       });
     };
 
-    followInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") followAddBtn.click();
+    watchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") watchAddBtn.click();
     });
 
-    followAddBtn.addEventListener("click", () => {
-      const raw = followInput.value.trim();
+    watchAddBtn.addEventListener("click", () => {
+      const raw = watchInput.value.trim();
       if (!raw) return;
       const user = raw.replace(/^@/, "");
-      if (followedUsers.includes(user)) {
-        followInput.value = "";
+      if (watchedUsers.includes(user)) {
+        watchInput.value = "";
         return;
       }
-      followedUsers.push(user);
-      followList.querySelector(".hidden-prs-empty")?.remove();
+      watchedUsers.push(user);
+      watchList.querySelector(".hidden-prs-empty")?.remove();
       const row = document.createElement("div");
       row.className = "hidden-pr-row";
       row.dataset.user = user;
       row.innerHTML = `
         <span class="hidden-pr-title">${user}</span>
-        <button class="hidden-pr-remove follow-user-remove" data-user="${user}" title="Remove user" aria-label="Remove user">✕</button>
+        <button class="hidden-pr-remove watch-user-remove" data-user="${user}" title="Remove user" aria-label="Remove user">✕</button>
       `;
-      followList.appendChild(row);
-      const newBtn = row.querySelector(".follow-user-remove")!;
-      addFollowRemoveListener(newBtn);
-      followInput.value = "";
+      watchList.appendChild(row);
+      const newBtn = row.querySelector(".watch-user-remove")!;
+      addWatchRemoveListener(newBtn);
+      watchInput.value = "";
       autoSaveSettings();
     });
 
-    followList.querySelectorAll(".follow-user-remove").forEach(addFollowRemoveListener);
+    watchList.querySelectorAll(".watch-user-remove").forEach(addWatchRemoveListener);
   }
 
   // Tab switching

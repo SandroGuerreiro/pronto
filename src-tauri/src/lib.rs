@@ -112,9 +112,9 @@ fn send_attention_notification(
         for pr in result
             .open
             .iter()
-            .chain(result.followed_open.iter())
+            .chain(result.watched_open.iter())
             .chain(result.recently_merged.iter())
-            .chain(result.followed_recently_merged.iter())
+            .chain(result.watched_recently_merged.iter())
         {
             if result.attention_urls.contains(&pr.url) {
                 notified.insert(pr.url.clone());
@@ -196,11 +196,11 @@ fn pr_snapshot(result: &github::FetchResult) -> String {
     for pr in result
         .open
         .iter()
-        .chain(result.followed_open.iter())
+        .chain(result.watched_open.iter())
         .chain(result.recently_merged.iter())
         .chain(result.recently_closed.iter())
-        .chain(result.followed_recently_merged.iter())
-        .chain(result.followed_recently_closed.iter())
+        .chain(result.watched_recently_merged.iter())
+        .chain(result.watched_recently_closed.iter())
         .chain(result.review_requests.iter())
     {
         let unresolved = pr
@@ -334,18 +334,18 @@ fn process_result(
             send_review_request_notification(app, &new_prs, notify);
         }
 
-        // Departed with a review → auto-follow
-        let to_follow: Vec<String> = last
+        // Departed with a review → auto-watch
+        let to_watch: Vec<String> = last
             .values()
             .filter(|pr| !current_urls.contains(&pr.url) && pr.viewer_latest_review.is_some())
             .map(|pr| pr.url.clone())
             .collect();
 
-        if !to_follow.is_empty() {
+        if !to_watch.is_empty() {
             let mut settings = state.settings.lock().unwrap();
-            for url in &to_follow {
-                if !settings.followed_prs.contains(url) {
-                    settings.followed_prs.push(url.clone());
+            for url in &to_watch {
+                if !settings.watched_prs.contains(url) {
+                    settings.watched_prs.push(url.clone());
                 }
             }
             let updated = settings.clone();
@@ -457,11 +457,11 @@ fn update_settings(app: tauri::AppHandle, settings: Settings) -> Result<(), Stri
 
     let toggle = settings.global_toggle_shortcut.clone();
     let reload = settings.global_reload_shortcut.clone();
-    let follow = settings.global_follow_shortcut.clone();
+    let watch = settings.global_watch_shortcut.clone();
 
     *state.settings.lock().unwrap() = settings;
 
-    if let Err(e) = update_global_shortcuts(app.clone(), toggle, reload, follow) {
+    if let Err(e) = update_global_shortcuts(app.clone(), toggle, reload, watch) {
         eprintln!("[pronto] Failed to update global shortcuts: {}", e);
     }
 
@@ -479,8 +479,8 @@ struct FetchSettings {
     hidden_orgs: Vec<String>,
     hidden_repos: Vec<String>,
     hidden_prs: Vec<HiddenPr>,
-    followed_users: Vec<String>,
-    followed_prs: Vec<String>,
+    watched_users: Vec<String>,
+    watched_prs: Vec<String>,
     workflow_settings: Settings,
 }
 
@@ -495,8 +495,8 @@ fn snapshot_fetch_settings(settings: &Settings) -> FetchSettings {
         hidden_orgs: settings.hidden_orgs.clone(),
         hidden_repos: settings.hidden_repos.clone(),
         hidden_prs: settings.hidden_prs.clone(),
-        followed_users: settings.followed_users.clone(),
-        followed_prs: settings.followed_prs.clone(),
+        watched_users: settings.watched_users.clone(),
+        watched_prs: settings.watched_prs.clone(),
         workflow_settings: Settings {
             workflow_monitor_enabled: settings.workflow_monitor_enabled,
             workflow_org: settings.workflow_org.clone(),
@@ -508,12 +508,12 @@ fn snapshot_fetch_settings(settings: &Settings) -> FetchSettings {
 }
 
 /// Remove expired followed PRs from settings and persist to disk.
-fn cleanup_expired_followed_prs(state: &AppState, app: &tauri::AppHandle, expired: &[String]) {
+fn cleanup_expired_watched_prs(state: &AppState, app: &tauri::AppHandle, expired: &[String]) {
     if expired.is_empty() {
         return;
     }
     let mut settings = state.settings.lock().unwrap();
-    settings.followed_prs.retain(|url| !expired.contains(url));
+    settings.watched_prs.retain(|url| !expired.contains(url));
     let settings_to_save = settings.clone();
     drop(settings);
     let _ = save_settings(&settings_path(app), &settings_to_save);
@@ -523,7 +523,7 @@ fn cleanup_expired_followed_prs(state: &AppState, app: &tauri::AppHandle, expire
 /// and hidden URLs, returns the subset that should be newly auto-followed.
 /// Drops empty strings, anything already followed, and anything explicitly
 /// hidden by the user. Extracted so the dedup rules are unit-testable.
-fn compute_new_auto_follows(
+fn compute_new_auto_watches(
     candidates: &[String],
     existing: &[String],
     hidden: &[String],
@@ -539,28 +539,28 @@ fn compute_new_auto_follows(
         .collect()
 }
 
-/// Auto-follow PRs the viewer has commented on (issue #50).
+/// Auto-watch PRs the viewer has commented on (issue #50).
 /// Filters out PRs already followed and PRs the viewer has explicitly hidden,
-/// then appends the rest to `settings.followed_prs`, persists, and emits
-/// `prs-auto-followed` so the UI can highlight the newly tracked PRs.
-fn auto_follow_commented_prs(state: &AppState, app: &tauri::AppHandle, candidates: &[String]) {
+/// then appends the rest to `settings.watched_prs`, persists, and emits
+/// `prs-auto-watched` so the UI can highlight the newly tracked PRs.
+fn auto_watch_commented_prs(state: &AppState, app: &tauri::AppHandle, candidates: &[String]) {
     if candidates.is_empty() {
         return;
     }
     let mut settings = state.settings.lock().unwrap();
-    if !settings.auto_follow_commented_prs {
+    if !settings.auto_watch_commented_prs {
         return;
     }
     let hidden: Vec<String> = settings.hidden_prs.iter().map(|h| h.url.clone()).collect();
-    let new_urls = compute_new_auto_follows(candidates, &settings.followed_prs, &hidden);
+    let new_urls = compute_new_auto_watches(candidates, &settings.watched_prs, &hidden);
     if new_urls.is_empty() {
         return;
     }
-    settings.followed_prs.extend(new_urls.clone());
+    settings.watched_prs.extend(new_urls.clone());
     let settings_to_save = settings.clone();
     drop(settings);
     let _ = save_settings(&settings_path(app), &settings_to_save);
-    let _ = app.emit("prs-auto-followed", new_urls);
+    let _ = app.emit("prs-auto-watched", new_urls);
 }
 
 fn filter_hidden_prs(
@@ -580,13 +580,13 @@ fn filter_hidden_prs(
             .recently_closed
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
         result
-            .followed_open
+            .watched_open
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
         result
-            .followed_recently_merged
+            .watched_recently_merged
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
         result
-            .followed_recently_closed
+            .watched_recently_closed
             .retain(|pr| !hidden_urls.contains(pr.url.as_str()));
     }
     result
@@ -610,8 +610,8 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         fs.show_requests,
         &fs.hidden_orgs,
         &fs.hidden_repos,
-        &fs.followed_users,
-        &fs.followed_prs,
+        &fs.watched_users,
+        &fs.watched_prs,
     )
     .await
     .map_err(|e| {
@@ -625,8 +625,8 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         }
     })?;
 
-    cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
-    auto_follow_commented_prs(&state, &app, &result.commented_pr_urls);
+    cleanup_expired_watched_prs(&state, &app, &result.expired_watched_prs);
+    auto_watch_commented_prs(&state, &app, &result.commented_pr_urls);
     result = filter_hidden_prs(result, &fs.hidden_prs);
 
     if let Some(wf) =
@@ -651,16 +651,16 @@ fn dismiss_pr(app: tauri::AppHandle, url: String) {
         let is_open = result
             .open
             .iter()
-            .chain(result.followed_open.iter())
+            .chain(result.watched_open.iter())
             .any(|p| p.url == url);
         let pr_opt = result
             .open
             .iter()
-            .chain(result.followed_open.iter())
+            .chain(result.watched_open.iter())
             .chain(result.recently_merged.iter())
-            .chain(result.followed_recently_merged.iter())
+            .chain(result.watched_recently_merged.iter())
             .chain(result.recently_closed.iter())
-            .chain(result.followed_recently_closed.iter())
+            .chain(result.watched_recently_closed.iter())
             .find(|p| p.url == url);
         let Some(pr) = pr_opt else { return };
         let viewer_login = state.viewer_login.lock().unwrap().clone();
@@ -856,7 +856,7 @@ fn normalize_github_pr_url(url: &str) -> Option<String> {
 }
 
 /// Read the clipboard contents. No permissions required.
-fn get_text_for_follow() -> Option<String> {
+fn get_text_for_watch() -> Option<String> {
     use std::process::Command;
     Command::new("pbpaste")
         .output()
@@ -1059,7 +1059,7 @@ fn dev_trigger_notification(app: tauri::AppHandle, kind: Option<String>) {
         "workflow" => ("Workflow failed", "ci.yml on main — build step exited 1"),
         "error" => ("Something went wrong", "Could not refresh PRs (sample error)"),
         "brew_update" => ("Update available", "Pronto v9.9.9 — click to update"),
-        "follow" => ("Now following", "octocat/hello-world#1"),
+        "watch" => ("Now watching", "octocat/hello-world#1"),
         _ => ("PR needs attention", "octocat/hello-world#42 — 2 review comments"),
     };
     show_tray_notification(&app, &kind, "attention", title, message);
@@ -1156,7 +1156,7 @@ fn dismiss_notification(app: tauri::AppHandle) {
     }
 }
 
-fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
+fn toggle_watched_pr(app: &tauri::AppHandle, pr_url: String) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
@@ -1164,19 +1164,19 @@ fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
 
     let added = {
         let mut settings = state.settings.lock().unwrap();
-        if settings.followed_prs.contains(&pr_url) {
-            settings.followed_prs.retain(|u| u != &pr_url);
+        if settings.watched_prs.contains(&pr_url) {
+            settings.watched_prs.retain(|u| u != &pr_url);
             let _ = save_settings(&path, &settings);
             false
         } else {
-            settings.followed_prs.push(pr_url.clone());
+            settings.watched_prs.push(pr_url.clone());
             let _ = save_settings(&path, &settings);
             true
         }
     };
 
     let _ = app.emit(
-        "pr-follow-toggled",
+        "pr-watch-toggled",
         serde_json::json!({ "url": pr_url, "added": added }),
     );
     let short = pr_url
@@ -1184,9 +1184,9 @@ fn toggle_followed_pr(app: &tauri::AppHandle, pr_url: String) {
         .unwrap_or(&pr_url)
         .to_string();
     let (title, kind) = if added {
-        ("Following PR", "success")
+        ("Watching PR", "success")
     } else {
-        ("Unfollowed PR", "removed")
+        ("Unwatched PR", "removed")
     };
 
     // Only show tray notification if the main window is not visible
@@ -1225,7 +1225,7 @@ fn update_global_shortcuts(
     app: tauri::AppHandle,
     toggle: String,
     reload: String,
-    follow: String,
+    watch: String,
 ) -> Result<(), String> {
     // Unregister all existing shortcuts
     app.global_shortcut()
@@ -1279,13 +1279,13 @@ fn update_global_shortcuts(
                     fs.show_requests,
                     &fs.hidden_orgs,
                     &fs.hidden_repos,
-                    &fs.followed_users,
-                    &fs.followed_prs,
+                    &fs.watched_users,
+                    &fs.watched_prs,
                 )
                 .await;
                 if let Ok(result) = pr_fetch {
-                    cleanup_expired_followed_prs(&state, &h, &result.expired_followed_prs);
-                    auto_follow_commented_prs(&state, &h, &result.commented_pr_urls);
+                    cleanup_expired_watched_prs(&state, &h, &result.expired_watched_prs);
+                    auto_watch_commented_prs(&state, &h, &result.commented_pr_urls);
                     let result = filter_hidden_prs(result, &fs.hidden_prs);
 
                     if let Some(wf) =
@@ -1307,23 +1307,23 @@ fn update_global_shortcuts(
         })
         .map_err(|e| e.to_string())?;
 
-    // Parse and register follow-PR shortcut
-    let follow_shortcut = parse_shortcut_string(&follow)?;
+    // Parse and register watch-PR shortcut
+    let watch_shortcut = parse_shortcut_string(&watch)?;
     let handle = app.clone();
     app.global_shortcut()
-        .on_shortcut(follow_shortcut, move |_app, _shortcut, event| {
+        .on_shortcut(watch_shortcut, move |_app, _shortcut, event| {
             if event.state != ShortcutState::Pressed {
                 return;
             }
             let h = handle.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                let clipboard_text = get_text_for_follow();
+                let clipboard_text = get_text_for_watch();
                 let h2 = h.clone();
                 let _ = h.run_on_main_thread(move || match clipboard_text {
                     Some(text) => {
                         let trimmed = text.trim();
                         match normalize_github_pr_url(trimmed) {
-                            Some(pr_url) => toggle_followed_pr(&h2, pr_url),
+                            Some(pr_url) => toggle_watched_pr(&h2, pr_url),
                             None => show_tray_notification(
                                 &h2,
                                 "error",
@@ -1362,7 +1362,7 @@ fn update_global_shortcuts(
                 if event.state != ShortcutState::Pressed {
                     return;
                 }
-                let kinds = ["attention", "workflow", "error", "brew_update", "follow"];
+                let kinds = ["attention", "workflow", "error", "brew_update", "watch"];
                 let idx = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % kinds.len();
                 let kind = kinds[idx].to_string();
                 let h = handle.clone();
@@ -1399,13 +1399,13 @@ async fn poll_prs(app: tauri::AppHandle) {
                     fs.show_requests,
                     &fs.hidden_orgs,
                     &fs.hidden_repos,
-                    &fs.followed_users,
-                    &fs.followed_prs,
+                    &fs.watched_users,
+                    &fs.watched_prs,
                 )
                 .await;
                 if let Ok(mut result) = pr_fetch {
-                    cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
-                    auto_follow_commented_prs(&state, &app, &result.commented_pr_urls);
+                    cleanup_expired_watched_prs(&state, &app, &result.expired_watched_prs);
+                    auto_watch_commented_prs(&state, &app, &result.commented_pr_urls);
                     result = filter_hidden_prs(result, &fs.hidden_prs);
                     if let Some(wf) =
                         fetch_workflow_if_enabled(&state.http_client, &token, &fs.workflow_settings)
@@ -1465,14 +1465,14 @@ async fn poll_prs(app: tauri::AppHandle) {
             fs.show_requests,
             &fs.hidden_orgs,
             &fs.hidden_repos,
-            &fs.followed_users,
-            &fs.followed_prs,
+            &fs.watched_users,
+            &fs.watched_prs,
         )
         .await;
         match pr_fetch {
             Ok(mut result) => {
-                cleanup_expired_followed_prs(&state, &app, &result.expired_followed_prs);
-                auto_follow_commented_prs(&state, &app, &result.commented_pr_urls);
+                cleanup_expired_watched_prs(&state, &app, &result.expired_watched_prs);
+                auto_watch_commented_prs(&state, &app, &result.commented_pr_urls);
                 result = filter_hidden_prs(result, &fs.hidden_prs);
 
                 let (changed, pr_result) = if let Some(wf) =
@@ -1762,16 +1762,16 @@ pub fn run() {
             });
 
             // Setup global shortcuts from settings
-            let (toggle, reload, follow) = {
+            let (toggle, reload, watch) = {
                 let state = app.state::<AppState>();
                 let settings = state.settings.lock().unwrap();
                 (
                     settings.global_toggle_shortcut.clone(),
                     settings.global_reload_shortcut.clone(),
-                    settings.global_follow_shortcut.clone(),
+                    settings.global_watch_shortcut.clone(),
                 )
             };
-            update_global_shortcuts(app.handle().clone(), toggle, reload, follow)?;
+            update_global_shortcuts(app.handle().clone(), toggle, reload, watch)?;
 
             Ok(())
         })
@@ -1780,8 +1780,8 @@ pub fn run() {
 }
 
 #[cfg(test)]
-mod auto_follow_tests {
-    use super::compute_new_auto_follows;
+mod auto_watch_tests {
+    use super::compute_new_auto_watches;
 
     fn s(values: &[&str]) -> Vec<String> {
         values.iter().map(|v| v.to_string()).collect()
@@ -1789,7 +1789,7 @@ mod auto_follow_tests {
 
     #[test]
     fn empty_candidates_returns_empty() {
-        let out = compute_new_auto_follows(&[], &s(&["x"]), &s(&["y"]));
+        let out = compute_new_auto_watches(&[], &s(&["x"]), &s(&["y"]));
         assert!(out.is_empty());
     }
 
@@ -1797,7 +1797,7 @@ mod auto_follow_tests {
     fn drops_already_followed() {
         let candidates = s(&["a", "b", "c"]);
         let existing = s(&["b"]);
-        let out = compute_new_auto_follows(&candidates, &existing, &[]);
+        let out = compute_new_auto_watches(&candidates, &existing, &[]);
         assert_eq!(out, s(&["a", "c"]));
     }
 
@@ -1805,14 +1805,14 @@ mod auto_follow_tests {
     fn drops_hidden() {
         let candidates = s(&["a", "b", "c"]);
         let hidden = s(&["c"]);
-        let out = compute_new_auto_follows(&candidates, &[], &hidden);
+        let out = compute_new_auto_watches(&candidates, &[], &hidden);
         assert_eq!(out, s(&["a", "b"]));
     }
 
     #[test]
     fn drops_empty_url_strings() {
         let candidates = s(&["", "a", ""]);
-        let out = compute_new_auto_follows(&candidates, &[], &[]);
+        let out = compute_new_auto_watches(&candidates, &[], &[]);
         assert_eq!(out, s(&["a"]));
     }
 
@@ -1821,14 +1821,14 @@ mod auto_follow_tests {
         let candidates = s(&["a", "b", "c", "d"]);
         let existing = s(&["a"]);
         let hidden = s(&["d"]);
-        let out = compute_new_auto_follows(&candidates, &existing, &hidden);
+        let out = compute_new_auto_watches(&candidates, &existing, &hidden);
         assert_eq!(out, s(&["b", "c"]));
     }
 
     #[test]
     fn preserves_input_order() {
         let candidates = s(&["c", "a", "b"]);
-        let out = compute_new_auto_follows(&candidates, &[], &[]);
+        let out = compute_new_auto_watches(&candidates, &[], &[]);
         assert_eq!(out, s(&["c", "a", "b"]));
     }
 
@@ -1836,7 +1836,7 @@ mod auto_follow_tests {
     fn no_new_when_all_are_already_followed() {
         let candidates = s(&["a", "b"]);
         let existing = s(&["a", "b"]);
-        let out = compute_new_auto_follows(&candidates, &existing, &[]);
+        let out = compute_new_auto_watches(&candidates, &existing, &[]);
         assert!(out.is_empty());
     }
 }

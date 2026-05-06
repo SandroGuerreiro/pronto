@@ -21,9 +21,9 @@ pub fn build_attention_notification(
     let attention_prs: Vec<&PullRequest> = result
         .open
         .iter()
-        .chain(result.followed_open.iter())
+        .chain(result.watched_open.iter())
         .chain(result.recently_merged.iter())
-        .chain(result.followed_recently_merged.iter())
+        .chain(result.watched_recently_merged.iter())
         .filter(|pr| result.attention_urls.contains(&pr.url))
         .filter(|pr| !already_notified.contains(&pr.url))
         .collect();

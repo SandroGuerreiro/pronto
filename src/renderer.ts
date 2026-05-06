@@ -11,7 +11,7 @@ import {
   collapsedAccordions,
   pendingUnhideOrgs,
   pendingUnhideRepos,
-  autoFollowedPrUrls,
+  autoWatchedPrUrls,
 } from "./state";
 
 type GroupedPrs = [string, [string, PullRequest[]][]][];
@@ -140,10 +140,10 @@ export function renderPrCard(pr: PullRequest, minimal = false): string {
   }
 
   const isAttention = currentAttentionUrls.includes(pr.url);
-  const autoFollowedClass = !minimal && autoFollowedPrUrls.has(pr.url) ? " auto-followed-new" : "";
+  const autoWatchedClass = !minimal && autoWatchedPrUrls.has(pr.url) ? " auto-watched-new" : "";
 
   return `
-    <div class="pr-card${isAttention ? " attention" : ""}${autoFollowedClass}" data-url="${pr.url}" data-title="${pr.title.replace(/"/g, "&quot;")}">
+    <div class="pr-card${isAttention ? " attention" : ""}${autoWatchedClass}" data-url="${pr.url}" data-title="${pr.title.replace(/"/g, "&quot;")}">
       <div class="pr-status ${status.class}" title="${statusTitle}">${status.label}</div>
       <div class="pr-info">
         <div class="pr-title">${pr.title}</div>

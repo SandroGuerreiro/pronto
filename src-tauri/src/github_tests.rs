@@ -59,13 +59,13 @@ pub fn make_fetch_result(open: Vec<PullRequest>) -> FetchResult {
         open,
         recently_merged: vec![],
         recently_closed: vec![],
-        followed_open: vec![],
-        followed_recently_merged: vec![],
-        followed_recently_closed: vec![],
+        watched_open: vec![],
+        watched_recently_merged: vec![],
+        watched_recently_closed: vec![],
         attention_urls: vec![],
         element_changes: std::collections::HashMap::new(),
         workflow_status: None,
-        expired_followed_prs: vec![],
+        expired_watched_prs: vec![],
         commented_pr_urls: vec![],
         viewer_login: "viewer".to_string(),
         viewer_avatar_url: String::new(),
@@ -634,7 +634,7 @@ fn new_request_urls_detected_correctly() {
 }
 
 #[test]
-fn departed_pr_with_review_should_auto_follow() {
+fn departed_pr_with_review_should_auto_watch() {
     let mut prev = std::collections::HashMap::new();
     let mut pr = make_review_request_pr("https://github.com/org/repo/pull/11");
     pr.viewer_latest_review = Some(ViewerReview { state: "APPROVED".to_string() });
@@ -642,26 +642,26 @@ fn departed_pr_with_review_should_auto_follow() {
     let current: Vec<ReviewRequestPr> = vec![];
     let current_urls: std::collections::HashSet<String> =
         current.iter().map(|p| p.url.clone()).collect();
-    let to_follow: Vec<String> = prev
+    let to_watch: Vec<String> = prev
         .values()
         .filter(|pr| !current_urls.contains(&pr.url) && pr.viewer_latest_review.is_some())
         .map(|pr| pr.url.clone())
         .collect();
-    assert_eq!(to_follow, vec!["https://github.com/org/repo/pull/11"]);
+    assert_eq!(to_watch, vec!["https://github.com/org/repo/pull/11"]);
 }
 
 #[test]
-fn departed_pr_without_review_should_not_auto_follow() {
+fn departed_pr_without_review_should_not_auto_watch() {
     let mut prev = std::collections::HashMap::new();
     let pr = make_review_request_pr("https://github.com/org/repo/pull/12");
     prev.insert(pr.url.clone(), pr);
     let current: Vec<ReviewRequestPr> = vec![];
     let current_urls: std::collections::HashSet<String> =
         current.iter().map(|p| p.url.clone()).collect();
-    let to_follow: Vec<String> = prev
+    let to_watch: Vec<String> = prev
         .values()
         .filter(|pr| !current_urls.contains(&pr.url) && pr.viewer_latest_review.is_some())
         .map(|pr| pr.url.clone())
         .collect();
-    assert!(to_follow.is_empty());
+    assert!(to_watch.is_empty());
 }

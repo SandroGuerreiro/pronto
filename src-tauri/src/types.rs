@@ -80,7 +80,7 @@ fn default_global_reload() -> String {
     "Super+Ctrl+R".to_string()
 }
 
-fn default_global_follow() -> String {
+fn default_global_watch() -> String {
     "Super+Ctrl+L".to_string()
 }
 
@@ -125,11 +125,11 @@ pub struct Settings {
     #[serde(default)]
     pub hidden_prs: Vec<HiddenPr>,
     #[serde(default)]
-    pub followed_users: Vec<String>,
+    pub watched_users: Vec<String>,
     #[serde(default)]
-    pub followed_prs: Vec<String>,
+    pub watched_prs: Vec<String>,
     #[serde(default = "default_true")]
-    pub auto_follow_commented_prs: bool,
+    pub auto_watch_commented_prs: bool,
     #[serde(default = "default_true")]
     pub group_by_repository: bool,
     #[serde(default)]
@@ -146,12 +146,12 @@ pub struct Settings {
     pub global_toggle_shortcut: String,
     #[serde(default = "default_global_reload")]
     pub global_reload_shortcut: String,
-    #[serde(default = "default_global_follow")]
-    pub global_follow_shortcut: String,
+    #[serde(default = "default_global_watch")]
+    pub global_watch_shortcut: String,
     #[serde(default = "default_notification_prefs_owned")]
     pub notification_prefs_owned: NotificationPreferences,
     #[serde(default)]
-    pub notification_prefs_followed: NotificationPreferences,
+    pub notification_prefs_watched: NotificationPreferences,
     #[serde(default = "default_true")]
     pub notify_on_merged: bool,
     #[serde(default)]
@@ -188,9 +188,9 @@ impl Default for Settings {
             hidden_orgs: vec![],
             hidden_repos: vec![],
             hidden_prs: vec![],
-            followed_users: vec![],
-            followed_prs: vec![],
-            auto_follow_commented_prs: true,
+            watched_users: vec![],
+            watched_prs: vec![],
+            auto_watch_commented_prs: true,
             group_by_repository: false,
             workflow_monitor_enabled: false,
             workflow_org: String::new(),
@@ -199,9 +199,9 @@ impl Default for Settings {
             keybindings: HashMap::new(),
             global_toggle_shortcut: default_global_toggle(),
             global_reload_shortcut: default_global_reload(),
-            global_follow_shortcut: default_global_follow(),
+            global_watch_shortcut: default_global_watch(),
             notification_prefs_owned: default_notification_prefs_owned(),
-            notification_prefs_followed: NotificationPreferences {
+            notification_prefs_watched: NotificationPreferences {
                 review_required: true,
                 ..Default::default()
             },
@@ -290,24 +290,24 @@ mod tests {
     }
 
     #[test]
-    fn settings_default_auto_follow_commented_prs_is_true() {
+    fn settings_default_auto_watch_commented_prs_is_true() {
         // Default for new users (issue #50).
-        assert!(Settings::default().auto_follow_commented_prs);
+        assert!(Settings::default().auto_watch_commented_prs);
     }
 
     #[test]
-    fn settings_without_auto_follow_field_defaults_to_true() {
+    fn settings_without_auto_watch_field_defaults_to_true() {
         // Existing users upgrading: their settings JSON won't have the field —
         // it must default to true so the feature is on by default.
         let json = r#"{"poll_interval_secs": 60}"#;
         let settings: Settings = serde_json::from_str(json).unwrap();
-        assert!(settings.auto_follow_commented_prs);
+        assert!(settings.auto_watch_commented_prs);
     }
 
     #[test]
-    fn settings_with_auto_follow_disabled_is_preserved() {
-        let json = r#"{"auto_follow_commented_prs": false}"#;
+    fn settings_with_auto_watch_disabled_is_preserved() {
+        let json = r#"{"auto_watch_commented_prs": false}"#;
         let settings: Settings = serde_json::from_str(json).unwrap();
-        assert!(!settings.auto_follow_commented_prs);
+        assert!(!settings.auto_watch_commented_prs);
     }
 }

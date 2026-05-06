@@ -7,7 +7,7 @@ export let currentResult: FetchResult | null = null;
 
 // ── UI state ─────────────────────────────────────────────────────────────────
 export let activeTab: TabName = "mine";
-export let activeFollowFilter: string = "all";
+export let activeWatchFilter: string = "all";
 export let showAuthorInCards: boolean = false;
 export let groupByRepository: boolean = true;
 export let showRecentlyMerged: boolean = false;
@@ -35,8 +35,8 @@ export let collapsedAccordions = new Set<string>();
 export let hiddenOrgs = new Set<string>();
 export let hiddenRepos = new Set<string>();
 export let hiddenPrs = new Map<string, string>();
-export let followedUsers: string[] = [];
-export let followedPrs = new Set<string>();
+export let watchedUsers: string[] = [];
+export let watchedPrs = new Set<string>();
 export let pendingUnhideOrgs = new Set<string>();
 export let pendingUnhideRepos = new Set<string>();
 
@@ -49,8 +49,8 @@ export let viewerLogin: string = "";
 // ── Search / filter (session-only, never persisted) ───────────────────────────
 export let searchQuery: string = "";
 
-// ── Auto-followed PRs (session-only highlight, cleared on focus/click) ─────────
-export const autoFollowedPrUrls = new Set<string>();
+// ── Auto-watched PRs (session-only highlight, cleared on focus/click) ─────────
+export const autoWatchedPrUrls = new Set<string>();
 
 // ── Unseen review requests (session-only highlight, cleared on hover) ────────
 export const unseenRequestUrls = new Set<string>();
@@ -61,7 +61,7 @@ export function removeUnseenRequestUrl(url: string) { unseenRequestUrls.delete(u
 export function setCurrentAttentionUrls(urls: string[]) { currentAttentionUrls = urls; }
 export function setCurrentResult(r: FetchResult | null) { currentResult = r; }
 export function setActiveTabState(tab: TabName) { activeTab = tab; }
-export function setActiveFollowFilter(f: string) { activeFollowFilter = f; }
+export function setActiveWatchFilter(f: string) { activeWatchFilter = f; }
 export function setShowAuthorInCards(v: boolean) { showAuthorInCards = v; }
 export function setGroupByRepository(v: boolean) { groupByRepository = v; }
 export function setShowRecentlyMerged(v: boolean) { showRecentlyMerged = v; }
@@ -77,7 +77,7 @@ export function setReleaseNotesIndex(i: number) { releaseNotesIndex = i; }
 export function setKbDismissTimer(t: ReturnType<typeof setTimeout> | null) { kbDismissTimer = t; }
 export function setLastWorkflowConclusion(s: string | null) { lastWorkflowConclusion = s; }
 export function setWorkflowHasAttention(v: boolean) { workflowHasAttention = v; }
-export function setFollowedUsers(users: string[]) { followedUsers = users; }
+export function setWatchedUsers(users: string[]) { watchedUsers = users; }
 export function setIsAuthenticated(v: boolean) { isAuthenticated = v; }
 export function setViewerLogin(v: string) { viewerLogin = v; }
 export function setSearchQuery(q: string) { searchQuery = q; }

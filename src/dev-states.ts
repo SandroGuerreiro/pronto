@@ -144,10 +144,10 @@ export function renderDevStates(): string {
     repo: "acme/db", number: "#15",
   }));
 
-  // ── Auto-followed (issue #50) ──
-  html += section("auto-followed", "Auto-followed — Newly Tracked", mockCard({
+  // ── Auto-watched (issue #50) ──
+  html += section("auto-watched", "Auto-watched — Newly Tracked", mockCard({
     title: "Refactor cache invalidation logic",
-    statusLabel: "●", statusClass: "open", cardClasses: "auto-followed-new",
+    statusLabel: "●", statusClass: "open", cardClasses: "auto-watched-new",
     statusLine: `<span class="needs-reviews">needs reviews</span>${sep}<span class="checks-pass">checks passed</span>${sep}<span class="status-detail">☑ 1</span>${sep}<span class="status-detail">${commentIcon} 3</span>${sep}<span class="status-detail">▣ 0</span>`,
     repo: "acme/cache", number: "#412", author: "teammate",
   }), { replayable: true });
@@ -229,7 +229,7 @@ export function renderDevStates(): string {
       <button class="dev-trigger-notif" data-kind="workflow" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Workflow</button>
       <button class="dev-trigger-notif" data-kind="error" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Error</button>
       <button class="dev-trigger-notif" data-kind="brew_update" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Update</button>
-      <button class="dev-trigger-notif" data-kind="follow" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Follow</button>
+      <button class="dev-trigger-notif" data-kind="watch" style="${replayBtnStyle} font-size: 11px; padding: 4px 12px;">Watch</button>
     </div>
   `);
 

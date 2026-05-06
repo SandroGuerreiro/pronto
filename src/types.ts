@@ -108,9 +108,9 @@ export interface FetchResult {
   open: PullRequest[];
   recently_merged: PullRequest[];
   recently_closed: PullRequest[];
-  followed_open: PullRequest[];
-  followed_recently_merged: PullRequest[];
-  followed_recently_closed: PullRequest[];
+  watched_open: PullRequest[];
+  watched_recently_merged: PullRequest[];
+  watched_recently_closed: PullRequest[];
   attention_urls: string[];
   element_changes: Record<string, PrElementChanges>;
   workflow_status: WorkflowStatus | null;
@@ -157,9 +157,9 @@ export interface Settings {
   hidden_orgs: string[];
   hidden_repos: string[];
   hidden_prs: HiddenPr[];
-  followed_users: string[];
-  followed_prs: string[];
-  auto_follow_commented_prs: boolean;
+  watched_users: string[];
+  watched_prs: string[];
+  auto_watch_commented_prs: boolean;
   group_by_repository: boolean;
   workflow_monitor_enabled: boolean;
   workflow_org: string;
@@ -168,9 +168,9 @@ export interface Settings {
   keybindings?: Record<string, string>;
   global_toggle_shortcut?: string;
   global_reload_shortcut?: string;
-  global_follow_shortcut?: string;
+  global_watch_shortcut?: string;
   notification_prefs_owned: NotificationPreferences;
-  notification_prefs_followed: NotificationPreferences;
+  notification_prefs_watched: NotificationPreferences;
   notify_on_merged: boolean;
   notify_on_closed: boolean;
   homebrew_check_enabled: boolean;
@@ -191,12 +191,12 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   copy_url: "c",
   tab_owned: "1",
   tab_requests: "2",
-  tab_followed: "3",
+  tab_watched: "3",
   tab_merged: "4",
   tab_closed: "5",
   global_toggle: "Super+Ctrl+P",
   global_reload: "Super+Ctrl+R",
 };
 
-export type TabName = "mine" | "requests" | "followed" | "merged" | "closed" | "settings";
+export type TabName = "mine" | "requests" | "watched" | "merged" | "closed" | "settings";
 export type FilterType = "all" | "needs-review" | "changes-requested" | "approved" | "failing" | "attention";

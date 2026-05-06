@@ -9,8 +9,8 @@ import {
   setCurrentResult,
   activeTab,
   setActiveTabState,
-  activeFollowFilter,
-  setActiveFollowFilter,
+  activeWatchFilter,
+  setActiveWatchFilter,
   showAuthorInCards,
   setShowAuthorInCards,
   groupByRepository,
@@ -39,8 +39,8 @@ import {
   setLastWorkflowConclusion,
   workflowHasAttention,
   setWorkflowHasAttention,
-  followedUsers,
-  setFollowedUsers,
+  watchedUsers,
+  setWatchedUsers,
   viewerLogin,
   setViewerLogin,
   searchQuery,
@@ -51,7 +51,7 @@ import {
   hiddenOrgs,
   hiddenRepos,
   hiddenPrs,
-  followedPrs,
+  watchedPrs,
   pendingUnhideOrgs,
   pendingUnhideRepos,
   clearPendingUnhide,
@@ -74,7 +74,7 @@ function resetState(): void {
   setCurrentAttentionUrls([]);
   setCurrentResult(null);
   setActiveTabState("mine");
-  setActiveFollowFilter("all");
+  setActiveWatchFilter("all");
   setShowAuthorInCards(false);
   setGroupByRepository(true);
   setShowRecentlyMerged(false);
@@ -89,7 +89,7 @@ function resetState(): void {
   setKbDismissTimer(null);
   setLastWorkflowConclusion(null);
   setWorkflowHasAttention(false);
-  setFollowedUsers([]);
+  setWatchedUsers([]);
   setViewerLogin("");
   setSearchQuery("");
   setKeybindings({});
@@ -101,7 +101,7 @@ function resetState(): void {
   hiddenOrgs.clear();
   hiddenRepos.clear();
   hiddenPrs.clear();
-  followedPrs.clear();
+  watchedPrs.clear();
   pendingUnhideOrgs.clear();
   pendingUnhideRepos.clear();
 }
@@ -125,8 +125,8 @@ describe("state — default values", () => {
     expect(state.activeTab).toBe("mine");
   });
 
-  it("activeFollowFilter defaults to 'all'", () => {
-    expect(state.activeFollowFilter).toBe("all");
+  it("activeWatchFilter defaults to 'all'", () => {
+    expect(state.activeWatchFilter).toBe("all");
   });
 
   it("showAuthorInCards defaults to false", () => {
@@ -185,8 +185,8 @@ describe("state — default values", () => {
     expect(state.workflowHasAttention).toBe(false);
   });
 
-  it("followedUsers defaults to empty array", () => {
-    expect(state.followedUsers).toEqual([]);
+  it("watchedUsers defaults to empty array", () => {
+    expect(state.watchedUsers).toEqual([]);
   });
 
   it("viewerLogin defaults to empty string", () => {
@@ -207,7 +207,7 @@ describe("state — default values", () => {
     expect(state.collapsedAccordions.size).toBe(0);
     expect(state.hiddenOrgs.size).toBe(0);
     expect(state.hiddenRepos.size).toBe(0);
-    expect(state.followedPrs.size).toBe(0);
+    expect(state.watchedPrs.size).toBe(0);
     expect(state.pendingUnhideOrgs.size).toBe(0);
     expect(state.pendingUnhideRepos.size).toBe(0);
   });
@@ -239,7 +239,7 @@ describe("state — primitive setters", () => {
   it("setCurrentResult updates currentResult", () => {
     const result = {
       owned_prs: [],
-      followed_prs: [],
+      watched_prs: [],
       merged_prs: [],
       closed_prs: [],
       viewer_login: "testuser",
@@ -252,7 +252,7 @@ describe("state — primitive setters", () => {
   it("setCurrentResult can set to null", () => {
     const result = {
       owned_prs: [],
-      followed_prs: [],
+      watched_prs: [],
       merged_prs: [],
       closed_prs: [],
       viewer_login: "testuser",
@@ -264,16 +264,16 @@ describe("state — primitive setters", () => {
   });
 
   it("setActiveTabState updates activeTab", () => {
-    const tabs: TabName[] = ["mine", "followed", "merged", "closed", "settings"];
+    const tabs: TabName[] = ["mine", "watched", "merged", "closed", "settings"];
     for (const tab of tabs) {
       setActiveTabState(tab);
       expect(state.activeTab).toBe(tab);
     }
   });
 
-  it("setActiveFollowFilter updates activeFollowFilter", () => {
-    setActiveFollowFilter("octocat");
-    expect(state.activeFollowFilter).toBe("octocat");
+  it("setActiveWatchFilter updates activeWatchFilter", () => {
+    setActiveWatchFilter("octocat");
+    expect(state.activeWatchFilter).toBe("octocat");
   });
 
   it("setShowAuthorInCards updates showAuthorInCards", () => {
@@ -375,16 +375,16 @@ describe("state — primitive setters", () => {
     expect(state.workflowHasAttention).toBe(true);
   });
 
-  it("setFollowedUsers updates followedUsers", () => {
+  it("setWatchedUsers updates watchedUsers", () => {
     const users = ["alice", "bob"];
-    setFollowedUsers(users);
-    expect(state.followedUsers).toEqual(users);
+    setWatchedUsers(users);
+    expect(state.watchedUsers).toEqual(users);
   });
 
-  it("setFollowedUsers replaces previous value", () => {
-    setFollowedUsers(["alice"]);
-    setFollowedUsers(["bob", "charlie"]);
-    expect(state.followedUsers).toEqual(["bob", "charlie"]);
+  it("setWatchedUsers replaces previous value", () => {
+    setWatchedUsers(["alice"]);
+    setWatchedUsers(["bob", "charlie"]);
+    expect(state.watchedUsers).toEqual(["bob", "charlie"]);
   });
 
   it("setViewerLogin updates viewerLogin", () => {
@@ -479,7 +479,7 @@ describe("setKeybindings", () => {
     expect(state.keybindings.open_pr).toBe(DEFAULT_KEYBINDINGS.open_pr);
     expect(state.keybindings.hide_pr).toBe(DEFAULT_KEYBINDINGS.hide_pr);
     expect(state.keybindings.tab_owned).toBe(DEFAULT_KEYBINDINGS.tab_owned);
-    expect(state.keybindings.tab_followed).toBe(DEFAULT_KEYBINDINGS.tab_followed);
+    expect(state.keybindings.tab_watched).toBe(DEFAULT_KEYBINDINGS.tab_watched);
     expect(state.keybindings.tab_merged).toBe(DEFAULT_KEYBINDINGS.tab_merged);
     expect(state.keybindings.tab_closed).toBe(DEFAULT_KEYBINDINGS.tab_closed);
   });
@@ -560,9 +560,9 @@ describe("state — mutable collections", () => {
     expect(state.hiddenPrs.size).toBe(1);
   });
 
-  it("followedPrs can be mutated directly", () => {
-    followedPrs.add("https://github.com/org/repo/pull/42");
-    expect(state.followedPrs.has("https://github.com/org/repo/pull/42")).toBe(true);
+  it("watchedPrs can be mutated directly", () => {
+    watchedPrs.add("https://github.com/org/repo/pull/42");
+    expect(state.watchedPrs.has("https://github.com/org/repo/pull/42")).toBe(true);
   });
 
   it("pendingUnhideOrgs can be mutated directly", () => {
