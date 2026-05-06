@@ -150,6 +150,7 @@ export interface Settings {
   merged_window_hours: number;
   show_closed: boolean;
   closed_window_hours: number;
+  show_requests: boolean;
   favorite_orgs: string[];
   favorite_repos: string[];
   collapsed_accordions: string[];

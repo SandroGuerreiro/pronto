@@ -24,6 +24,8 @@ import {
   setShowRecentlyMerged,
   showClosed,
   setShowClosed,
+  showRequests,
+  setShowRequests,
   viewerLogin,
   setViewerLogin,
   sidebarFocus,
@@ -541,6 +543,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // Toggle requests tab visibility based on settings
+  const requestsBtn = document.querySelector('[data-tab="requests"]') as HTMLElement | null;
+  if (requestsBtn) {
+    const show = settings?.show_requests ?? true;
+    setShowRequests(show);
+    requestsBtn.style.display = show ? "" : "none";
+  }
+
   const isAuthed = await invoke<boolean>("check_auth");
   if (isAuthed) {
     loadPrs();
@@ -855,10 +865,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     const items = getFocusables();
-    const tabKeys = [keybindings.tab_owned, keybindings.tab_requests, keybindings.tab_followed];
-    if (showRecentlyMerged) tabKeys.push(keybindings.tab_merged);
-    if (showClosed) tabKeys.push(keybindings.tab_closed);
-    tabKeys.push("Tab");
+    const tabKeys = [
+      keybindings.tab_owned,
+      ...(showRequests ? [keybindings.tab_requests] : []),
+      keybindings.tab_followed,
+      ...(showRecentlyMerged ? [keybindings.tab_merged] : []),
+      ...(showClosed ? [keybindings.tab_closed] : []),
+      "Tab",
+    ];
     if (!items.length && !tabKeys.includes(e.key) && !sidebarFocus) return;
 
     // Activate sidebar-focused button (avatar / quit)
@@ -995,7 +1009,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     // Tab: Requests
-    if (e.key === keybindings.tab_requests) {
+    if (e.key === keybindings.tab_requests && showRequests) {
       e.preventDefault();
       clearSidebarFocus();
       setActiveTab("requests");
@@ -1058,10 +1072,15 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (e.key === "Tab") {
       e.preventDefault();
       type SidebarItem = TabName | "avatar" | "quit";
-      const cycle: SidebarItem[] = ["mine", "followed"];
-      if (showRecentlyMerged) cycle.push("merged");
-      if (showClosed) cycle.push("closed");
-      cycle.push("avatar", "quit");
+      const cycle: SidebarItem[] = [
+        "mine",
+        ...(showRequests ? ["requests" as SidebarItem] : []),
+        "followed",
+        ...(showRecentlyMerged ? ["merged" as SidebarItem] : []),
+        ...(showClosed ? ["closed" as SidebarItem] : []),
+        "avatar",
+        "quit",
+      ];
 
       const current: SidebarItem = sidebarFocus ?? activeTab;
       const i = cycle.indexOf(current);

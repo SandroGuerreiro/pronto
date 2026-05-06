@@ -999,6 +999,7 @@ pub async fn fetch_all_prs(
     show_recently_merged: bool,
     closed_window_hours: u64,
     show_recently_closed: bool,
+    show_requests: bool,
     hidden_orgs: &[String],
     hidden_repos: &[String],
     followed_users: &[String],
@@ -1041,10 +1042,16 @@ pub async fn fetch_all_prs(
         .await
         .unwrap_or_default();
 
-    // Fetch specifically followed PRs and review requests in parallel
+    // Fetch specifically followed PRs and (optionally) review requests in parallel
     let (followed_pr_result, raw_review_requests) = tokio::join!(
         fetch_prs_by_url(&client, token, followed_prs),
-        fetch_review_requests(&client, token),
+        async {
+            if show_requests {
+                fetch_review_requests(&client, token).await
+            } else {
+                Ok(vec![])
+            }
+        },
     );
     let (followed_pr_open, followed_pr_merged, followed_pr_closed) =
         followed_pr_result.unwrap_or_default();

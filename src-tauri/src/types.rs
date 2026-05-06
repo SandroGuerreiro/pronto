@@ -110,6 +110,8 @@ pub struct Settings {
     pub show_closed: bool,
     #[serde(default)]
     pub closed_window_hours: u64,
+    #[serde(default = "default_true")]
+    pub show_requests: bool,
     #[serde(default)]
     pub favorite_orgs: Vec<String>,
     #[serde(default)]
@@ -179,6 +181,7 @@ impl Default for Settings {
             merged_window_hours: 24,
             show_closed: false,
             closed_window_hours: 24,
+            show_requests: true,
             favorite_orgs: vec![],
             favorite_repos: vec![],
             collapsed_accordions: vec![],

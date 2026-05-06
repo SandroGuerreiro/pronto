@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Settings, NotificationPreferences, HomebrewStatus } from "./types";
+import { setActiveTab } from "./tabs";
 import {
   favoriteOrgs,
   favoriteRepos,
@@ -15,8 +16,10 @@ import {
   setActiveFollowFilter,
   keybindings,
   setKeybindings,
+  activeTab,
   setShowRecentlyMerged,
   setShowClosed,
+  setShowRequests,
   setSettingsNavIndex,
   setSettingsGroupIndex,
 } from "./state";
@@ -94,6 +97,7 @@ export async function autoSaveSettings() {
   const mergedHoursEl = document.getElementById("setting-merged-hours") as HTMLSelectElement | null;
   const closedEl = document.getElementById("setting-closed") as HTMLInputElement | null;
   const closedHoursEl = document.getElementById("setting-closed-hours") as HTMLSelectElement | null;
+  const requestsEl = document.getElementById("setting-requests") as HTMLInputElement | null;
   const groupRepoEl = document.getElementById("setting-group-repo") as HTMLInputElement | null;
   const wfEnabledEl = document.getElementById("setting-workflow-enabled") as HTMLInputElement | null;
   const wfOrgEl = document.getElementById("setting-workflow-org") as HTMLInputElement | null;
@@ -113,6 +117,7 @@ export async function autoSaveSettings() {
     merged_window_hours: mergedHoursEl ? parseInt(mergedHoursEl.value) : currentSettings.merged_window_hours,
     show_closed: closedEl?.checked ?? currentSettings.show_closed,
     closed_window_hours: closedHoursEl ? parseInt(closedHoursEl.value) : currentSettings.closed_window_hours,
+    show_requests: requestsEl?.checked ?? currentSettings.show_requests,
     favorite_orgs: [...favoriteOrgs],
     favorite_repos: [...favoriteRepos],
     collapsed_accordions: [...collapsedAccordions],
@@ -311,6 +316,12 @@ export async function showSettings() {
                 <option value="48"${freshSettings.closed_window_hours === 48 ? " selected" : ""}>48 hours</option>
               </select>
             </div>
+            <div class="settings-group">
+              <label class="settings-label">
+                <span>Show review requests</span>
+                <input type="checkbox" id="setting-requests" class="settings-toggle"${freshSettings.show_requests ? " checked" : ""} />
+              </label>
+            </div>
           </div>
         `;
         setupEventListeners();
@@ -332,6 +343,16 @@ export async function showSettings() {
             closedBtn.style.display = checked ? "" : "none";
           }
           setShowClosed(checked);
+          autoSaveSettings();
+        });
+        document.getElementById("setting-requests")!.addEventListener("change", (e) => {
+          const checked = (e.target as HTMLInputElement).checked;
+          const requestsBtn = document.querySelector('[data-tab="requests"]') as HTMLElement | null;
+          if (requestsBtn) {
+            requestsBtn.style.display = checked ? "" : "none";
+          }
+          if (!checked && activeTab === "requests") setActiveTab("mine");
+          setShowRequests(checked);
           autoSaveSettings();
         });
         const popupScreenEl = document.getElementById("setting-popup-screen") as HTMLSelectElement;
