@@ -189,11 +189,6 @@ export const DEFAULT_KEYBINDINGS: Record<string, string> = {
   open_pr: "Enter",
   hide_pr: "i",
   copy_url: "c",
-  tab_owned: "1",
-  tab_requests: "2",
-  tab_watched: "3",
-  tab_merged: "4",
-  tab_closed: "5",
   global_toggle: "Super+Ctrl+P",
   global_reload: "Super+Ctrl+R",
 };

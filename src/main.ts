@@ -20,11 +20,8 @@ import {
   currentResult,
   keybindings,
   setKeybindings,
-  showRecentlyMerged,
   setShowRecentlyMerged,
-  showClosed,
   setShowClosed,
-  showRequests,
   setShowRequests,
   viewerLogin,
   setViewerLogin,
@@ -665,6 +662,13 @@ window.addEventListener("DOMContentLoaded", async () => {
       }
     : null;
 
+  // Returns visible main-nav tabs in DOM order — single source of truth for digit/Tab navigation
+  function getVisibleMainTabs(): TabName[] {
+    return [...document.querySelectorAll<HTMLElement>("#main-nav .nav-item[data-tab]")]
+      .filter((btn) => btn.style.display !== "none")
+      .map((btn) => btn.getAttribute("data-tab") as TabName);
+  }
+
   // Keyboard navigation
   document.addEventListener("keydown", async (e) => {
     // Avatar popover navigation — intercept all keys while open
@@ -865,15 +869,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     const items = getFocusables();
-    const tabKeys = [
-      keybindings.tab_owned,
-      ...(showRequests ? [keybindings.tab_requests] : []),
-      keybindings.tab_watched,
-      ...(showRecentlyMerged ? [keybindings.tab_merged] : []),
-      ...(showClosed ? [keybindings.tab_closed] : []),
-      "Tab",
-    ];
-    if (!items.length && !tabKeys.includes(e.key) && !sidebarFocus) return;
+    const isTabKey = e.key === "Tab" || /^[1-9]$/.test(e.key);
+    if (!items.length && !isTabKey && !sidebarFocus) return;
 
     // Activate sidebar-focused button (avatar / quit)
     if ((e.key === keybindings.open_pr || e.key === " ") && sidebarFocus) {
@@ -1000,43 +997,15 @@ window.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // Tab: Owned
-    if (e.key === keybindings.tab_owned) {
-      e.preventDefault();
-      clearSidebarFocus();
-      setActiveTab("mine");
-      return;
-    }
-
-    // Tab: Requests
-    if (e.key === keybindings.tab_requests && showRequests) {
-      e.preventDefault();
-      clearSidebarFocus();
-      setActiveTab("requests");
-      return;
-    }
-
-    // Tab: Watched
-    if (e.key === keybindings.tab_watched) {
-      e.preventDefault();
-      clearSidebarFocus();
-      setActiveTab("watched");
-      return;
-    }
-
-    // Tab: Merged
-    if (e.key === keybindings.tab_merged && showRecentlyMerged) {
-      e.preventDefault();
-      clearSidebarFocus();
-      setActiveTab("merged");
-      return;
-    }
-
-    // Tab: Closed
-    if (e.key === keybindings.tab_closed && showClosed) {
-      e.preventDefault();
-      clearSidebarFocus();
-      setActiveTab("closed");
+    // Digit keys → switch to nth visible tab (1-indexed, DOM order)
+    if (/^[1-9]$/.test(e.key)) {
+      const tabs = getVisibleMainTabs();
+      const tab = tabs[parseInt(e.key, 10) - 1];
+      if (tab) {
+        e.preventDefault();
+        clearSidebarFocus();
+        setActiveTab(tab);
+      }
       return;
     }
 
@@ -1072,15 +1041,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (e.key === "Tab") {
       e.preventDefault();
       type SidebarItem = TabName | "avatar" | "quit";
-      const cycle: SidebarItem[] = [
-        "mine",
-        ...(showRequests ? ["requests" as SidebarItem] : []),
-        "watched",
-        ...(showRecentlyMerged ? ["merged" as SidebarItem] : []),
-        ...(showClosed ? ["closed" as SidebarItem] : []),
-        "avatar",
-        "quit",
-      ];
+      const cycle: SidebarItem[] = [...getVisibleMainTabs(), "avatar", "quit"];
 
       const current: SidebarItem = sidebarFocus ?? activeTab;
       const i = cycle.indexOf(current);

@@ -478,10 +478,6 @@ describe("setKeybindings", () => {
     // Unmodified keys
     expect(state.keybindings.open_pr).toBe(DEFAULT_KEYBINDINGS.open_pr);
     expect(state.keybindings.hide_pr).toBe(DEFAULT_KEYBINDINGS.hide_pr);
-    expect(state.keybindings.tab_owned).toBe(DEFAULT_KEYBINDINGS.tab_owned);
-    expect(state.keybindings.tab_watched).toBe(DEFAULT_KEYBINDINGS.tab_watched);
-    expect(state.keybindings.tab_merged).toBe(DEFAULT_KEYBINDINGS.tab_merged);
-    expect(state.keybindings.tab_closed).toBe(DEFAULT_KEYBINDINGS.tab_closed);
   });
 
   it("allows adding keys not in defaults", () => {
