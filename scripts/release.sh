@@ -344,8 +344,12 @@ Only make changes that are necessary. Keep the existing structure and style of e
             log_info "Step 2/8: Committing version bump + docs..."
             git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
             git add CLAUDE.md README.md 2>/dev/null || true
-            git commit -m "Bump version to $new_version"
-            log_success "Version bump committed"
+            if git diff-index --quiet --cached HEAD --; then
+                log_info "Nothing to commit, version already committed"
+            else
+                git commit -m "Bump version to $new_version"
+                log_success "Version bump committed"
+            fi
         fi
     fi
 
