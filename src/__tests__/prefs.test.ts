@@ -18,7 +18,11 @@ const { mockState, mockInvoke } = vi.hoisted(() => {
     activeWatchFilter: "all",
     groupByRepository: true,
     watchedUsers: [] as string[],
+    ignoredLabels: [] as string[],
+    requestsLabelHintDismissed: false,
     setGroupByRepository: vi.fn((v: boolean) => { mockState.groupByRepository = v; }),
+    setIgnoredLabels: vi.fn((labels: string[]) => { mockState.ignoredLabels = labels; }),
+    setRequestsLabelHintDismissed: vi.fn((v: boolean) => { mockState.requestsLabelHintDismissed = v; }),
     setWatchedUsers: vi.fn((users: string[]) => { mockState.watchedUsers = users; }),
     setActiveWatchFilter: vi.fn((f: string) => { mockState.activeWatchFilter = f; }),
   };

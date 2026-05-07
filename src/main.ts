@@ -460,7 +460,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     () => renderActiveTab(),
     () => loadPrs()
   );
-  initTabs(() => showSettings());
+  initTabs((tab, focusId) => showSettings(tab, focusId));
   initSettings(async () => {
     const updated = await invoke<Settings>("get_settings");
     pollIntervalSecs = updated.poll_interval_secs;

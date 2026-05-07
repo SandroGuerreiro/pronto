@@ -665,3 +665,32 @@ fn departed_pr_without_review_should_not_auto_watch() {
         .collect();
     assert!(to_watch.is_empty());
 }
+
+// ── build_label_exclusions ────────────────────────────────────────────────────
+
+#[test]
+fn build_label_exclusions_empty_produces_empty_string() {
+    assert_eq!(build_label_exclusions(&[]), "");
+}
+
+#[test]
+fn build_label_exclusions_single_word_label() {
+    let labels = vec!["wip".to_string()];
+    assert_eq!(build_label_exclusions(&labels), " -label:wip");
+}
+
+#[test]
+fn build_label_exclusions_label_with_spaces_is_quoted() {
+    let labels = vec!["do not review".to_string()];
+    assert_eq!(build_label_exclusions(&labels), r#" -label:\"do not review\""#);
+}
+
+#[test]
+fn build_label_exclusions_multiple_labels() {
+    let labels = vec!["wip".to_string(), "do not review".to_string()];
+    assert_eq!(
+        build_label_exclusions(&labels),
+        r#" -label:wip -label:\"do not review\""#
+    );
+}
+

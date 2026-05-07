@@ -125,6 +125,10 @@ pub struct Settings {
     #[serde(default)]
     pub hidden_prs: Vec<HiddenPr>,
     #[serde(default)]
+    pub ignored_labels: Vec<String>,
+    #[serde(default)]
+    pub requests_label_hint_dismissed: bool,
+    #[serde(default)]
     pub watched_users: Vec<String>,
     #[serde(default)]
     pub watched_prs: Vec<String>,
@@ -190,6 +194,8 @@ impl Default for Settings {
             hidden_orgs: vec![],
             hidden_repos: vec![],
             hidden_prs: vec![],
+            ignored_labels: vec![],
+            requests_label_hint_dismissed: false,
             watched_users: vec![],
             watched_prs: vec![],
             auto_watch_commented_prs: true,
@@ -312,5 +318,33 @@ mod tests {
         let json = r#"{"auto_watch_commented_prs": false}"#;
         let settings: Settings = serde_json::from_str(json).unwrap();
         assert!(!settings.auto_watch_commented_prs);
+    }
+
+    #[test]
+    fn settings_without_ignored_labels_defaults_to_empty() {
+        let json = r#"{"poll_interval_secs": 60}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(settings.ignored_labels.is_empty());
+    }
+
+    #[test]
+    fn settings_with_ignored_labels_is_preserved() {
+        let json = r#"{"ignored_labels": ["wip", "do not review"]}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.ignored_labels, vec!["wip", "do not review"]);
+    }
+
+    #[test]
+    fn settings_without_requests_label_hint_dismissed_defaults_to_false() {
+        let json = r#"{"poll_interval_secs": 60}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(!settings.requests_label_hint_dismissed);
+    }
+
+    #[test]
+    fn settings_with_requests_label_hint_dismissed_true_is_preserved() {
+        let json = r#"{"requests_label_hint_dismissed": true}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(settings.requests_label_hint_dismissed);
     }
 }

@@ -23,6 +23,9 @@ import {
   autoWatchedPrUrls,
   unseenRequestUrls,
   removeUnseenRequestUrl,
+  ignoredLabels,
+  requestsLabelHintDismissed,
+  setRequestsLabelHintDismissed,
 } from "./state";
 import {
   filterPrs,
@@ -33,8 +36,8 @@ import {
 import { persistPrefs, toggleFavorite, toggleHidden } from "./prefs";
 
 // Injected callback for showSettings (wired in main.ts to avoid circular dep)
-let _showSettings: () => void = () => {};
-export function initTabs(showSettingsFn: () => void) {
+let _showSettings: (tab?: string, focusId?: string) => void = () => {};
+export function initTabs(showSettingsFn: (tab?: string, focusId?: string) => void) {
   _showSettings = showSettingsFn;
 }
 
@@ -125,11 +128,14 @@ export function renderActiveTab() {
     }
 
   } else if (activeTab === "requests") {
+    if (!requestsLabelHintDismissed && ignoredLabels.length === 0) {
+      html += `<div class="tab-hint">Hide PRs by label in <a class="tab-hint-link" data-action="open-settings">Settings → Subscriptions</a>. <button class="tab-hint-dismiss" data-action="dismiss-label-hint" aria-label="Dismiss">✕</button></div>`;
+    }
     const prs = (currentResult.review_requests || []).filter(
       (pr) => !watchedPrs.has(pr.url)
     );
     if (prs.length === 0) {
-      html = '<div class="empty">No review requests</div>';
+      html += '<div class="empty">No review requests</div>';
     } else {
       setShowAuthorInCards(true);
       const body = groupByRepository
@@ -427,6 +433,20 @@ function updateWatchFilterBadges() {
 export function bindContentEvents(container: HTMLElement) {
   const readyToHover = Date.now();
 
+  // Tab hint: open settings or dismiss
+  container.querySelector<HTMLElement>('[data-action="open-settings"]')?.addEventListener("click", (e) => {
+    e.preventDefault();
+    setActiveTabState("settings");
+    _showSettings("subscriptions", "ignored-label-input");
+  });
+  container.querySelector<HTMLElement>('[data-action="dismiss-label-hint"]')?.addEventListener("click", () => {
+    setRequestsLabelHintDismissed(true);
+    container.querySelector<HTMLElement>(".tab-hint")?.remove();
+    invoke<object>("get_settings").then((s) =>
+      invoke("update_settings", { settings: { ...s, requests_label_hint_dismissed: true } })
+    ).catch(() => {});
+  });
+
   // PR card: click to open, hover to dismiss attention
   container.querySelectorAll(".pr-card").forEach((card) => {
     card.addEventListener("click", () => {
@@ -653,7 +673,6 @@ export function initTabDragDrop() {
     dragBtn = btn;
     startY = e.clientY;
     offsetY = e.clientY - btn.getBoundingClientRect().top;
-    nav.setPointerCapture(e.pointerId);
   });
 
   nav.addEventListener("pointermove", (e) => {
@@ -662,6 +681,7 @@ export function initTabDragDrop() {
     if (!active) {
       if (Math.abs(e.clientY - startY) < 5) return;
       active = true;
+      nav.setPointerCapture(e.pointerId);
 
       const rect = dragBtn.getBoundingClientRect();
 

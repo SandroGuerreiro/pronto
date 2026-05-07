@@ -479,6 +479,7 @@ struct FetchSettings {
     hidden_orgs: Vec<String>,
     hidden_repos: Vec<String>,
     hidden_prs: Vec<HiddenPr>,
+    ignored_labels: Vec<String>,
     watched_users: Vec<String>,
     watched_prs: Vec<String>,
     workflow_settings: Settings,
@@ -495,6 +496,7 @@ fn snapshot_fetch_settings(settings: &Settings) -> FetchSettings {
         hidden_orgs: settings.hidden_orgs.clone(),
         hidden_repos: settings.hidden_repos.clone(),
         hidden_prs: settings.hidden_prs.clone(),
+        ignored_labels: settings.ignored_labels.clone(),
         watched_users: settings.watched_users.clone(),
         watched_prs: settings.watched_prs.clone(),
         workflow_settings: Settings {
@@ -610,6 +612,7 @@ async fn fetch_all_prs(app: tauri::AppHandle) -> Result<github::FetchResult, Str
         fs.show_requests,
         &fs.hidden_orgs,
         &fs.hidden_repos,
+        &fs.ignored_labels,
         &fs.watched_users,
         &fs.watched_prs,
     )
@@ -1279,6 +1282,7 @@ fn update_global_shortcuts(
                     fs.show_requests,
                     &fs.hidden_orgs,
                     &fs.hidden_repos,
+                    &fs.ignored_labels,
                     &fs.watched_users,
                     &fs.watched_prs,
                 )
@@ -1399,6 +1403,7 @@ async fn poll_prs(app: tauri::AppHandle) {
                     fs.show_requests,
                     &fs.hidden_orgs,
                     &fs.hidden_repos,
+                    &fs.ignored_labels,
                     &fs.watched_users,
                     &fs.watched_prs,
                 )
@@ -1465,6 +1470,7 @@ async fn poll_prs(app: tauri::AppHandle) {
             fs.show_requests,
             &fs.hidden_orgs,
             &fs.hidden_repos,
+            &fs.ignored_labels,
             &fs.watched_users,
             &fs.watched_prs,
         )

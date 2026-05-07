@@ -157,6 +157,8 @@ export interface Settings {
   hidden_orgs: string[];
   hidden_repos: string[];
   hidden_prs: HiddenPr[];
+  ignored_labels: string[];
+  requests_label_hint_dismissed: boolean;
   watched_users: string[];
   watched_prs: string[];
   auto_watch_commented_prs: boolean;

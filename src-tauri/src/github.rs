@@ -823,24 +823,40 @@ fn review_request_to_pr(rr: ReviewRequestPr) -> PullRequest {
     }
 }
 
+fn build_label_exclusions(ignored_labels: &[String]) -> String {
+    ignored_labels
+        .iter()
+        .map(|l| {
+            if l.contains(' ') {
+                format!(" -label:\\\"{}\\\"", l)
+            } else {
+                format!(" -label:{}", l)
+            }
+        })
+        .collect()
+}
+
 pub async fn fetch_review_requests(
     client: &reqwest::Client,
     token: &str,
+    ignored_labels: &[String],
 ) -> Result<Vec<ReviewRequestPr>, Box<dyn std::error::Error + Send + Sync>> {
+    let label_exclusions = build_label_exclusions(ignored_labels);
     let query = GraphQLQuery {
-        query: r#"{
-  reviewRequests: search(query: "review-requested:@me is:open is:pr -is:draft", type: ISSUE, first: 20) {
-    nodes {
-      ... on PullRequest {
+        query: format!(
+            r#"{{
+  reviewRequests: search(query: "review-requested:@me is:open is:pr -is:draft{label_exclusions}", type: ISSUE, first: 20) {{
+    nodes {{
+      ... on PullRequest {{
         title url state merged isDraft createdAt
-        repository { name owner { login } }
-        author { login }
-        viewerLatestReview { state }
-      }
-    }
-  }
-}"#
-        .to_string(),
+        repository {{ name owner {{ login }} }}
+        author {{ login }}
+        viewerLatestReview {{ state }}
+      }}
+    }}
+  }}
+}}"#
+        ),
     };
 
     let http_response = client
@@ -1002,6 +1018,7 @@ pub async fn fetch_all_prs(
     show_requests: bool,
     hidden_orgs: &[String],
     hidden_repos: &[String],
+    ignored_labels: &[String],
     watched_users: &[String],
     watched_prs: &[String],
 ) -> Result<FetchResult, Box<dyn std::error::Error + Send + Sync>> {
@@ -1047,7 +1064,7 @@ pub async fn fetch_all_prs(
         fetch_prs_by_url(&client, token, watched_prs),
         async {
             if show_requests {
-                fetch_review_requests(&client, token).await
+                fetch_review_requests(&client, token, ignored_labels).await
             } else {
                 Ok(vec![])
             }

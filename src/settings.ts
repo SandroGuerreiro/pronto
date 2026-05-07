@@ -8,9 +8,12 @@ import {
   hiddenOrgs,
   hiddenRepos,
   hiddenPrs,
+  ignoredLabels,
+  requestsLabelHintDismissed,
   watchedUsers,
   watchedPrs,
   setGroupByRepository,
+  setIgnoredLabels,
   setWatchedUsers,
   activeWatchFilter,
   setActiveWatchFilter,
@@ -124,6 +127,8 @@ export async function autoSaveSettings() {
     hidden_orgs: [...hiddenOrgs],
     hidden_repos: [...hiddenRepos],
     hidden_prs: [...hiddenPrs.entries()].map(([url, title]) => ({ url, title })),
+    ignored_labels: [...ignoredLabels],
+    requests_label_hint_dismissed: requestsLabelHintDismissed,
     watched_users: watchedUsers,
     watched_prs: [...watchedPrs],
     group_by_repository: groupRepoEl?.checked ?? currentSettings.group_by_repository,
@@ -232,7 +237,7 @@ function startGlobalShortcutCapture(
 
 // ── Show settings ─────────────────────────────────────────────────────────
 
-export async function showSettings() {
+export async function showSettings(initialTab?: string, focusId?: string) {
   const content = document.getElementById("content")!;
 
   content.innerHTML = `
@@ -953,6 +958,32 @@ export async function showSettings() {
           }
         </div>
       </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Ignored labels</div>
+        <div class="settings-hint" style="margin-bottom:8px;">Review requests with any of these labels are hidden from the Requests tab.</div>
+        <div class="settings-group">
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="ignored-label-input" class="settings-input" placeholder="e.g. wip" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button id="ignored-label-add" class="login-btn" style="width:auto; padding: 8px 14px;">Add</button>
+          </div>
+        </div>
+        <div class="hidden-prs-list" id="ignored-labels-list">
+          ${
+            ignoredLabels.length > 0
+              ? ignoredLabels
+                  .map(
+                    (label) => `
+                <div class="hidden-pr-row" data-label="${label.replace(/"/g, "&quot;")}">
+                  <span class="hidden-pr-title">${label}</span>
+                  <button class="hidden-pr-remove ignored-label-remove" data-label="${label.replace(/"/g, "&quot;")}" title="Remove label" aria-label="Remove label">✕</button>
+                </div>`
+                  )
+                  .join("")
+              : '<div class="hidden-prs-empty">No ignored labels</div>'
+          }
+        </div>
+      </div>
     `;
 
     // Unhide PR buttons (hidden PRs only - not watch-pr-remove)
@@ -1085,6 +1116,54 @@ export async function showSettings() {
     });
 
     watchList.querySelectorAll(".watch-user-remove").forEach(addWatchRemoveListener);
+
+    // Ignored labels
+    const ignoredLabelsList = contentArea.querySelector("#ignored-labels-list") as HTMLElement;
+    const ignoredLabelInput = contentArea.querySelector("#ignored-label-input") as HTMLInputElement;
+    const ignoredLabelAddBtn = contentArea.querySelector("#ignored-label-add") as HTMLButtonElement;
+
+    const refreshIgnoredLabelsEmptyState = () => {
+      if (!ignoredLabelsList.querySelector(".hidden-pr-row")) {
+        ignoredLabelsList.innerHTML = '<div class="hidden-prs-empty">No ignored labels</div>';
+      }
+    };
+
+    const addIgnoredLabelRemoveListener = (btn: Element) => {
+      btn.addEventListener("click", () => {
+        const label = btn.getAttribute("data-label")!;
+        setIgnoredLabels(ignoredLabels.filter((l) => l !== label));
+        btn.closest(".hidden-pr-row")?.remove();
+        refreshIgnoredLabelsEmptyState();
+        autoSaveSettings();
+      });
+    };
+
+    ignoredLabelInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ignoredLabelAddBtn.click();
+    });
+
+    ignoredLabelAddBtn.addEventListener("click", () => {
+      const label = ignoredLabelInput.value.trim();
+      if (!label || ignoredLabels.includes(label)) {
+        ignoredLabelInput.value = "";
+        return;
+      }
+      setIgnoredLabels([...ignoredLabels, label]);
+      ignoredLabelsList.querySelector(".hidden-prs-empty")?.remove();
+      const row = document.createElement("div");
+      row.className = "hidden-pr-row";
+      row.dataset.label = label;
+      row.innerHTML = `
+        <span class="hidden-pr-title">${label}</span>
+        <button class="hidden-pr-remove ignored-label-remove" data-label="${label.replace(/"/g, "&quot;")}" title="Remove label" aria-label="Remove label">✕</button>
+      `;
+      ignoredLabelsList.appendChild(row);
+      addIgnoredLabelRemoveListener(row.querySelector(".ignored-label-remove")!);
+      ignoredLabelInput.value = "";
+      autoSaveSettings();
+    });
+
+    ignoredLabelsList.querySelectorAll(".ignored-label-remove").forEach(addIgnoredLabelRemoveListener);
   }
 
   // Tab switching
@@ -1101,6 +1180,17 @@ export async function showSettings() {
   });
 
   // Render initial tab
-  setSettingsNavIndex(0);
-  await renderTab("general");
+  const startTab = initialTab ?? "general";
+  const startIndex = tabButtons.findIndex((b) => b.getAttribute("data-tab") === startTab);
+  const activeIndex = startIndex >= 0 ? startIndex : 0;
+  tabButtons.forEach((b) => b.classList.remove("active"));
+  tabButtons[activeIndex]?.classList.add("active");
+  setSettingsNavIndex(activeIndex);
+  await renderTab(startTab === "general" || startIndex >= 0 ? startTab : "general");
+
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    el?.focus();
+    el?.scrollIntoView({ block: "center" });
+  }
 }

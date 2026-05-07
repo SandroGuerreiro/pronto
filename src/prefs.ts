@@ -9,6 +9,8 @@ import {
   hiddenPrs,
   watchedPrs,
   setGroupByRepository,
+  setIgnoredLabels,
+  setRequestsLabelHintDismissed,
   setWatchedUsers,
   activeWatchFilter,
   setActiveWatchFilter,
@@ -39,6 +41,8 @@ export async function loadUserPrefs() {
   s.hidden_repos.forEach((r) => hiddenRepos.add(r));
   hiddenPrs.clear();
   (s.hidden_prs || []).forEach((h) => hiddenPrs.set(h.url, h.title));
+  setIgnoredLabels(s.ignored_labels || []);
+  setRequestsLabelHintDismissed(s.requests_label_hint_dismissed ?? false);
   watchedPrs.clear();
   (s.watched_prs || []).forEach((url) => watchedPrs.add(url));
   setGroupByRepository(s.group_by_repository !== false);
