@@ -22,7 +22,6 @@ brew update && brew upgrade --cask pronto
 
 Download the latest `.dmg` from [GitHub Releases](https://github.com/SandroGuerreiro/pronto/releases), open it, and drag `Pronto.app` to your Applications folder.
 
-
 ## Features
 
 - **Tray icon widget** -- lives in your menu bar, not the dock
