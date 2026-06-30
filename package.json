@@ -16,7 +16,7 @@
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.11.0",
+    "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-opener": "2.5.4",
     "@tauri-apps/plugin-process": "2.3.1",
     "dompurify": "3.4.2",
