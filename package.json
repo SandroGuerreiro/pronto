@@ -27,7 +27,7 @@
     "@vitest/coverage-v8": "2.1.9",
     "jsdom": "29.1.1",
     "tsx": "4.21.0",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "vite": "8.0.10",
     "vitest": "2.1.9"
   }
